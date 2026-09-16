@@ -1729,7 +1729,10 @@ export class ExperimentSimulation {
       );
     }
 
-    // Escape strength varies continuously with panic instead of switching on sight.
+    // Escape strength follows how close the nearest predator is (directThreat:
+    // 1 at contact, 0 at the edge of panicRadius), amplified by the fish's own
+    // panic. The amplifier is 1 + k * panic rather than k * panic, so a fish
+    // that sees a predator before its panic latches still moves away.
     const directThreat = interactionsEnabled
       ? this.threatLevel[index]
       : 0;
@@ -1740,7 +1743,9 @@ export class ExperimentSimulation {
         ex * inverseEscape,
         ey * inverseEscape,
         ez * inverseEscape,
-        relations.evadeWeight * directThreat
+        relations.evadeWeight *
+          directThreat *
+          (1 + (relations.evadePanicBoost ?? 0) * panic)
       );
     }
 

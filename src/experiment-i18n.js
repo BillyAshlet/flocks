@@ -58,6 +58,7 @@ const DICT = {
   'avoidance look-ahead (m)': ['avoidance look-ahead (m)', '避障射线长度 (m)'],
   'avoidance angle step (°)': ['avoidance angle step (°)', '避障转向步长 (°)'],
   'recenter weight': ['recenter weight', '回中权重（补偿）'],
+  'evade × panic boost': ['evade × panic boost', '逃逸力 × 恐慌放大'],
   'emergency alignment enabled': ['emergency alignment enabled', '启用应急对齐'],
   'scatter latch enabled': ['scatter latch enabled', '启用散开门闩'],
   'last-ditch sprint enabled': ['last-ditch sprint enabled', '启用濒死冲刺'],

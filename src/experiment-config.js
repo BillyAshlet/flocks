@@ -164,6 +164,8 @@ export const DEFAULT_EXPERIMENT_CONFIG = Object.freeze({
     // preset, predators always know where prey is, and the smooth approach is lost.
     schoolSenseFactor: 5,
     evadeWeight: 1.3,
+    // Escape force x (1 + evadePanicBoost x panic).
+    evadePanicBoost: 1,
     evadeLateralWeight: 0.32,
     panicRiseRate: 4.5,
     panicDecayRate: 1.35,
@@ -771,6 +773,11 @@ const scalarEntries = [
     step: 0.25,
   }),
   entry('relations.evadeWeight', '关系', 'evade weight', 'live', {
+    min: 0,
+    max: 4,
+    step: 0.05,
+  }),
+  entry('relations.evadePanicBoost', '关系', 'evade × panic boost', 'live', {
     min: 0,
     max: 4,
     step: 0.05,
