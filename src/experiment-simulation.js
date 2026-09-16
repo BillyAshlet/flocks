@@ -2347,13 +2347,15 @@ export class ExperimentSimulation {
       );
       // The school-wide share goes to the pool, split among living fish each step.
       this.energyPools[schoolIndex] += gain * schoolShare;
-      // The nearby share is split on the spot among whoever is physically
-      // close, regardless of school id. Small groups eat well together and
-      // starve together, which is how dying off group by group emerges.
+      // The nearby share is split on the spot among fish of the same species
+      // that are physically close. Small groups eat well together and starve
+      // together, which is how dying off group by group emerges. Other species
+      // get none: a predator beside grazing prey used to be fed by them.
       if (localShare > 0 && shareRadius2 > 0) {
         const neighbours = [];
         this.hash.forEachCandidate(index, (other) => {
           if (other === index || !this.alive[other]) return;
+          if (this.schoolIds[other] !== schoolIndex) return;
           const oo = other * 3;
           const dx = this.positions[oo] - this.positions[offset];
           const dy = this.positions[oo + 1] - this.positions[offset + 1];

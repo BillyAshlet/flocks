@@ -753,3 +753,35 @@ test('cohesion targets the weighted center of neighbors, fractions included', ()
     );
   }
 });
+
+test("the nearby share of a meal stays within the eater's species", () => {
+  const simulation = smallSimulation('steady', 20260726);
+  const eater = simulation.schoolRanges[0].start;
+  const peer = eater + 1;
+  const stranger = simulation.schoolRanges[1].start;
+  simulation.config.ecology.energyShareLocal = 0.3;
+  simulation.config.ecology.energyShareSchool = 0;
+  simulation.config.ecology.energyShareRadius = 0.25;
+  simulation.config.ecology.basalRate = 0;
+  simulation.config.ecology.burstMetabolicRate = 0;
+  simulation.config.ecology.grazeHungerRatio = 0.2;
+  simulation.config.plankton.halfSaturationFraction = 0;
+  simulation.config.schools[0].grazeRate = 1;
+  simulation.config.schools[1].grazeRate = 0;
+  simulation.energy.fill(0.5);
+  simulation.energy[eater] = 0.1;
+  const x = simulation.positions[eater * 3];
+  const y = simulation.positions[eater * 3 + 1];
+  const z = simulation.positions[eater * 3 + 2];
+  place(simulation, peer, x + 0.05, y, z);
+  place(simulation, stranger, x, y + 0.05, z);
+  simulation.hash.build(simulation.positions, simulation.alive, simulation.count);
+  simulation.rng.next = () => 0;
+
+  const consumedBefore = simulation.planktonConsumed;
+  simulation._updateEcology(0.25);
+
+  assert.ok(simulation.planktonConsumed > consumedBefore, 'the eater should have eaten');
+  assert.ok(simulation.energy[peer] > 0.5, 'a nearby schoolmate gets a share');
+  assert.equal(simulation.energy[stranger], 0.5, 'a nearby fish of another species gets none');
+});

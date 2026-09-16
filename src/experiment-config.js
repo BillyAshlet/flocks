@@ -292,12 +292,14 @@ export const DEFAULT_EXPERIMENT_CONFIG = Object.freeze({
     // exist yet. Unfairness appeared once plankton became spatial: fish that swim
     // into a cloud eat their fill and fish at the tail get nothing.
     //
-    // The nearby share does most of the work, and it is split by spatial radius,
-    // not by school id: a pod eats well together or starves together, so pods
-    // dying off one after another emerges instead of being assigned by id.
-    // The school-wide share is only a small floor, so one unlucky fish does not
-    // starve while the rest of its school is fed. There is no cross-species pool:
-    // it would pass what prey eat on to predators.
+    // The nearby share does most of the work, and it is split by spatial radius
+    // among fish of the eater's own species: a pod eats well together or starves
+    // together, so pods dying off one after another emerges instead of being
+    // assigned by id. The school-wide share is only a small floor, so one
+    // unlucky fish does not starve while the rest of its school is fed. Nothing
+    // crosses species, since that would pass what prey eat on to predators; the
+    // nearby share once did, going to any fish in the radius, so a predator
+    // swimming beside grazing prey was fed by them.
     energyShareLocal: 0.3,
     energyShareSchool: 0.2,
     // Radius for the nearby share. A fixed value, not the cohesion radius: that one
