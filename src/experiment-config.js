@@ -221,6 +221,12 @@ export const DEFAULT_EXPERIMENT_CONFIG = Object.freeze({
     avoidanceWeight: 1.0,
     avoidanceLookAhead: 0.23,
     avoidanceAngleStep: 18,
+    // Compensation, not physics: after the ray hits, wait recenterDelay
+    // seconds, then pull weakly toward the tank centre for recenterDuration
+    // seconds. Keeps fish from sliding along walls forever.
+    recenterWeight: 0.5,
+    recenterDelay: 0.5,
+    recenterDuration: 5,
     wanderWeight: 0.08,
     // 【觅食转向】。饿了才去找食物 —— 权重按「饿」加权，不按「近」加权：
     // 吃饱的鱼完全无视食物，饿的鱼才脱队。这样平时看着还是鱼群，
@@ -906,6 +912,21 @@ const scalarEntries = [
     'live',
     { min: 1, max: 90, step: 1 }
   ),
+  entry('locomotion.recenterWeight', '运动', 'recenter weight', 'live', {
+    min: 0,
+    max: 2,
+    step: 0.01,
+  }),
+  entry('locomotion.recenterDelay', '运动', 'recenter delay (s)', 'live', {
+    min: 0,
+    max: 10,
+    step: 0.1,
+  }),
+  entry('locomotion.recenterDuration', '运动', 'recenter duration (s)', 'live', {
+    min: 0,
+    max: 10,
+    step: 0.1,
+  }),
   entry('locomotion.forageWeight', '运动', '觅食转向 weight', 'live', {
     min: 0,
     max: 5,

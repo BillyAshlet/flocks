@@ -51,6 +51,7 @@ const BASICS = [
   'runtime.randomizeSeed',
   'runtime.spawnMode',
   'locomotion.avoidance*',
+  'locomotion.recenter*',
 ];
 const PREDATION = [
   'relations.k',

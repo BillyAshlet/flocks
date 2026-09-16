@@ -272,6 +272,8 @@ export class ExperimentSimulation {
     // hit distance (Infinity when clear).
     this.avoidanceDirections = new Float32Array(this.count * 3);
     this.avoidanceHits = new Float32Array(this.count).fill(Infinity);
+    // Seconds left on each fish's recentering timer; 0 = idle.
+    this.recenterTimers = new Float32Array(this.count);
     this.schoolIds = new Uint16Array(this.count);
     this.alive = new Uint8Array(this.count);
     this.panic = new Float32Array(this.count);
@@ -519,6 +521,7 @@ export class ExperimentSimulation {
     this.targetDistance2.fill(Infinity);
     this.lastPursuitTargets.fill(-1);
     this.chaseStartTimes.fill(-1);
+    this.recenterTimers.fill(0);
     this.hiddenFish = -1;
 
     for (
@@ -1369,6 +1372,32 @@ export class ExperimentSimulation {
     return 1 - hit / length;
   }
 
+  /**
+   * Recentering: a compensation term, not a physical rule.
+   *
+   * A fish that turns parallel to a wall sees a clear ray and can slide along
+   * the wall indefinitely. So once the ray hits, a timer starts: after
+   * recenterDelay seconds, a weak pull toward the tank centre acts for
+   * recenterDuration seconds. Hits while the timer runs do not restart it;
+   * the next hit after it ends starts a new one.
+   *
+   * Returns whether the pull acts this step.
+   */
+  _recentering(index, hit, dt) {
+    const { recenterWeight, recenterDelay, recenterDuration } =
+      this.config.locomotion;
+    if (recenterWeight <= 0 || recenterDuration <= 0) {
+      this.recenterTimers[index] = 0;
+      return false;
+    }
+    if (this.recenterTimers[index] <= 0) {
+      if (!hit) return false;
+      this.recenterTimers[index] = recenterDelay + recenterDuration;
+    }
+    this.recenterTimers[index] = Math.max(0, this.recenterTimers[index] - dt);
+    return this.recenterTimers[index] > 0 && this.recenterTimers[index] <= recenterDuration;
+  }
+
   _energyRatio(index) {
     const capacity = Math.max(
       EPSILON,
@@ -1899,6 +1928,14 @@ export class ExperimentSimulation {
         this.avoidanceDirections[offset + 1],
         this.avoidanceDirections[offset + 2],
         this.config.locomotion.avoidanceWeight * (1 + avoidanceUrgency * 2)
+      );
+    }
+    if (this._recentering(index, avoidanceUrgency > 0, dt)) {
+      applyRule(
+        -point[0],
+        -point[1],
+        -point[2],
+        this.config.locomotion.recenterWeight
       );
     }
 

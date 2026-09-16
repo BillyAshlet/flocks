@@ -697,3 +697,26 @@ test('a fish heading at a wall within look-ahead turns away; far from it, nothin
   // Parallel to the wall, close to it: the way ahead is clear.
   assert.equal(simulation._lookAhead(0, [wallX - 0.05, 0, 0], 0, 0, 0.23), 0);
 });
+
+test('recentering waits after a hit, then acts for its duration, and a hit does not restart it', () => {
+  const simulation = smallSimulation();
+  Object.assign(simulation.config.locomotion, {
+    recenterWeight: 0.5,
+    recenterDelay: 0.5,
+    recenterDuration: 1,
+  });
+  const dt = 0.1;
+  const steps = [];
+  for (let step = 0; step < 20; step += 1) {
+    // Hit on the first step and again in the middle of the pull.
+    const hit = step === 0 || step === 8;
+    steps.push(simulation._recentering(0, hit, dt));
+  }
+  // Idle without a hit.
+  assert.equal(simulation._recentering(1, false, dt), false);
+  // About 0.5 s quiet, then about 1 s of pull, then idle. Steps on the exact
+  // boundaries are left out of the check.
+  assert.deepEqual(steps.slice(0, 4), [false, false, false, false]);
+  assert.ok(steps.slice(5, 14).every(Boolean));
+  assert.ok(steps.slice(16).every((active) => !active));
+});

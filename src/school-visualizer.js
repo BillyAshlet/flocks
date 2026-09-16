@@ -9,7 +9,8 @@
  * Layers draw what the engine actually uses:
  *   reynolds    separation / alignment / cohesion radii
  *   walls       the look-ahead ray along the heading (amber up to the hit
- *               when it hits something) and the direction the fish turns to
+ *               when it hits something), the direction the fish turns to,
+ *               and a blue arrow toward the centre while recentering acts
  *   fieldOfView the blind cone behind the fish; pairs inside it are ignored
  *   hunting     far sense (steer to prey centroid), near lock (pick one
  *               target), and a line to the current target
@@ -81,6 +82,7 @@ class SchoolOverlay {
     );
     this.ray.frustumCulled = false;
     this.wallArrow = new THREE.ArrowHelper(UP, new THREE.Vector3(), 1, '#a8842a');
+    this.recenterArrow = new THREE.ArrowHelper(UP, new THREE.Vector3(), 1, '#4f7fa8');
 
     this.blindAngle = -1;
     this.blindCone = new THREE.Mesh(
@@ -109,7 +111,7 @@ class SchoolOverlay {
     this.signal = wireSphere('#b57aa6', 0.22);
     this.panic.add(this.threat, this.signal);
 
-    this.group.add(this.reynolds, this.ray, this.wallArrow, this.blindCone, this.hunting, this.panic);
+    this.group.add(this.reynolds, this.ray, this.wallArrow, this.recenterArrow, this.blindCone, this.hunting, this.panic);
     // The target line lives in world space, not relative to the anchor.
     parent.add(this.group, this.targetLine);
   }
@@ -151,6 +153,25 @@ class SchoolOverlay {
     const length = config.locomotion.avoidanceLookAhead;
     this.ray.visible = Boolean(on && forward && length > 0);
     this.wallArrow.visible = false;
+    this.recenterArrow.visible = false;
+    if (!on) return;
+    const timer = simulation.recenterTimers?.[index] ?? 0;
+    const toCentre = new THREE.Vector3(
+      -simulation.positions[index * 3],
+      -simulation.positions[index * 3 + 1],
+      -simulation.positions[index * 3 + 2]
+    );
+    if (
+      timer > 0 &&
+      timer <= config.locomotion.recenterDuration &&
+      config.locomotion.recenterWeight > 0 &&
+      toCentre.lengthSq() > 1e-12
+    ) {
+      const arrowLength = Math.max(length, 0.1);
+      this.recenterArrow.visible = true;
+      this.recenterArrow.setDirection(toCentre.normalize());
+      this.recenterArrow.setLength(arrowLength, arrowLength * 0.25, arrowLength * 0.12);
+    }
     if (!this.ray.visible) return;
     const hit = simulation.avoidanceHits?.[index] ?? Infinity;
     const hitting = Number.isFinite(hit);
