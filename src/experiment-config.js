@@ -810,7 +810,10 @@ const scalarEntries = [
     max: 3,
     step: 0.05,
   }),
-  entry('relations.signalThreshold', '关系', '应急信号阈值', 'live', {
+  // Named "alarm", not "emergency": from tier 4 this threshold gates the
+  // panic pulse a fish hears, long before emergency alignment exists at tier 6
+  // (where it also gates which senders count as panicked).
+  entry('relations.signalThreshold', '关系', '警报信号阈值', 'live', {
     min: 0,
     max: 1,
     step: 0.01,

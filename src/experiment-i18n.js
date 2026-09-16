@@ -315,7 +315,7 @@ const DICT = {
   '炸开·进入恐慌值': ['scatter · enter panic', '炸开 · 进入恐慌值'],
   '炸开·退出恐慌值': ['scatter · exit panic', '炸开 · 退出恐慌值'],
   '应急信号半径 ×': ['emergency signal radius ×', '应急信号半径 ×'],
-  应急信号阈值: ['emergency signal threshold', '应急信号阈值'],
+  警报信号阈值: ['alarm signal threshold', '警报信号阈值'],
   应急对齐权重: ['emergency alignment weight', '应急对齐权重'],
   应急航向优先度: ['emergency heading priority', '应急航向优先度'],
   恐慌时倾听增益: ['listening gain when panicked', '恐慌时倾听增益'],
