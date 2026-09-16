@@ -284,8 +284,6 @@ export const DEFAULT_EXPERIMENT_CONFIG = Object.freeze({
     // Per-fish jitter of initial energy, as a ± fraction. 0 gives every fish of a
     // school the same start, so they all starve at the same moment.
     initialEnergyJitter: 0.25,
-    // Multiplier on energy gained from feeding.
-    forageEnergyMultiplier: 2.2,
     // Three-way split of every meal: the eater, nearby fish, and the whole school.
     //
     // Earlier there was only an even split across the school, while plankton was
@@ -366,8 +364,11 @@ export const DEFAULT_EXPERIMENT_CONFIG = Object.freeze({
     corpseDrag: 2.4,
     // Whether sprint metabolism scales with size (Kleiber). false = the old flat constant.
     burstSizeScaled: true,
-    // Base energy of one plankton bite.
-    planktonEnergy: 0.06,
+    // Energy of one full plankton bite. This used to be the product of three
+    // knobs that all scaled the same gain (planktonEnergy 0.06, a feeding
+    // multiplier 2.2 and plankton.energyConversion 1), so moving any one of
+    // them looked like a separate mechanism. They are folded into this value.
+    planktonEnergy: 0.132,
     /**
      * Exponent of grazing capacity with body size. This one number replaces three
      * hand-set niche constants.
@@ -424,7 +425,6 @@ export const DEFAULT_EXPERIMENT_CONFIG = Object.freeze({
     // How long an eaten-out particle takes to come back whole. Much easier to reason
     // about than a growth rate.
     regrowSeconds: 20,
-    energyConversion: 1,
     visualCount: 1200,
     // sizeAttenuation is on, so this is in world units. Earlier 0.01 was only
     // about 1.5 px at the normal camera distance, which is why no plankton was
@@ -1042,11 +1042,6 @@ const scalarEntries = [
     max: 0.8,
     step: 0.01,
   }),
-  entry('ecology.forageEnergyMultiplier', '生态能量', '进食能量 ×', 'live', {
-    min: 0.1,
-    max: 8,
-    step: 0.05,
-  }),
   entry('ecology.energyShareLocal', '生态能量', '分给附近的比例', 'live', {
     min: 0,
     max: 1,
@@ -1172,13 +1167,6 @@ const scalarEntries = [
     '每次最多吃几口',
     'live',
     { min: 0, max: 40, step: 1 }
-  ),
-  entry(
-    'plankton.energyConversion',
-    '浮游资源',
-    'energy / plankton',
-    'live',
-    { min: 0, max: 10, step: 0.01 }
   ),
   entry(
     'plankton.visualCount',

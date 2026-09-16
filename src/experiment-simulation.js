@@ -2231,10 +2231,9 @@ export class ExperimentSimulation {
       this.config.ecology.energyShareRadius ?? 0
     );
     const shareRadius2 = shareRadius * shareRadius;
-    const forageMul = this.config.ecology.forageEnergyMultiplier ?? 1;
     const planktonEnergy = Math.max(
       0,
-      this.config.ecology.planktonEnergy ?? 0.06
+      this.config.ecology.planktonEnergy ?? 0.132
     );
 
     const planktonOn = this.config.plankton.enabled && this.food.hasFood;
@@ -2321,8 +2320,8 @@ export class ExperimentSimulation {
         if (intake > 0) {
           this.planktonConsumed += intake;
           // Full intake keeps the existing recovery; scarce food scales it down
-          // with actual intake. This is also what makes energyConversion take
-          // effect; earlier it only appeared in the panel.
+          // with actual intake. Earlier the energy conversion knob was never
+          // read here and only appeared in the panel.
           const intakeFraction =
             maxIntake > EPSILON ? intake / maxIntake : 0;
           // Not multiplied by grazeRate, which already sets how often a fish
@@ -2331,11 +2330,7 @@ export class ExperimentSimulation {
           // 0.01 one ten-thousandth of a small fish's plankton income, while
           // its drain was 1.8x. What a bite is worth should not depend on who
           // eats it.
-          gain =
-            planktonEnergy *
-            intakeFraction *
-            Math.max(0, this.config.plankton.energyConversion ?? 1) *
-            forageMul;
+          gain = planktonEnergy * intakeFraction;
           ate = true;
         }
       }

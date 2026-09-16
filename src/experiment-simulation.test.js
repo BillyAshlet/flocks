@@ -506,18 +506,16 @@ test('low energy blocks burst sprint', () => {
 // worse, dead fish feeding the living is positive feedback, so survivors of a
 // die-off did better, the opposite of schools dying out together.
 
-test('feeding recovery is amplified and shares 40 percent with living schoolmates', () => {
+test('feeding recovery shares 40 percent with living schoolmates', () => {
   const simulation = smallSimulation('steady', 20260725);
   const schoolRange = simulation.schoolRanges[0];
   const eater = schoolRange.start;
   const peer = eater + 1;
-  simulation.config.ecology.forageEnergyMultiplier = 2.2;
   // Tests only the school-pool tier: the local tier is switched off, so 40% of
   // a meal goes to the school pool, split evenly among living members.
   simulation.config.ecology.energyShareLocal = 0;
   simulation.config.ecology.energyShareSchool = 0.4;
-  simulation.config.ecology.planktonEnergy = 0.06;
-  simulation.config.plankton.energyConversion = 1;
+  simulation.config.ecology.planktonEnergy = 0.132;
   simulation.config.plankton.halfSaturationFraction = 0;
   simulation.config.ecology.grazeHungerRatio = 0.2;
   simulation.config.ecology.basalRate = 0;
@@ -537,7 +535,7 @@ test('feeding recovery is amplified and shares 40 percent with living schoolmate
   const intake = simulation.planktonConsumed - consumedBefore;
   assert.ok(intake > 0, 'the fish should actually have eaten something');
   const intakeFraction = intake / simulation.config.plankton.maxIntakePerFish;
-  const gain = 0.06 * intakeFraction * 2.2;
+  const gain = 0.132 * intakeFraction;
   const sharedPerFish =
     (gain * 0.4) / (schoolRange.end - schoolRange.start);
   assert.ok(
