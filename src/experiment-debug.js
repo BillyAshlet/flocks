@@ -822,7 +822,7 @@ export function createExperimentDebug({
         ecologyOn
           ? `
 
-carrion=${metrics.ecology.plankton.level.toFixed(0)} eaten=${metrics.ecology.plankton.consumed.toFixed(0)}` +
+corpses=${metrics.ecology.plankton.level.toFixed(0)} plankton bites=${metrics.ecology.plankton.consumed.toFixed(0)}` +
             (metrics.project === 'ecology'
               ? `
 outcome=${metrics.ecology.state}${metrics.ecology.winnerName ? ` winner=${metrics.ecology.winnerName}` : ''}`

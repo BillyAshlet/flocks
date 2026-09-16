@@ -3047,8 +3047,8 @@ export class ExperimentSimulation {
         winnerId: ecologyWinner?.id ?? null,
         winnerName: ecologyWinner?.name ?? null,
         plankton: {
-          // Legacy field names kept for dashboard compatibility: level =
-          // current brown corpse fragments, consumed = eaten corpse count.
+          // Field names are historical: level = starvation corpses currently
+          // shown, consumed = plankton bites eaten so far.
           level: this.captureVfx?.starvationCount?.() ?? 0,
           capacity: 0,
           fraction: 0,

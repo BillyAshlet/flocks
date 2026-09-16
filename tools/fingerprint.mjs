@@ -96,7 +96,7 @@ for (const [name, tweak] of SCENARIOS) {
     console.log(
       `${name} seed=${seed}  alive=${alive}  ${counts}\n` +
         `    captures=${captures}\n` +
-        `    plankton=${metrics.ecology.plankton.level} consumed=${metrics.ecology.plankton.consumed}\n` +
+        `    corpses=${metrics.ecology.plankton.level} planktonBites=${metrics.ecology.plankton.consumed}\n` +
         `    energy=${energy}\n` +
         `    pos=${px},${py},${pz}\n` +
         `    vel=${vx},${vy},${vz}`
