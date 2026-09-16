@@ -90,6 +90,8 @@ const PANIC = [
   'relations.cohesionDrop',
   'locomotion.panicSpeedFactor',
 ];
+// Body size slows sustained speed and turning; arrives with species.
+const TRAITS = ['traits.*'];
 const ECOLOGY = ['ecology.*', 'plankton.*'];
 // Parameters of withoutDetails' mechanisms; hidden until tier 6.
 const DETAILS = [
@@ -144,7 +146,7 @@ export const TIERS = [
       withoutEcology(config);
       withoutPredation(config);
     },
-    globals: BASICS,
+    globals: [...BASICS, ...TRAITS],
     schoolFields: [...REYNOLDS_FIELDS, ...SPECIES_FIELDS],
     visuals: REYNOLDS_VISUALS,
   },
@@ -158,7 +160,7 @@ export const TIERS = [
       withoutEcology(config);
       withoutPanic(config);
     },
-    globals: [...BASICS, ...PREDATION],
+    globals: [...BASICS, ...TRAITS, ...PREDATION],
     schoolFields: [...REYNOLDS_FIELDS, ...SPECIES_FIELDS],
     visuals: PREDATION_VISUALS,
   },
@@ -171,7 +173,7 @@ export const TIERS = [
       withoutEcology(config);
       withoutDetails(config);
     },
-    globals: [...BASICS, ...PREDATION, ...PANIC],
+    globals: [...BASICS, ...TRAITS, ...PREDATION, ...PANIC],
     hidden: DETAILS,
     schoolFields: [...REYNOLDS_FIELDS, ...SPECIES_FIELDS],
     visuals: PANIC_VISUALS,
@@ -183,7 +185,7 @@ export const TIERS = [
     configure(config) {
       withoutDetails(config);
     },
-    globals: [...BASICS, ...PREDATION, ...PANIC, ...ECOLOGY],
+    globals: [...BASICS, ...TRAITS, ...PREDATION, ...PANIC, ...ECOLOGY],
     hidden: DETAILS,
     schoolFields: [...REYNOLDS_FIELDS, ...SPECIES_FIELDS, ...ENERGY_FIELDS],
     visuals: PANIC_VISUALS,
