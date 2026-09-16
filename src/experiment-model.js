@@ -153,9 +153,9 @@ export function effectiveMaxSpeed(config, school, state = 'cruise') {
 }
 
 /**
- * 这一群的能量罐有多大。随体型放大 —— 见 ecology.capacitySizeExponent。
- * 和 metabolicRate 成对：一个决定装多少，一个决定烧多快，
- * 两个指数的差决定体型对寿命的净影响。
+ * Energy capacity of this school, scaled by body size (ecology.capacitySizeExponent).
+ * Paired with metabolicRate: one sets how much is stored, the other how fast it burns;
+ * the difference between the two exponents sets the net effect of size on lifespan.
  */
 export function energyCapacityFor(config, school) {
   const base = Math.max(0, config.ecology.energyCapacity);
@@ -171,14 +171,12 @@ export function metabolicRate(config, school, bursting = false) {
     EPSILON,
     school.size ** ecology.basalSizeExponent
   );
-  // 【乘不是除】。Kleiber 说的是「单位体重」耗能随体型下降，而「绝对」耗能
-  // 是上升的 —— 大动物一天吃得比小动物多。原来这里用除法，等于宣称大鱼
-  // 每秒烧得更少，于是【体型大 → 更耐饿】，和三轴语义（体型大 → 耐力降）
-  // 正好相反：单形刚在输入侧收了体型的耐力税，代谢又在输出侧退了回去。
-  //
-  // 改成乘之后「体型大耐力降」在物理层面成立，不再只是单形里的记账。
-  // 代价是大鱼确实更容易饿死（size 2.25 时消耗是基准的 1.84 倍，
-  // 而原来是 0.54 倍 —— 3.4 倍的摆动），这是意料之中的方向。
+  // Multiply, not divide. Kleiber's law says energy use per unit body mass falls
+  // with size, but absolute energy use rises: a large animal eats more per day.
+  // Dividing would make large fish burn less per second and so starve more slowly,
+  // the opposite of "larger body, lower endurance". The cost is that large fish do
+  // starve sooner: at size 2.25 basal cost is 1.84x baseline (it would be 0.54x
+  // with division).
   const basal = ecology.basalRate * sizeScale * multiplier;
   if (!bursting) return basal;
   const burstScale = ecology.burstSizeScaled === false ? 1 : sizeScale;
@@ -219,10 +217,11 @@ export function relationForRatio(ratio, relations, previous = 'ignore') {
   if (!Number.isFinite(ratio) || ratio <= 0) return 'ignore';
   // Predation switched off: sizes still differ, but nobody hunts anybody.
   if (relations.enabled === false) return 'peer';
-  // 猎物体型窗口上界。生态学依据：捕食者只吃特定体型带内的猎物
-  // （鲸不追单只磷虾）。KMax<=0 或未设置 = 退回纯阈值。
-  // k × KMax = 大鱼体型/小鱼体型 时，"能吃"与"会被吃"两个区间完全重合，
-  // 玩家要么在食物链里（又吃又被吃），要么在外面（安全但没饭）。
+  // Upper bound of the prey size window: predators only take prey within a size
+  // band (a whale does not chase a single krill). KMax <= 0 or unset falls back to
+  // the plain threshold. When k x KMax equals the large/small size ratio, the
+  // "can eat" and "can be eaten" ranges coincide exactly, so a school is either
+  // inside the food chain (eats and is eaten) or outside it (safe but unfed).
   const kMax = relations.KMax > k ? relations.KMax : Infinity;
   const upper = kMax === Infinity ? Infinity : kMax + hysteresis;
   if (

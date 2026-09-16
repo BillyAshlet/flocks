@@ -34,91 +34,60 @@ const LOCOMOTION_LABEL = Object.freeze([
   'evade',
 ]);
 
-// ── 性状可读性：只影响外观，不参与任何判定 ──────────────────────────
-// 三角形控制器把权重映射成系数时中段很平（w≥1/3 时 m = 0.75+0.75w），
-// 拖到一半只有 ×1.1~1.2 —— 在 1.5 的基数上是 10% 的变化，肉眼分不出。
-// 下面两组常数把"玩家选了什么"放大到看得见，判定继续用真实数值。
-// 三个常数都可以设为关闭值，出问题直接回滚。
+// ── Trait legibility: appearance only, never read by any rule ──
+// The trait controller maps weights to multipliers with a flat middle, so a
+// half-way drag moves a trait by only about 10%, which the eye cannot see.
+// The constants below amplify the chosen traits visually; all rules keep
+// using the real values. Each can be set to its "off" value.
 
-// 体型：视觉尺寸 = 锚点 × (真实尺寸 / 锚点) ^ γ × 全局倍率
-//
-// 为什么是"抬地板 + 压指数"这个组合：
-//   浮游颗粒 pointSize = 0.03；鱼的视觉长度 = 0.046 × 视觉尺寸。
-//   玩家把体型让给速度/耐力时真实体型 0.75，旧参数(γ=1.8)算出来的
-//   视觉长度正好也是 0.030 —— 和浮游一模一样，鱼消失在食物里。
-//   但只抬地板不压指数会让另一端爆炸：要让最小的鱼达到浮游 3 倍，
-//   红鱼会涨到 0.65 m，而缸只有 6 m 宽。两件事必须一起做。
-//
-// γ<1 把两端都朝锚点收拢，最小的不消失、最大的不塞满缸；全局倍率
-// 再把整体抬起来。绝对尺寸变大后，同样百分比的变化反而更容易看见
-// （0.15 m 的鱼变化 20% 一眼可见，0.03 m 的看不出来）。
-//
-// 判定完全不受影响：捕食半径、谁吃谁、代谢、速度惩罚读的都是
-// school.size；这里只改 setMatrixAt 的缩放。γ=1 且全局=1 即关闭。
-// 结论：用线性（γ=1），靠【全局放大】而不是靠指数解决可见性。
-//   试过 γ=1.8（放大差距）会让最小的鱼掉到浮游大小；试过 γ=0.9
-//   （压缩两端）效果和线性几乎相同，却要多一个概念。线性还白拿三点：
-//   ① 视觉不撒谎，看起来两倍大就是真的两倍大，比例精确保留；
-//   ② "玩家拉满体型 == 大群"这个相等关系保住（指数会破坏它），
-//      而那正是叙事上的高光时刻；③ 只剩一个旋钮。
-//   可见性由绝对尺寸保证：0.18 m 的鱼变化 20% 一眼可见，
-//   0.03 m 的看不出来 —— 所以把基准做大本身就够了。
-const VISUAL_SIZE_EXPONENT = 1; // 1 = 线性。改成 ≠1 会启用非线性映射
-const VISUAL_SIZE_ANCHOR = 1.5; // 仅当 γ≠1 时作为映射锚点
-const VISUAL_SIZE_GLOBAL = 2.6; // ← 唯一要调的旋钮：全体视觉放大倍率
+// Body size: visual size = anchor * (size / anchor) ^ exponent * global.
+// Fish visual length is 0.046 * visual size and plankton points are 0.03, so
+// at exponent 1.8 a small fish (size 0.75) rendered exactly as large as
+// plankton and vanished into the food. Exponent 0.9 looked the same as linear
+// but added a concept. Linear is used because proportions stay exact (twice
+// as large looks twice as large), and visibility comes from the global scale:
+// a 20% change is obvious on a 0.18 m fish but invisible on a 0.03 m one.
+// Capture radius, predation, metabolism and speed all read school.size; only
+// the setMatrixAt scale changes here.
+const VISUAL_SIZE_EXPONENT = 1; // 1 = linear; any other value enables the power mapping
+const VISUAL_SIZE_ANCHOR = 1.5; // Only used when the exponent is not 1.
+const VISUAL_SIZE_GLOBAL = 2.6; // The one knob to tune: global visual scale.
 
-// 逐鱼群微调，在上面之后再乘。现在三群一致；要单独放大某群改这里。
+// Per-school multiplier applied after the global scale.
 const VISUAL_SIZE_BOOST = Object.freeze({
   gold: 1,
   blue: 1,
   red: 1,
 });
 
-// 耐力明度：亮度 ∝ 【还能活多久】= 当前能量 ÷ 每秒代谢。
-//
-// 为什么是这个量而不是代谢倍率本身：
-//   耐力 → 代谢是倒数（代谢 ∝ 1/耐力），代谢 → 存活时间又是倒数
-//   （时间 = 能量/代谢），两个倒数抵消，所以【存活时间与耐力系数
-//   严格线性】—— 实测耐力 0.5/0.75/1.0/1.25/1.5 对应 22.6/33.9/
-//   45.2/56.5/67.8 秒，比值恒为 45.18。拖一半就是一半亮度。
-//
-// 而直接映射代谢倍率是错的：拉满速度时代谢 ×1.01、均衡 ×1.00 —— 明度
-// 纹丝不动；拉满体型却 ×2.66 大亮，可体型已经用尺寸表示了。等于明度
-// 变成第二根体型条，而速度轴完全隐形。
-//
-// 这一个量还同时解决了"性状 vs 状态"：TUNING 时能量恒满，亮度显示的
-// 是【这套选择能撑多久】；RUNNING 时能量下降，亮度就成了【现在还能
-// 撑多久】。一个通道，两层含义，且都是玩家真正关心的那个数。
-// 强度设 0 即关闭染色。
-// 饥饿的身体语言：能量低时游速下降、队形涣散。evolution-model.js 里
-// 早就写好了 energyResponse()，但它只被未接入主链路的 boids.js 调用 ——
-// 也就是说现在的鱼从满能量到饿死行为完全不变，然后突然暴毙，饥饿只有
-// 结果没有过程。强度 0 = 关闭（保持原行为）；1 = 完全启用。
-//
-// 【2026-08-19 评估结论：保持 0，暂不启用】
-// 已完整接线并用 npm run test:balance 实测三档强度（基线为三关全 PASS、
-// 中性与错误路线通过率均为 0%）：
-//   1.00 → L1 中性选择通过率 0% → 100%（关卡完全失去鉴别力）
-//   0.50 → L1 中性 80%
-//   0.25 → L1 中性 40%，且"极端缩体与耐力"这条错误路线也能过 20%
-// 失败方向与直觉相反：饥饿反应对【所有】鱼生效，包括捕食者。饿了的
-// 捕食者追不上猎物，玩家白捡存活率，关卡整体反而变简单。0.25 档同时
-// 放行中性和错误路线，说明这不是难度平移，而是往混沌系统里注入扰动、
-// 把各种子结果重新洗牌 —— 不存在"轻一点就安全"的强度区间。
-// 若将来要启用：必须连带重新标定三关胜利阈值（35%/75%/50%），并先决定
-// 是否只对玩家鱼群生效（捕食者维持满速）。
-// ⚠️ 这条改的是行为不是外观，改动后必须跑 npm run test:balance 复核。
+// Stamina brightness: brightness follows survival time, i.e. current energy
+// divided by metabolic rate per second. Metabolism is inverse to stamina and
+// survival time is inverse to metabolism, so survival time is exactly linear
+// in the stamina multiplier (measured: stamina 0.5/0.75/1.0/1.25/1.5 gives
+// 22.6/33.9/45.2/56.5/67.8 s). Mapping the metabolic multiplier directly
+// would be wrong: maxing speed moves it only to x1.01, while maxing size
+// moves it to x2.66, so brightness would duplicate size and hide speed.
+// While energy is full, brightness shows how long a trait choice lasts;
+// once energy drains, it shows how long the fish has left. 0 strength = off.
+
+// Hunger response: low energy slows fish and loosens the formation.
+// Kept at 0 (off). Measured at strengths 1.0, 0.5 and 0.25, it made outcomes
+// easier rather than harder, because it also slows predators so they stop
+// catching prey. Even 0.25 reshuffled which trait choices survive, so there
+// is no safe low setting; it perturbs a chaotic system rather than shifting
+// difficulty. Enabling it changes behavior, not appearance: consider applying
+// it to prey only, and recheck survival outcomes afterwards.
 const HUNGER_RESPONSE_STRENGTH = 0;
-const HUNGER_TIRED_AT = 0.55; // 能量比低于此值开始变虚弱
-const HUNGER_EXHAUSTED_AT = 0.15; // 低于此值达到最虚弱
+const HUNGER_TIRED_AT = 0.55; // Energy ratio below which fish start to weaken.
+const HUNGER_EXHAUSTED_AT = 0.15; // Energy ratio at which weakness is maximal.
 const HUNGER_MIN_SPEED = 0.38;
 const HUNGER_MIN_ALIGNMENT = 0.35;
 const HUNGER_MIN_COHESION = 0.3;
 
 const STAMINA_TINT_STRENGTH = 0.45;
-const STAMINA_TINT_REFERENCE_SECONDS = 45; // 均衡选择的续航，作为亮度基准
-const STAMINA_TINT_MIN = 0.35; // 濒死时最暗
-const STAMINA_TINT_MAX = 1.45; // 满耐力时最亮，防止过曝
+const STAMINA_TINT_REFERENCE_SECONDS = 45; // Survival time of balanced traits; neutral brightness.
+const STAMINA_TINT_MIN = 0.35; // Darkest, near starvation.
+const STAMINA_TINT_MAX = 1.45; // Brightest; caps overexposure.
 
 function visualSizeOf(size, schoolId) {
   const boost = (VISUAL_SIZE_BOOST[schoolId] ?? 1) * VISUAL_SIZE_GLOBAL;
@@ -127,7 +96,7 @@ function visualSizeOf(size, schoolId) {
   return VISUAL_SIZE_ANCHOR * ratio ** VISUAL_SIZE_EXPONENT * boost;
 }
 
-// 能量比 → {速度, 对齐, 凝聚} 的衰减倍率。满能量时全为 1。
+// Energy ratio -> multipliers for speed, alignment and cohesion; null when unaffected.
 function hungerResponse(ratio) {
   if (HUNGER_RESPONSE_STRENGTH === 0) return null;
   const q = clamp(ratio, 0, 1);
@@ -143,7 +112,7 @@ function hungerResponse(ratio) {
   };
 }
 
-// 还能活多久 → 亮度倍率。撑得久 = 亮，快饿死 = 暗。
+// Survival time -> brightness multiplier.
 function staminaTintFactor(survivalSeconds) {
   if (STAMINA_TINT_STRENGTH === 0) return 1;
   if (!Number.isFinite(survivalSeconds)) return STAMINA_TINT_MAX;
@@ -170,10 +139,11 @@ function normalize3(x, y, z) {
   return [x / magnitude, y / magnitude, z / magnitude, magnitude];
 }
 
-// 原版 boids.js 的核心：每条规则先归一化成"期望速度"，减去当前速度，
-// 钳到 maxForce，之后才乘权重。实验版原来是原始量级直接加权求和 ——
-// cohesion ∝ 到群心距离、alignment ∝ 速度差、separation ∝ 1/d²，
-// 三者量纲不同，权重比值随密度和距离乱变。这是"不像原版"的根因。
+// Reynolds-style steering: each rule becomes a desired velocity at maxSpeed,
+// minus the current velocity, clamped to maxForce, and only then weighted.
+// Summing raw magnitudes instead (cohesion ~ distance, alignment ~ velocity
+// difference, separation ~ 1/d^2) mixes units, so the effective weight
+// ratios drift with density and distance.
 function steerToward(dx, dy, dz, vx, vy, vz, maxSpeed, maxForce, out) {
   const length = Math.hypot(dx, dy, dz);
   if (length <= EPSILON) {
@@ -275,53 +245,53 @@ export class ExperimentSimulation {
     this.schoolIds = new Uint16Array(this.count);
     this.alive = new Uint8Array(this.count);
     this.panic = new Float32Array(this.count);
-    // --- 恐慌传播（惊扰波）：直接感知强度、邻居恐慌、邻居逃逸方向 ---
+    // Panic propagation: direct threat level, neighbor panic, neighbor escape direction.
     this.threatLevel = new Float32Array(this.count);
     this.neighborPanic = new Float32Array(this.count);
     this.neighborEvade = new Float32Array(this.count * 3);
-    // 应急对齐通道：恐慌航向不进普通 alignment 平均
+    // Emergency alignment channel: panicked headings stay out of the normal alignment average.
     this.emergencyAlign = new Float32Array(this.count * 3);
     this.emergencyUrgency = new Float32Array(this.count);
-    // 目标锁定。选目标：最近优先，距离相差在 targetTieTolerance 以内算平局，
-    // 平局取最顺路。锁住之后只在三种情况下换：
-    //   ① 目标离开 burstRadius → 立刻放
-    //   ② giveUpSeconds 内没有追到新的最近距离 → 放弃，并排除这条鱼，
-    //      直到它离开范围一次
-    //   ③ 出现一条【明显】更近的（跳出平局带）→ 换过去
-    // 平局带同时是防抖：两条差不多远的鱼不会让它每帧来回换。
+    // Target lock. Pick the nearest prey; candidates within targetTieTolerance
+    // count as tied, and ties go to the one most in line with the heading.
+    // A lock is dropped only when the target leaves burstRadius, when no new
+    // closest distance is reached within giveUpSeconds (the target is then
+    // excluded until it leaves range once), or when a clearly nearer fish
+    // appears outside the tie band. The tie band also stops flip-flopping
+    // between two equally distant fish.
     this.lockedTargets = new Int32Array(this.count).fill(-1);
     this.excludedTargets = new Int32Array(this.count).fill(-1);
     this.chaseBestDistance2 = new Float32Array(this.count).fill(Infinity);
     this.chaseStall = new Float32Array(this.count);
-    // --- 脉冲/闩锁式恐慌（移植自 dev 分支 boids.js）---
-    // 连续跟踪不会产生"惊吓"，而且社会传播没有不应期会无限回响。
-    this.alarm = new Float32Array(this.count);       // 离散脉冲，指数衰减
-    this.heardSignal = new Float32Array(this.count); // 本帧收到的社会信号
-    this.panicHold = new Float32Array(this.count);   // 满恐慌保持计时
-    this.refractory = new Float32Array(this.count);  // 不应期
-    this.directLatch = new Uint8Array(this.count);   // 直接威胁闩锁（滞回）
-    // 侧倾：转弯时鱼体侧过来。不改行为，但决定"像不像鱼"。
+    // Pulse-and-latch panic. Continuous tracking never produces a startle, and
+    // social spread without a refractory period echoes forever.
+    this.alarm = new Float32Array(this.count);       // Discrete pulse, decays exponentially.
+    this.heardSignal = new Float32Array(this.count); // Social signal received this step.
+    this.panicHold = new Float32Array(this.count);   // Hold timer at full panic.
+    this.refractory = new Float32Array(this.count);  // Refractory timer.
+    this.directLatch = new Uint8Array(this.count);   // Direct-threat latch (hysteresis).
+    // Roll: the body banks into turns. Visual only.
     this.rollAngles = new Float32Array(this.count);
     this.prevHeadings = new Float32Array(this.count * 3);
     this.escapeDir = new Float32Array(this.count * 3);
     this.energy = new Float32Array(this.count);
-    // 每族一个能量共享池（进食所得的一部分汇入，逐帧平均分发）
+    // One shared energy pool per school: part of each meal flows in and is split evenly each step.
     this.energyPools = new Float64Array(config.schools.length);
-    // 尸体 = 鱼模型本身。1 = 浮尸（可见、灰色、上浮、可被吃），0 = 活着或已被吃掉。
-    // 【孤注一掷】的三个状态。armed = 门闩：用过一次要回到恢复线才能再用。
-    // 所以 armed=1 是正常，armed=0 且在计时内是「拼命」，armed=0 且计时结束
-    // 是「力竭」—— 三种状态两个字节，不用额外的枚举。
-    // 【炸开】的门闩：越过 panicScatterEnter 置 1，掉回 panicScatterExit
-    // 以下才清 0。单一阈值会在边界来回抖，看起来像抽搐。
+    // Scatter latch: set above panicScatterEnter, cleared only below
+    // panicScatterExit. A single threshold jitters at the boundary.
+    // Desperation states: armed is a latch that resets only after recovery.
+    // armed=1 is normal; armed=0 before desperationUntil is a desperate sprint;
+    // armed=0 after it is exhaustion.
+    // Corpse: 1 = floating body (visible, grey, rising, edible); 0 = alive or eaten.
     this.scattering = new Uint8Array(this.count);
     this.desperation = new Uint8Array(this.count);
     this.desperationArmed = new Uint8Array(this.count);
     this.desperationUntil = new Float32Array(this.count);
     this.debt = new Float32Array(this.count);
     this.corpse = new Uint8Array(this.count);
-    // 死后经过的秒数，驱动颜色渐变 / 翻身 / 上浮渐入
+    // Seconds since death; drives color fade, belly-up roll and rise.
     this.corpseAge = new Float32Array(this.count);
-    // 上一次写入的耐力明度倍率，用来跳过没有变化的 setColorAt。
+    // Last written brightness multiplier, to skip unchanged setColorAt calls.
     this.tintFactors = new Float32Array(this.count).fill(-1);
     this.corpseColor = new THREE.Color('#6b6f74');
     this.schoolColors = config.schools.map((sc) => new THREE.Color(sc.color));
@@ -440,8 +410,7 @@ export class ExperimentSimulation {
   }
 
   reset(seed = undefined) {
-    // 每局随机种子：不然初始位置、初速度、wander 相位全部相同，
-    // 而模拟本身是确定性的 —— 每局都会跑出一模一样的结果。
+    // The simulation is deterministic, so a fixed seed replays the same run.
     if (seed === undefined) {
       seed = this.config.runtime.randomizeSeed
         ? (Math.random() * 0xffffffff) >>> 0
@@ -464,7 +433,7 @@ export class ExperimentSimulation {
       captured: 0,
       starved: 0,
     }));
-    // 食物源。空间后端：颗粒有位置、局部枯竭、就地再生。
+    // Spatial food field: particles have positions, deplete locally and regrow in place.
     this.food = new SpatialPlanktonField(
       this.config,
       this.config.runtime.seed
@@ -486,13 +455,14 @@ export class ExperimentSimulation {
     this.directLatch.fill(0);
     this.rollAngles.fill(0);
     this.prevHeadings.fill(0);
-    // 初始能量必须有个体差异。原来同种族每条鱼起点完全相同，而代谢
-    // 也是确定的（basalRate/size^0.75），所以第一波必然在同一秒集体饿死。
+    // Initial energy needs per-fish jitter. Metabolism is deterministic
+    // (basalRate / size^0.75), so identical starting energy makes a whole
+    // school starve in the same second.
     {
       const jitter = Math.max(0, this.config.ecology.initialEnergyJitter ?? 0);
       const ratio = this.config.ecology.initialEnergyRatio;
       for (let index = 0; index < this.count; index += 1) {
-        // 能量罐随体型变，所以每条鱼的上限要按它自己的鱼群算。
+        // Capacity scales with body size, so use this fish's own school.
         const capacity = energyCapacityFor(
           this.config,
           this.config.schools[this.schoolIds[index]]
@@ -548,21 +518,21 @@ export class ExperimentSimulation {
         this.config.tank.depth / 2 - wall,
       ];
 
-      // --- 分群出生（fission-fusion）---
-      // 一个鱼种散成若干互不相邻的小群。合并与再分裂不需要额外逻辑：
-      // 只要小群内间距 < cohesionRadius、小群间距 > cohesionRadius，
-      // boids 自己就会维持小群、偶遇时合并、被冲散后重组。
+      // Pod spawning (fission-fusion): a school starts as several separate
+      // pods. Merging and splitting need no extra logic: with spacing inside
+      // a pod below cohesionRadius and between pods above it, boids keep
+      // pods apart, merge them on contact and regroup after scattering.
       let podCenters = null;
       let podRadius = 0;
       if (spawnMode === 'pods') {
         const desired = Math.max(1, Math.round(school.podCount ?? 1));
         const count = Math.max(1, range.end - range.start);
         const pods = Math.min(desired, count);
-        // 小群半径必须由【每群条数】推导，不能只看 cohesionRadius：
-        //   群内平均间距 = podRadius × (4π/3m)^(1/3)，要求它 ≈ k × separationRadius
-        //   → podRadius = k × sepR × (3m/4π)^(1/3)
-        // 太小则整群出生即互斥爆开；太大则相邻小群表面进入 cohesionRadius，
-        // 开局就并成一团（这是"看不出小群"的原因）。
+        // Pod radius must follow the fish count per pod, not cohesionRadius:
+        //   mean spacing = podRadius * (4*pi/(3m))^(1/3) ~ k * separationRadius
+        //   => podRadius = k * sepR * (3m/(4*pi))^(1/3)
+        // Too small and the pod explodes on spawn; too large and neighboring
+        // pods overlap cohesionRadius and merge immediately.
         const perPod = count / pods;
         podRadius =
           (this.config.perception.podSpacingFactor ?? 1.5) *
@@ -572,7 +542,7 @@ export class ExperimentSimulation {
         for (let p = 0; p < pods; p += 1) {
           let best = null;
           let bestScore = -Infinity;
-          // 采样若干候选，挑离已有小群最远的那个，避免开局就挤在一起
+          // Best of several candidates: farthest from existing pods.
           for (let attempt = 0; attempt < 12; attempt += 1) {
             const candidate = [
               this.rng.range(-half[0] + podRadius, half[0] - podRadius),
@@ -649,7 +619,7 @@ export class ExperimentSimulation {
         let direction;
         if (spawnMode === 'cluster') {
           const jitter = this.rng.unitVector();
-          // 散布太窄会让整群列队同向出发，一起撞墙。
+          // Too little spread sends the school off in formation into a wall.
           const spread = this.config.perception.spawnHeadingJitter ?? 0.6;
           direction = normalize3(
             heading[0] + jitter[0] * spread,
@@ -667,7 +637,7 @@ export class ExperimentSimulation {
           direction[2] * school.cruiseSpeed
         );
         this.wanderPhases[index] = this.rng.range(0, Math.PI * 2);
-        // 原来频率只有 index%13 共 13 档，整群会呈现可见的周期同步。
+        // Continuous random rates; a few discrete rates cause visible synchronized wander.
         this.wanderRates[index] = this.rng.range(0.55, 0.95);
       }
     }
@@ -694,13 +664,11 @@ export class ExperimentSimulation {
     if (mode !== 'live') {
       this.reset(config.runtime.seed);
     } else {
-      // live 改配置可能【翻转捕食关系】（教学关就是靠这个：拖一下滑块，
-      // 上一秒还被吃、下一秒变成吃）。捕食冷却是在出生时按当时的关系算的，
     }
     if (this.mesh) {
       this.mesh.material.opacity = config.visual.opacity;
       this.mesh.material.transparent = config.visual.opacity < 1;
-      // 基色只在这里重置；耐力明度由 updateMesh 每帧按实时能量叠加。
+      // Base colors reset here only; updateMesh applies stamina brightness every frame.
       for (let index = 0; index < this.count; index += 1) {
         this.mesh.setColorAt(
           index,
@@ -782,11 +750,10 @@ export class ExperimentSimulation {
       this.config.ecology?.enabled &&
       this.config.plankton.enabled;
     this.planktonMesh.visible = visible;
-    // 【点就是模型】。原来这里是按全局存量比例「显示前 N 个点」——
-    // 点的位置是建场时随机撒的、永不改变，所以上缸的鱼吃东西下缸的点也会
-    // 消失，而消失的是缓冲区里最靠前的那几个，和任何鱼的位置都无关。
-    // 那是一根画成星星点点的进度条，画面在断言一个模型里不存在的空间食物。
-    // 现在把还活着的颗粒【压实】写进缓冲区，画多少就是场里真的还剩多少。
+    // The points are the model: live particles are compacted into the buffer
+    // at their real positions, so what is drawn is exactly the food that
+    // remains. Showing the first N of a fixed random cloud in proportion to
+    // total stock would depict spatial food the model does not have.
     let visibleCount = 0;
     if (visible) {
       const array = this.planktonMesh.geometry.attributes.position.array;
@@ -923,9 +890,10 @@ export class ExperimentSimulation {
     const perception = this.config.perception;
     const relations = this.config.relations;
 
-    // --- 视锥：只门控 alignment / cohesion，separation 保持全向 ---
-    // 前向视锥打破配对对称性 → 方向信息必须逐层传播，而不是瞬间同步。
-    // 这是"像鱼群"而不是"像一坨粒子"的主要来源。
+    // Field of view gates alignment and cohesion only; separation stays
+    // omnidirectional. A forward cone breaks pair symmetry, so heading
+    // information has to propagate fish by fish instead of syncing instantly.
+    // This is the main thing that makes it read as a school, not a particle blob.
     let seeIJ = true;
     let seeJI = true;
     if (perception.fovDegrees < 360) {
@@ -947,7 +915,7 @@ export class ExperimentSimulation {
       seeJI = (-dx * hj[0] - dy * hj[1] - dz * hj[2]) * inverse >= cosHalf;
     }
 
-    // --- 应急对齐：恐慌航向走独立通道 ---
+    // Emergency alignment: panicked headings travel on a separate channel.
     const signalRadius = derived.alignmentRadius * relations.signalRadiusFactor;
     const signalRadius2 = signalRadius * signalRadius;
     const emergencyOn = relations.emergencyAlignment !== false;
@@ -989,13 +957,14 @@ export class ExperimentSimulation {
     if (distance2 <= derived.cohesionRadius ** 2) {
       this.sameNeighbors[i] += 1;
       this.sameNeighbors[j] += 1;
-      // 惊扰波：恐慌与逃逸方向沿邻居链传播（读的是上一帧的值）。
-      // 同样走视锥 —— 波因此有方向性，而不是向四面八方瞬间铺开。
+      // Startle wave: panic and escape direction spread along neighbor chains
+      // (reading last step's values). It also respects the field of view, so
+      // the wave is directional instead of spreading everywhere at once.
       const jo3 = j * 3;
       const io3 = i * 3;
       if (interactionsEnabled && seeIJ) {
-        // 社会信号传的是 alarm【脉冲】，不是 panic 值 —— 脉冲会衰减到零，
-        // 不会像连续值那样在鱼群里无限回响。
+        // The social signal carries the alarm pulse, not the panic value: the
+        // pulse decays to zero, while a continuous value would echo forever.
         const signal =
           this.alarm[j] * (1 - Math.sqrt(distance2) / derived.cohesionRadius);
         if (signal > this.heardSignal[i]) this.heardSignal[i] = signal;
@@ -1025,10 +994,11 @@ export class ExperimentSimulation {
           this.escapeDir[io3 + 2]
         );
       }
-      // cohesion 权重：'inverse' 时按 1/(d²+ε) 加权。
-      // 这是拓扑式交互的廉价近似（Ballerini 等人发现椋鸟只跟约 7 个最近邻
-      // 互动，与距离无关）。效果是每条鱼被【自己所在的小群】主导，
-      // 远处的另一个小群拉不动它 —— 小群才能维持，而不是一碰就并成一团。
+      // Cohesion weight: 'inverse' weights by 1/(d^2 + soft^2), a cheap
+      // approximation of topological interaction (Ballerini et al.: starlings
+      // track about 7 nearest neighbors regardless of distance). Each fish is
+      // dominated by its own pod, so a distant pod cannot pull it over and
+      // pods persist instead of merging on first contact.
       let cohW = 1;
       if (perception.cohesionFalloff === 'inverse') {
         const soft = derived.cohesionRadius * 0.15;
@@ -1087,7 +1057,8 @@ export class ExperimentSimulation {
       } else {
         const distance = Math.sqrt(distance2);
         const radius = derived.separationRadius;
-        // 原版默认 inverse：近距离斥力远强于线性，鱼群能压得很紧而不穿模
+        // Default is inverse: close-range repulsion is much stronger than
+        // linear, so schools pack tightly without interpenetrating.
         let scale;
         if (perception.separationFalloff === 'linear') {
           scale = (radius - distance) / (radius * distance);
@@ -1147,9 +1118,9 @@ export class ExperimentSimulation {
     if (relation !== 'pursuit') return;
     const actorDetection =
       this.derived.schools[actorSchool].detectionLength;
-    // 第一层：远距离朝猎物群质心巡航。独立捕食者版本用的是
-    // schoolSenseRadius 1.0，比 detectionLength 大 6 倍 —— 所以它会从很远
-    // 处平滑靠拢，而不是贴近了才猛窜。
+    // Long range: cruise toward the prey school's centroid. The sense radius
+    // is several times detectionLength, so predators close in smoothly from
+    // afar instead of darting only once they are near.
     const senseRadius =
       actorDetection * this.config.relations.schoolSenseFactor;
     if (distance2 <= senseRadius * senseRadius) {
@@ -1177,8 +1148,7 @@ export class ExperimentSimulation {
         speed[0] * dx * inverseDistance +
         speed[1] * dy * inverseDistance +
         speed[2] * dz * inverseDistance;
-      // 最近优先；相差在 targetTieTolerance 以内算平局，平局取最顺路。
-      // 放弃过的那条，在它离开范围之前不参选。
+      // A target given up on is not eligible again until it leaves range.
       if (
         target !== this.excludedTargets[actor] &&
         this._preferCandidate(
@@ -1200,17 +1170,17 @@ export class ExperimentSimulation {
       this.derived.schools[targetSchool].panicRadius;
     if (distance2 <= preyDetection * preyDetection) {
       this.threatCounts[target] += 1;
-      // 距离衰减：贴脸的捕食者和边缘的捕食者不该产生同样的恐慌。
-      // 没有这一条，小缸里所有鱼永远处于满恐慌。
+      // Distance falloff: without it, every fish in a small tank would sit
+      // at full panic permanently.
       const proximity = 1 - distance / Math.max(preyDetection, EPSILON);
       if (proximity > this.threatLevel[target]) {
         this.threatLevel[target] = proximity;
       }
-      // 逃向捕食者【预测位置】的反方向，而不是它此刻在哪
+      // Flee from the predator's predicted position, not its current one.
       const lead = this.config.relations.escapePredictionTime;
       const ao = actor * 3;
-      // dx 由 actor(捕食者) 指向 target(猎物)。捕食者前进 vel*lead 之后，
-      // 从它的未来位置指向猎物的向量 = dx − vel*lead。
+      // dx points from predator to prey, so the vector from the predator's
+      // position after vel * lead to the prey is dx - vel * lead.
       const px = dx - this.velocities[ao] * lead;
       const py = dy - this.velocities[ao + 1] * lead;
       const pz = dz - this.velocities[ao + 2] * lead;

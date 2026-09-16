@@ -500,19 +500,14 @@ test('low energy blocks burst sprint', () => {
 });
 
 
-// 【删掉了】「浮尸可以吃」那条测试。浮尸不再是食物：它上浮、被墙夹住、
-// carrionRadius 只有 0.08，实际几乎吃不到；而且死鱼喂活鱼是正反馈，
-// 一批死完剩下的反而更好活，和「一群一群死」正好相反。
-// 浮尸的视觉保留。见 ECOLOGY-DECISIONS.md §2。
-
 test('feeding recovery is amplified and shares 40 percent with living schoolmates', () => {
   const simulation = smallSimulation('steady', 20260725);
   const schoolRange = simulation.schoolRanges[0];
   const eater = schoolRange.start;
   const peer = eater + 1;
   simulation.config.ecology.forageEnergyMultiplier = 2.2;
-  // 【三档分配】之后这条测的仍然是「同族池」那一档：把附近那一档关掉，
-  // 断言和原来一样 —— 一餐的 40% 进族群池、逐帧按存活数平分。
+  // Tests only the school-pool tier: the local tier is switched off, so 40% of
+  // a meal goes to the school pool, split evenly among living members.
   simulation.config.ecology.energyShareLocal = 0;
   simulation.config.ecology.energyShareSchool = 0.4;
   simulation.config.ecology.planktonEnergy = 0.06;
@@ -530,11 +525,11 @@ test('feeding recovery is amplified and shares 40 percent with living schoolmate
   const consumedBefore = simulation.planktonConsumed;
   simulation._updateEcology(0.25);
 
-  // 【按实际取到的算】。颗粒是离散的，Holling-II 请求多少和真的取到多少
-  // 不一定相等 —— 原来这里假设「一定吃满」，那是在测一个已经不成立的前提。
-  // planktonConsumed 的增量就是这条鱼真实吃到的量。
+  // Use the amount actually taken, not the requested amount: food particles
+  // are discrete, so a Holling-II request is not always fully met. The
+  // planktonConsumed delta is what this fish really ate.
   const intake = simulation.planktonConsumed - consumedBefore;
-  assert.ok(intake > 0, '这条鱼应该确实吃到了东西');
+  assert.ok(intake > 0, 'the fish should actually have eaten something');
   const intakeFraction = intake / simulation.config.plankton.maxIntakePerFish;
   const gain = 0.06 * intakeFraction * 2.2;
   const sharedPerFish =
@@ -550,7 +545,7 @@ test('feeding recovery is amplified and shares 40 percent with living schoolmate
   );
 });
 
-test('吃空的颗粒不是免费食物，而且重生是按时间不按帧', () => {
+test('depleted particles give no free food and regrow by time, not frames', () => {
   const simulation = smallSimulation('steady', 20260726);
   const eater = simulation.schoolRanges[0].start;
   simulation.config.ecology.basalRate = 0;
@@ -561,8 +556,9 @@ test('吃空的颗粒不是免费食物，而且重生是按时间不按帧', ()
   simulation.energy[eater] = 0.1;
   simulation.rng.next = () => 0;
 
-  // 【离散次数】之后「种源线」那个概念没了：吃空就是 0 次，不需要底线。
-  // 要守的不变量换成两条 —— 空颗粒喂不了鱼，且重生按【时间】不按帧数。
+  // With discrete use counts, a depleted particle simply has 0 uses. Two
+  // invariants: an empty particle cannot feed a fish, and regrowth depends on
+  // elapsed time, not frame count.
   const field = simulation.food;
   field.uses.fill(0);
   field.spentAt.fill(0);
@@ -570,7 +566,7 @@ test('吃空的颗粒不是免费食物，而且重生是按时间不按帧', ()
   field._dirty = true;
   const consumedBefore = simulation.planktonConsumed;
 
-  // 远小于 regrowSeconds：跑再多帧也不该有东西可吃。
+  // Total time stays far below regrowSeconds, so no food should appear.
   for (let frame = 0; frame < 120; frame += 1) {
     simulation._updateEcology(1 / 600);
   }
@@ -578,8 +574,8 @@ test('吃空的颗粒不是免费食物，而且重生是按时间不按帧', ()
   assert.equal(simulation.planktonConsumed, consumedBefore);
   assert.equal(field.remainingUses, 0);
 
-  // 跨过重置时间之后整颗回来 —— 而且【帧数无关】：
-  // 同样的仿真时长，步长细十倍也应该得到同样的结果。
+  // Past the regrow time the particle returns, independent of step size: the
+  // same simulated duration with a 10x finer step must give the same result.
   const coarse = simulation.food;
   coarse.now = 0;
   for (let frame = 0; frame < 20; frame += 1) {
@@ -592,8 +588,8 @@ test('吃空的颗粒不是免费食物，而且重生是按时间不按帧', ()
   for (let frame = 0; frame < 200; frame += 1) {
     coarse.regrow(coarse.regrowSeconds / 100);
   }
-  assert.equal(coarse.remainingUses, afterCoarse, '重生必须与步长无关');
-  assert.ok(afterCoarse > 0, '跨过重置时间之后应该回来了');
+  assert.equal(coarse.remainingUses, afterCoarse, 'regrowth must not depend on step size');
+  assert.ok(afterCoarse > 0, 'food should return after the regrow time');
 });
 
 test('chamber isolation makes two sub-tanks invisible to each other', () => {

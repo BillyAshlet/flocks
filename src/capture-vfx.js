@@ -97,8 +97,8 @@ export class CaptureVfx {
     this.scene = scene;
     this.params = params;
     this.starvationParams = starvationParams || DEFAULT_STARVATION_VFX;
-    // 缸体半尺寸。尸体原来只钳制 y（floorY），x/z 完全不管 —— 带着初速度
-    // 就直接飘出侧壁了。null = 不限制（测试路径）。
+    // Tank half-extents. Clamping only y lets remains with initial velocity drift
+    // out through the side walls. null = unbounded (test path).
     this.bounds = null;
     this.particles = [];
     this.glows = [];
@@ -125,10 +125,10 @@ export class CaptureVfx {
     this._color = new THREE.Color();
 
     this.glowGeometry = new THREE.SphereGeometry(1, 20, 14);
-    // 颜色可配：辉光是普通混合的半透明球，靠"比背景亮"来读。深水关卡
-    // 里白色是对的，但教学关是近白底（#eef1f0），白球等于隐形 ——
-    // 那一层恰恰是"咬到了"这一瞬最主要的重音。白底下要换成深色，
-    // 让它读成一次暗脉冲而不是一次亮脉冲。
+    // Color comes from params.biteGlowColor. The glow is a normally blended translucent
+    // sphere that reads by being brighter than the background, so white works on dark
+    // water but is invisible on a near-white background (#eef1f0). There it should be
+    // dark, reading as a dark pulse; it is the main accent of the bite moment.
     this.glowMaterial = new THREE.MeshBasicMaterial({
       color: '#ffffff',
       transparent: true,
@@ -340,7 +340,7 @@ export class CaptureVfx {
     }
   }
 
-  /** 设置缸体半尺寸 [hx, hy, hz]，用于把碎屑限制在缸内。 */
+  /** Set tank half-extents [hx, hy, hz] used to keep debris inside the tank. */
   setBounds(half) {
     this.bounds =
       Array.isArray(half) && half.length === 3 && half.every(Number.isFinite)
@@ -348,7 +348,7 @@ export class CaptureVfx {
         : null;
   }
 
-  /** 把位置钳制进缸内（尸体不该穿出玻璃）。 */
+  /** Clamp a position inside the tank so remains never pass through the glass. */
   _clampToTank(vec) {
     if (!this.bounds) return vec;
     const margin = nonNegative(this.starvationParams?.wallMargin, 0.01);
@@ -361,8 +361,7 @@ export class CaptureVfx {
     return vec;
   }
 
-  /** 进食特效：一小簇向上飘散的浅色碎屑。 */
-  /** 粒子上限保护。 */
+  /** Cap the particle count. */
   _trim() {
     const cap = Math.max(32, Math.round(nonNegative(this.params?.maxParticles, 600)));
     if (this.particles.length > cap) {
@@ -370,6 +369,7 @@ export class CaptureVfx {
     }
   }
 
+  /** Feeding effect: a small cluster of debris drifting upward. */
   emitFeed(x, y, z) {
     const P = this.params || {};
     if (P.feedEnabled === false) return;

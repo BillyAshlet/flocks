@@ -1,30 +1,26 @@
 /**
- * 浮游场：**有位置的颗粒**，不是一池数。
+ * Plankton field: particles with positions, not a single pool number.
  *
- * ── 为什么不是全局标量 ──────────────────────────────────────────────
- * 原来 `planktonLevel` 是一个数，任何位置的鱼从同一个数里扣；那 700 个
- * 可视点是建场时随机撒一次、位置永不改变的，靠比例决定「显示前几个」——
- * 上缸的鱼吃东西下缸的点也会消失。**那是一根画成星星点点的进度条**，
- * 画面在断言一个模型里不存在的空间食物。
+ * Why not a global scalar: when food is one number, a fish anywhere draws from the same
+ * stock, and fish eating in one part of the tank make dots vanish elsewhere. The picture
+ * would claim spatial food that the model does not have.
  *
- * ── 为什么是实体而不是网格浓度场 ────────────────────────────────────
- * 1. **场太平滑，平滑就会退回阶跃。** 场里每条鱼都能拿到「一些」，拿多少
- *    由算术决定 —— 确定性 = 阶跃函数，正是耐力那一课的老毛病。颗粒是
- *    离散的：「旁边刚好有 / 没有」，这个 lumpiness 才是个体差异的来源，
- *    而个体差异累起来才是群体层面的存活率梯度。
- * 2. **觅食更简单也更像真的。** 场要爬浓度梯度（均匀区域里梯度会消失）；
- *    颗粒只要「附近有几颗」。高密度时自动变成滤食 —— 两种摄食模式
- *    （particulate / filter）是涌现的，不是编码的。
- * 3. **斑块能自己维持。** 初始就成斑块，被吃空的地方要等重生。
+ * Why particles rather than a concentration grid:
+ * 1. A field is too smooth. Every fish gets "some" food decided by arithmetic, which is
+ *    deterministic and collapses into a step function. Discrete particles are lumpy: food
+ *    happens to be nearby or not. That lumpiness is the source of individual variation,
+ *    and individual variation adds up to a survival gradient at the population level.
+ * 2. Foraging is simpler and more realistic. A field needs gradient climbing, and gradients
+ *    vanish in uniform regions; particles only need "how many are nearby". At high density
+ *    this becomes filter feeding, so particulate and filter feeding emerge rather than being
+ *    coded.
+ * 3. Patches maintain themselves: food starts patchy, and emptied areas wait for regrowth.
  *
- * ── 为什么是「次数」不是「质量」 ────────────────────────────────────
- * 一颗能被吃 N 口，用完消失，过 `regrowSeconds` 整颗回来。
- * 比连续质量 + logistic 好在两处：没有浮点累积；而且
- * **「一颗被吃空之后 20 秒回来」比「growthRate = 0.12」好想得多** ——
- * 逐关配置的重置时间就是字面的秒数。N = 1 就是「先到先得、一条鱼吃掉
- * 一颗」那个竞争最凶的版本。
- *
- * 见 ECOLOGY-DECISIONS.md §2。
+ * Why uses rather than mass: a particle can be bitten N times, disappears when spent, and
+ * returns whole after `regrowSeconds`. Compared with continuous mass plus logistic growth,
+ * there is no floating-point accumulation, and "an empty particle returns after 20 s" is
+ * easier to reason about than a growth rate. N = 1 is the most competitive case: first
+ * come, first served, one fish per particle.
  */
 import { SeededRng } from './experiment-model.js';
 
@@ -50,19 +46,13 @@ export class SpatialPlanktonField {
       0.1,
       config.plankton.regrowSeconds ?? 20
     );
-    // 【全场以「口」为单位计量】。
-    //
-    // 曾经用 perUse = capacity / (颗数 × 每颗次数) 把口换算成「存量」，
-    // 结果一口 = 0.167 而 maxIntakePerFish = 0.04 —— 一口比一次摄入上限还大
-    // 四倍，鱼永远吃不下哪怕一口。根子是两个独立来源的数没有共同尺度。
-    //
-    // 现在不换算了：availableAt 返回【口数】，maxIntakePerFish 是
-    // 【每次最多吃几口】，halfSaturation 也是口。全场食物 = 颗数 × 每颗口数，
-    // 全部可数、全部同一个单位。（plankton.capacity 因此不再参与计算，
-    // 它留在配置里只是历史；第六步一起清理。）
+    // All food is counted in bites. availableAt returns bites, maxIntakePerFish is the most
+    // bites per feeding, and halfSaturation is also in bites. Total food = particles x uses
+    // per particle. Converting bites into an abstract stock (capacity / (particles x uses))
+    // made one bite 0.167 while maxIntakePerFish was 0.04, so fish could never eat a single
+    // bite; the two numbers had no common scale. plankton.capacity is not used here.
 
-    // 【进食半径】够得着吃的距离；【感知半径】看得见食物的距离。
-    // 感知复用鱼的感知尺度：「能看见鱼多远就能看见食物多远」，不新增参数。
+    // reach: how close a particle must be to eat it. sense: how far away food can be seen.
     this.reach = Math.max(1e-4, config.plankton.forageRadius ?? 0.12);
     this.sense = Math.max(this.reach, config.plankton.senseRadius ?? 0.6);
 
@@ -71,12 +61,13 @@ export class SpatialPlanktonField {
   }
 
   /**
-   * 定长网格，**不是 Map + 字符串键**。缸是有界的、格数固定，直接用扁平
-   * 数组下标 —— 现有的 SpatialHash3D 每次查询要拼 27 个字符串，679 条鱼时
-   * 每秒约 220 万次分配（见 ECOLOGY-DECISIONS.md §7）。不重蹈那个覆辙。
+   * Fixed-size grid indexed by flat array offsets, not a Map with string keys. The tank is
+   * bounded, so the cell count is fixed; string keys cost 27 string builds per query,
+   * about 2.2 million allocations per second at 679 fish.
    *
-   * 格边长取【感知半径】而不是进食半径：这样找食扫 3×3×3 格就够，
-   * 吃则扫同样 27 格再按较小的进食半径过滤 —— 一个网格、一种扫法、两个半径。
+   * Cell size is the sensing radius, not the eating reach, so foraging needs only the 3x3x3
+   * block; eating scans the same 27 cells and filters by the smaller reach. One grid, one
+   * scan, two radii.
    */
   _buildGrid() {
     const tank = this.config.tank;
@@ -94,7 +85,7 @@ export class SpatialPlanktonField {
     this._dirty = true;
   }
 
-  /** 初始分布【成斑块，不均匀撒】。均匀分布会让「游过去找食」失去意义。 */
+  /** Initial distribution is patchy, not uniform. Uniform food would make swimming toward food pointless. */
   reset() {
     const margin = this.config.tank.wallMargin;
     const half = [
@@ -102,8 +93,8 @@ export class SpatialPlanktonField {
       Math.max(0, this.config.tank.height / 2 - margin),
       Math.max(0, this.config.tank.depth / 2 - margin),
     ];
-    // 斑块半径取进食半径的三倍：一片云要装得下一小群鱼，
-    // 「一群一起吃饱 / 一起错过」才成立。
+    // Patch radius is three times the eating reach so one cloud can hold a small group,
+    // letting a school feed together or miss together.
     const spread = this.reach * 3;
     const patchSize = Math.max(4, Math.round(this.count / 24));
     let cx = 0;
@@ -132,12 +123,12 @@ export class SpatialPlanktonField {
     return sum;
   }
 
-  /** 全场食物总量，单位是【口】。 */
+  /** Total food in the tank, in bites. */
   get capacity() {
     return this.count * this.usesPerParticle;
   }
 
-  /** 过渡用：外部还在读写「浮游总量」这个概念。单位同样是口。 */
+  /** Total remaining food in bites, kept for callers that read or set a tank-wide plankton level. */
   get level() {
     return this.remainingUses;
   }
@@ -165,11 +156,11 @@ export class SpatialPlanktonField {
   }
 
   /**
-   * Holling-II 的半饱和常数，**单位是口**。
+   * Holling type II half-saturation constant, in bites.
    *
-   * 参照量取「食物铺满整缸时，一条鱼够得着的那几口」—— 于是
-   * halfSaturationFraction 的含义不变（相对于一份满食的多少算半饱和），
-   * 只是参照系从整缸换成了一条鱼的可及范围，单位从抽象存量换成了口。
+   * The reference amount is the bites one fish can reach when food fills the whole tank,
+   * so halfSaturationFraction is a fraction of one fish's full local share rather than of
+   * the tank-wide total.
    */
   get halfSaturation() {
     const tank = this.config.tank;
@@ -185,7 +176,7 @@ export class SpatialPlanktonField {
     );
   }
 
-  /** 被吃空的颗粒到点就整颗回来。**不是**逐渐长回来 —— 就是回来。 */
+  /** A depleted particle comes back whole once its timer expires; it does not grow back gradually. */
   regrow(dt) {
     if (!this.config.plankton.enabled) return;
     this.now += dt;
@@ -199,7 +190,7 @@ export class SpatialPlanktonField {
     }
   }
 
-  /** 这一带够得着吃的【口数】。**局部**，不是全场。 */
+  /** Bites within eating reach at this point. Local, not tank-wide. */
   availableAt(x, y, z) {
     let sum = 0;
     this._forEachNear(x, y, z, this.reach, (p) => {
@@ -209,12 +200,13 @@ export class SpatialPlanktonField {
   }
 
   /**
-   * 找食用的方向：感知范围内所有颗粒的加权重心。
+   * Foraging direction: the weighted centroid of all particles within sensing range.
    *
-   * 【不是「朝最近那一颗」】—— 只有一颗时鱼会死盯着它抖。
-   * 权重 = 剩余次数 / 距离（**1/d 不是 1/d²**：平方衰减会让鱼死盯最近那颗，
-   * 又回到抖动；1/d 保留「朝一片密的地方去」，同时近的确实更有分量）。
-   * 范围内一颗都没有就返回 null —— 鱼不知道往哪走，不假装它有信息。
+   * Not "toward the nearest particle": with a single target the fish locks on and jitters.
+   * Weight = remaining uses / distance. 1/d rather than 1/d^2, because squared falloff
+   * also makes the fish lock onto the nearest particle; 1/d still steers toward dense
+   * patches while giving closer particles more pull.
+   * Returns null when nothing is in range, so the fish does not act on information it lacks.
    */
   directionAt(x, y, z) {
     let dx = 0;
@@ -235,14 +227,14 @@ export class SpatialPlanktonField {
     return [dx / total, dy / total, dz / total];
   }
 
-  /** 从这一带取走，**近的先吃**。返回实际取到的量。 */
+  /** Take bites from this neighbourhood, nearest particles first. Returns the amount actually taken. */
   take(x, y, z, amount) {
     if (!(amount > 0)) return 0;
     const near = [];
     this._forEachNear(x, y, z, this.reach, (p, d2) => near.push([d2, p]));
     if (!near.length) return 0;
     near.sort((a, b) => a[0] - b[0]);
-    // 单位是口，所以只能整口地取。请求 2.7 口就取 2 口。
+    // Units are bites, so only whole bites can be taken: a request for 2.7 takes 2.
     let left = Math.floor(amount);
     let taken = 0;
     for (const [, p] of near) {
@@ -258,7 +250,7 @@ export class SpatialPlanktonField {
     return taken;
   }
 
-  /** 计数排序式重建：两趟 O(n)，零分配。 */
+  /** Counting-sort rebuild: two O(n) passes, no allocation. */
   _reindex() {
     this._counts.fill(0);
     for (let i = 0; i < this.count; i += 1) {
@@ -306,7 +298,7 @@ export class SpatialPlanktonField {
     return (iz * this.dim[1] + iy) * this.dim[0] + ix;
   }
 
-  /** 扫 3×3×3 格，对半径内还有次数的每颗调用 cb(index, 距离平方)。 */
+  /** Scan the 3x3x3 block of cells and call cb(index, squaredDistance) for each particle with uses left within radius. */
   _forEachNear(x, y, z, radius, cb) {
     if (this._dirty) this._reindex();
     const r2 = radius * radius;

@@ -111,13 +111,11 @@ export function createScene(wrapper, getRotation = () => 0) {
     }
   }
 
-  // 分缸：教学关 T2 需要【两个看得出是两个】的缸。
-  //
-  // 仿真那边早就是隔离的（school.bounds 硬钳制 + school.chamber 把跨隔间
-  // 关系降为 ignore），所以这里只是视觉 —— 但只画一条隔板不行：那读起来
-  // 是"一个缸被莫名其妙分成两半"，不是"两个缸"。真正分开画两个盒子、
-  // 中间留空，才是玩家一眼能读对的东西。
-  // null = 整缸一个盒子（所有非教学场景的现有行为）。
+  // Split tank. The simulation already isolates chambers (school.bounds clamps
+  // positions and school.chamber turns cross-chamber relations into ignore), so
+  // this is visual only. A single divider reads as one tank cut in half, not as
+  // two tanks; drawing two separate boxes with a gap between them reads correctly.
+  // null = one box for the whole tank.
   let chamberBoxes = null;
   function setTankChambers(chambers) {
     const next = Array.isArray(chambers) && chambers.length ? chambers : null;

@@ -25,8 +25,9 @@ test('default aquarium is doubled and dynamic radii follow its density', () => {
   const derived = deriveExperiment(config);
   assert.ok(Math.abs(derived.schools[0].neighborRadius - 0.628) < 0.002);
   assert.ok(Math.abs(derived.schools[1].neighborRadius - 0.791) < 0.002);
-  // 大群改为 count 80 / targetNeighbors 5：原来 n=2 算出的 cohesionRadius
-  // (0.853) 小于全缸随机出生时的平均间距 (1.090)，它从第一帧就感知不到同伴。
+  // The large school uses count 80 / targetNeighbors 5. With n=2 its
+  // cohesionRadius (0.853) was below the mean spacing at random spawn (1.090),
+  // so it could not sense any schoolmate from the first frame.
   assert.ok(Math.abs(derived.schools[2].neighborRadius - 0.918) < 0.002);
   // detectionLengthFactor is aligned to classic boids (~0.511 of neighbor radius).
   assert.ok(Math.abs(derived.schools[0].detectionLength - 0.3208) < 0.002);
@@ -79,11 +80,13 @@ test('main project derives predator and prey roles from live body size', () => {
   const [small, medium, large] = config.schools;
   assert.equal(relationBetween(medium, small, config.relations), 'pursuit');
   assert.equal(relationBetween(large, medium, config.relations), 'pursuit');
-  // KMax=1.667 引入后：大/小 = 2.25 超出猎物体型窗口 → 互相忽略。
-  // 这正是三层食物链（小←中←大）成立的条件；没有上界时大群会直接
-  // 吃小群，中群被绕过。见 tools/ecosystem_search.py
+  // With KMax = 1.667, large/small = 2.25 is outside the prey size window, so
+  // the two ignore each other. This keeps the three-level food chain
+  // (small <- medium <- large); without the upper bound the large school eats
+  // the small one directly and the medium school is bypassed.
   assert.equal(relationBetween(large, small, config.relations), 'ignore');
-  // 关系是对称的：大群吃不到小群，小群自然也不怕它。
+  // Symmetric: the large school cannot prey on the small one, so the small
+  // one does not flee it.
   assert.equal(relationBetween(small, large, config.relations), 'ignore');
   assert.equal(relationBetween(small, small, config.relations), 'peer');
 
@@ -132,13 +135,11 @@ test('ecology helpers implement logistic food, size-scaled drain and terminal ou
   const config = createDefaultConfig();
   const smallRate = metabolicRate(config, config.schools[0]);
   const largeRate = metabolicRate(config, config.schools[2]);
-  // 【方向是刻意翻转过的】。原来断言 largeRate < smallRate（大鱼更省），
-  // 依据是 Kleiber —— 但 Kleiber 说的是「单位体重」耗能下降，「绝对」耗能
-  // 是上升的。按绝对耗能用除法，等于「体型大 → 更耐饿」，和三轴语义
-  // （体型大 → 耐力降）正好相反：单形在输入侧收了体型的耐力税，代谢又在
-  // 输出侧退了回去。改成乘之后这条耦合才是自洽的。
-  // 见 ECOLOGY-DECISIONS.md §1。
-  assert.ok(largeRate > smallRate, '体型越大，绝对代谢越高');
+  // Direction is deliberate: larger fish burn more. Kleiber's law lowers
+  // energy use per unit mass, but absolute use still rises with size.
+  // Dividing by size would make large fish more starvation-resistant, which
+  // contradicts the trait model (larger body -> lower stamina).
+  assert.ok(largeRate > smallRate, 'larger body size means higher absolute metabolism');
   assert.deepEqual(ecologyOutcome([3, 0, 0]), {
     state: 'winner',
     winnerIndex: 0,
