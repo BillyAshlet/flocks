@@ -73,7 +73,7 @@ export const DEFAULT_EXPERIMENT_CONFIG = Object.freeze({
     school({
       id: 'gold',
       name: 'Gold',
-      color: '#e5a441',
+      color: '#d8a03c',
       count: 400,
       size: 1,
       targetNeighbors: 8,
@@ -83,7 +83,7 @@ export const DEFAULT_EXPERIMENT_CONFIG = Object.freeze({
     school({
       id: 'blue',
       name: 'Blue',
-      color: '#4f9fcf',
+      color: '#5b90c4',
       count: 200,
       size: 1.5,
       targetNeighbors: 8,
@@ -93,7 +93,7 @@ export const DEFAULT_EXPERIMENT_CONFIG = Object.freeze({
     school({
       id: 'red',
       name: 'Red',
-      color: '#c95252',
+      color: '#bc4b3f',
       // The large school needs enough members. With too few, its cohesion radius
       // never reaches the average spacing and it cannot find its own kind.
       count: 80,
