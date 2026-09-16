@@ -1,0 +1,20 @@
+{
+  "name": "flocks",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host",
+    "build": "vite build",
+    "preview": "vite preview --host",
+    "test": "node --test",
+    "fingerprint": "node tools/fingerprint.mjs"
+  },
+  "dependencies": {
+    "three": "0.178.0",
+    "tweakpane": "4.0.5"
+  },
+  "devDependencies": {
+    "vite": "7.3.6"
+  }
+}

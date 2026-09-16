@@ -1,0 +1,626 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <title>flocks</title>
+            <style>
+      :root {
+        color-scheme: light;
+        --lab-bg: #f4efe6;
+        --lab-panel: #f7f2ea;
+        --lab-ink: #4d6477;
+        --lab-muted: #6d8497;
+        --lab-line: #c8d8e6;
+        --lab-alert: #9d514b;
+        font-family:
+          "SFMono-Regular", "Cascadia Code", "Roboto Mono", ui-monospace,
+          monospace;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: var(--lab-bg);
+        touch-action: none;
+      }
+      /* Everything lives inside #app so presentation rotation moves the
+         whole UI as one unit. scene.js owns its size and transform. */
+      #app {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        transform-origin: top left;
+      }
+      #app::after {
+        position: absolute;
+        inset: 0;
+        border: 1px solid #c8d8e6;
+        content: "";
+        pointer-events: none;
+      }
+      canvas {
+        display: block;
+      }
+      #lab-mark {
+        position: absolute;
+        top: max(14px, env(safe-area-inset-top));
+        left: max(16px, env(safe-area-inset-left));
+        z-index: 2;
+        color: var(--lab-ink);
+        background: var(--lab-bg);
+        padding: 8px 10px;
+        font-size: 11px;
+        font-weight: 650;
+        letter-spacing: 0.16em;
+        line-height: 1.55;
+        pointer-events: none;
+        text-transform: uppercase;
+      }
+      #lab-mark b,
+      #lab-mark span {
+        display: block;
+      }
+      #lab-mark b {
+        font-size: 11px;
+        font-weight: 650;
+      }
+      #lab-mark span {
+        color: #6d8497;
+        font-size: 9px;
+        font-weight: 500;
+        letter-spacing: 0.12em;
+      }
+      #lab-mark {
+        margin: 0;
+      }
+      /* 重置按钮：贴在 lab-mark 下方。只有开发者模式显示 —— 游客壳里
+         不该出现一个能把场景清空的按钮。 */
+      #lab-reset {
+        position: absolute;
+        top: calc(max(14px, env(safe-area-inset-top)) + 46px);
+        left: max(16px, env(safe-area-inset-left));
+        z-index: 3;
+        padding: 6px 10px;
+        border: 1px solid #b9cbd8;
+        background: var(--lab-bg);
+        color: #4d6477;
+        font: inherit;
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        cursor: pointer;
+      }
+      #lab-reset:hover {
+        border-color: #71889a;
+        color: #22323f;
+      }
+      #lab-reset[hidden] {
+        display: none;
+      }
+
+      #info-rail {
+        position: absolute;
+        right: max(10px, env(safe-area-inset-right));
+        bottom: max(10px, env(safe-area-inset-bottom));
+        z-index: 4;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        width: min(220px, calc(100% - 20px));
+        pointer-events: none;
+      }
+      .info-card {
+        color: #4d6477;
+        background: rgba(247, 242, 234, 0.94);
+        border: 1px solid #c8d8e6;
+        padding: 8px 10px;
+        font-family: inherit;
+        font-size: 10px;
+        line-height: 1.55;
+        letter-spacing: 0.04em;
+        white-space: pre;
+      }
+      .info-card .hud-title {
+        display: block;
+        color: #6d8497;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        margin-bottom: 4px;
+      }
+      .info-card .hud-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        white-space: nowrap;
+      }
+      .info-card .hud-label {
+        color: #6d8497;
+      }
+      .info-card .hud-value {
+        color: #4d6477;
+        font-variant-numeric: tabular-nums;
+      }
+      #panel-holder {
+        position: absolute;
+        top: max(10px, env(safe-area-inset-top));
+        right: max(10px, env(safe-area-inset-right));
+        width: min(330px, calc(100% - 20px));
+        z-index: 5;
+        /* Panel grew past the viewport: native scroll on the holder.
+           touch-action must override the body's `none` or mobile
+           touch-scroll dies; pan-y still lets sliders capture drags. */
+        max-height: calc(100% - 20px);
+        padding-bottom: 210px;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        touch-action: pan-y;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: thin;
+      }
+      #panel-holder > .tp-dfwv,
+      #panel-holder > .tp-rotv {
+        position: relative;
+        top: auto;
+        right: auto;
+        width: 100%;
+        --tp-base-background-color: #f7f2ea;
+        --tp-base-border-radius: 0;
+        --tp-base-font-family:
+          "SFMono-Regular", "Cascadia Code", "Roboto Mono", ui-monospace,
+          monospace;
+        --tp-base-shadow-color: transparent;
+        --tp-button-background-color: #e7f1f8;
+        --tp-button-background-color-active: #d3e4f1;
+        --tp-button-background-color-focus: #dceaf4;
+        --tp-button-background-color-hover: #e1edf6;
+        --tp-button-foreground-color: #4d6477;
+        --tp-container-background-color: #efe8dc;
+        --tp-container-background-color-active: #e4dccf;
+        --tp-container-background-color-focus: #e9e1d4;
+        --tp-container-background-color-hover: #ebe3d7;
+        --tp-container-foreground-color: #4d6477;
+        --tp-groove-foreground-color: #c8d8e6;
+        --tp-input-background-color: #fbf8f2;
+        --tp-input-background-color-active: #e7f1f8;
+        --tp-input-background-color-focus: #edf5fa;
+        --tp-input-background-color-hover: #f3f8fc;
+        --tp-input-foreground-color: #4d6477;
+        --tp-label-foreground-color: #5d7588;
+        --tp-monitor-background-color: #fbf8f2;
+        --tp-monitor-foreground-color: #4d6477;
+      }
+      #project-switcher {
+        margin-bottom: 8px;
+        border: 1px solid #aec4d3;
+        background:
+          linear-gradient(135deg, rgba(231, 241, 248, 0.96), rgba(247, 242, 234, 0.98));
+        color: var(--lab-ink);
+      }
+      #project-switcher header {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 10px 10px 7px;
+        border-bottom: 1px solid rgba(174, 196, 211, 0.7);
+      }
+      #project-switcher header span {
+        color: var(--lab-muted);
+        font-size: 8px;
+        letter-spacing: 0.13em;
+      }
+      #project-switcher header strong {
+        font-size: 12px;
+        letter-spacing: 0.04em;
+      }
+      .project-tabs {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 1px;
+        background: #c8d8e6;
+      }
+      .project-tabs button {
+        min-height: 39px;
+        border: 0;
+        background: #f7f2ea;
+        color: #6d8497;
+        padding: 5px 4px;
+        font: 9px/1.3 inherit;
+        cursor: pointer;
+      }
+      .project-tabs button[aria-selected="true"] {
+        background: #dfeef7;
+        color: #334f63;
+        box-shadow: inset 0 -2px #527e9b;
+      }
+      #project-switcher p {
+        margin: 0;
+        padding: 8px 10px 10px;
+        color: #637b8d;
+        font-size: 9px;
+        line-height: 1.55;
+      }
+      .param-btn {
+        appearance: none;
+        border: 0;
+        padding: 0;
+        color: inherit;
+        background: transparent;
+        font: inherit;
+        line-height: 1;
+        cursor: pointer;
+        opacity: 0.62;
+        margin-left: 5px;
+        user-select: none;
+      }
+      .param-btn:hover,
+      .param-btn:focus-visible {
+        opacity: 1;
+      }
+      #enable-tilt {
+        position: absolute;
+        left: 50%;
+        bottom: 18%;
+        transform: translateX(-50%);
+        padding: 14px 28px;
+        font-family: inherit;
+        font-size: 12px;
+        line-height: 1;
+        letter-spacing: 0.12em;
+        color: #4d6477;
+        background: #f4efe6;
+        border: 1px solid #c8d8e6;
+        border-radius: 0;
+        -webkit-tap-highlight-color: transparent;
+      }
+      #startup-status {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        z-index: 20;
+        transform: translate(-50%, -50%);
+        border: 1px solid #aec2d1;
+        background: rgba(247, 242, 234, 0.96);
+        color: #4d6477;
+        padding: 12px 18px;
+        font-size: 11px;
+        letter-spacing: 0.08em;
+        pointer-events: none;
+      }
+      #startup-status[data-state="error"] {
+        color: #a13c37;
+        border-color: #d49a94;
+      }
+      #experiment-dashboard {
+        position: absolute;
+        left: max(12px, env(safe-area-inset-left));
+        bottom: max(12px, env(safe-area-inset-bottom));
+        z-index: 4;
+        width: min(360px, calc(100% - 24px));
+        color: #4d6477;
+        background: rgba(247, 242, 234, 0.94);
+        border: 1px solid #c8d8e6;
+        pointer-events: none;
+      }
+      #experiment-dashboard header {
+        display: flex;
+        justify-content: space-between;
+        padding: 7px 9px 3px;
+        font-size: 9px;
+        letter-spacing: 0.12em;
+      }
+      #experiment-dashboard header strong {
+        color: #9d514b;
+      }
+      #experiment-dashboard[data-project="ecology"] {
+        border-color: #a8bb82;
+        box-shadow: inset 3px 0 #91b957;
+      }
+      #experiment-dashboard[data-project="ecology"] header strong {
+        color: #627d31;
+      }
+      #experiment-dashboard canvas {
+        width: 100%;
+        height: 120px;
+      }
+      #experiment-dashboard canvas[hidden] {
+        display: none;
+      }
+      #experiment-metrics {
+        margin: 0;
+        padding: 4px 9px 9px;
+        max-height: 160px;
+        overflow: hidden;
+        font: 9px/1.45 inherit;
+        white-space: pre-wrap;
+      }
+      #fish-inspector {
+        position: absolute;
+        left: max(12px, env(safe-area-inset-left));
+        bottom: max(12px, env(safe-area-inset-bottom));
+        z-index: 8;
+        width: min(330px, calc(100% - 24px));
+        border: 1px solid #9eb8ca;
+        background: transparent;
+        color: #4d6477;
+        font-size: 10px;
+        line-height: 1.4;
+        box-shadow:
+          0 14px 38px rgba(59, 78, 91, 0.16),
+          inset 3px 0 #7197ad;
+        transition:
+          opacity 180ms ease,
+          transform 220ms ease;
+      }
+      #fish-inspector[hidden] {
+        display: none;
+      }
+      #fish-inspector header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        height: 30px;
+        padding: 0 9px 0 11px;
+        border-bottom: 1px solid #afc4d1;
+        background:
+          repeating-linear-gradient(
+            135deg,
+            rgba(113, 151, 173, 0.08) 0,
+            rgba(113, 151, 173, 0.08) 1px,
+            transparent 1px,
+            transparent 5px
+          ),
+          #f7f2ea;
+      }
+      #fish-inspector .fish-inspector-index {
+        color: #7890a2;
+        font-size: 8px;
+        letter-spacing: 0.14em;
+      }
+      #fish-inspector-close {
+        width: 25px;
+        height: 25px;
+        border: 0;
+        background: transparent;
+        color: #6d8497;
+        font: 17px/1 inherit;
+        cursor: pointer;
+      }
+      #fish-preview-viewport {
+        position: relative;
+        height: 154px;
+        border-bottom: 1px solid #afc4d1;
+        background: transparent;
+        pointer-events: none;
+        overflow: hidden;
+      }
+      #fish-preview-viewport::after {
+        position: absolute;
+        inset: 8px;
+        border:
+          1px solid rgba(247, 242, 234, 0.65);
+        content: "";
+        box-shadow:
+          12px 0 0 -11px rgba(77, 100, 119, 0.55),
+          -12px 0 0 -11px rgba(77, 100, 119, 0.55);
+      }
+      #fish-preview-viewport > span {
+        position: absolute;
+        right: 9px;
+        top: 8px;
+        z-index: 1;
+        padding: 3px 5px;
+        color: #f7f2ea;
+        background: rgba(51, 79, 99, 0.66);
+        font-size: 7px;
+        letter-spacing: 0.12em;
+      }
+      .fish-inspector-copy {
+        display: grid;
+        gap: 2px;
+        padding: 9px 11px 7px;
+        background: rgba(247, 242, 234, 0.96);
+      }
+      .fish-inspector-copy strong {
+        color: #334f63;
+        font-size: 12px;
+        letter-spacing: 0.03em;
+      }
+      .fish-inspector-copy span {
+        color: #71889a;
+        font-size: 9px;
+      }
+      .fish-inspector-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1px;
+        border-top: 1px solid #afc4d1;
+        background: #afc4d1;
+      }
+      .fish-inspector-actions button {
+        min-height: 40px;
+        border: 0;
+        background: #e7f1f8;
+        color: #4d6477;
+        padding: 7px;
+        font: 9px/1.35 inherit;
+        cursor: pointer;
+      }
+      .fish-inspector-actions button:first-child {
+        background: #d9ebf6;
+        color: #334f63;
+        font-weight: 650;
+      }
+      .fish-inspector-actions button:hover {
+        background: #edf5fa;
+      }
+      #fish-view-hud {
+        position: absolute;
+        left: max(14px, env(safe-area-inset-left));
+        top: max(14px, env(safe-area-inset-top));
+        z-index: 9;
+        display: grid;
+        gap: 2px;
+        min-width: 180px;
+        border-left: 3px solid #7197ad;
+        padding: 8px 10px;
+        color: #4d6477;
+        background: rgba(247, 242, 234, 0.86);
+        pointer-events: none;
+      }
+      #fish-view-hud[hidden] {
+        display: none;
+      }
+      #fish-view-hud span {
+        color: #7890a2;
+        font-size: 8px;
+        letter-spacing: 0.13em;
+      }
+      #fish-view-hud strong {
+        font-size: 12px;
+      }
+      #fish-view-hud kbd {
+        margin-top: 3px;
+        color: #9d514b;
+        font: 8px/1.4 inherit;
+        letter-spacing: 0.1em;
+      }
+      #time-shortcut-hud {
+        position: absolute;
+        left: 50%;
+        top: max(12px, env(safe-area-inset-top));
+        z-index: 7;
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        transform: translateX(-50%);
+        border: 1px solid rgba(174, 196, 211, 0.9);
+        padding: 5px 8px 5px 5px;
+        color: #71889a;
+        background: rgba(247, 242, 234, 0.9);
+        font-size: 7px;
+        letter-spacing: 0.08em;
+        pointer-events: none;
+      }
+      #time-shortcut-hud strong {
+        min-width: 45px;
+        border: 1px solid #b9cbd8;
+        padding: 3px 5px;
+        color: #334f63;
+        background: #e7f1f8;
+        font-size: 9px;
+        text-align: center;
+      }
+      #time-shortcut-hud[data-paused="true"] strong {
+        border-color: #cfa9a5;
+        color: #9d514b;
+        background: #f3e5e2;
+      }
+      #app[data-selected-fish] #experiment-dashboard {
+        opacity: 0;
+        transform: translateY(calc(100% + 18px));
+      }
+      #experiment-dashboard {
+        transition:
+          opacity 180ms ease,
+          transform 220ms ease;
+      }
+      #app:is(
+          [data-camera-mode="closeup"],
+          [data-camera-mode="follow"]
+        )
+        :is(#panel-holder, #lab-mark, #experiment-dashboard, #fish-inspector) {
+        opacity: 0;
+        pointer-events: none;
+      }
+      button:focus-visible,
+      input:focus-visible,
+      select:focus-visible {
+        outline: 2px solid #537f9d;
+        outline-offset: 2px;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          scroll-behavior: auto !important;
+          transition-duration: 0.01ms !important;
+          animation-duration: 0.01ms !important;
+          animation-iteration-count: 1 !important;
+        }
+      }
+      @media (max-width: 680px) {
+        #lab-mark {
+          display: none;
+        }
+        /* 但开发者模式下必须保留 —— 它是唯一的出口，窄窗口下把它藏掉
+           等于又变成"进去了只能刷新"。 */
+        #app[data-developer="1"] #lab-mark {
+          display: block;
+        }
+        #panel-holder {
+          width: min(272px, calc(100% - 16px));
+          top: 8px;
+          right: 8px;
+          max-height: calc(100% - 16px);
+          padding-bottom: 230px;
+        }
+        #experiment-dashboard {
+          width: min(300px, calc(100% - 16px));
+        }
+        #experiment-dashboard canvas {
+          height: 90px;
+        }
+        #fish-inspector {
+          width: min(300px, calc(100% - 16px));
+          left: 8px;
+          bottom: 8px;
+        }
+        #fish-preview-viewport {
+          height: 126px;
+        }
+        #time-shortcut-hud span {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <style>
+      /* Developer controls exist only while #app is in developer mode.
+         The lab is always in that mode; the rule keeps the switch in one place. */
+      #app:not([data-developer="1"])
+        :is(#panel-holder, #lab-mark, #experiment-dashboard) {
+        display: none !important;
+      }
+
+      /* Press 1 to hide every overlay — for demos, screenshots and recordings. */
+      #app[data-ui-hidden="1"] #panel-holder,
+      #app[data-ui-hidden="1"] #lab-mark,
+      #app[data-ui-hidden="1"] #startup-status,
+      #app[data-ui-hidden="1"] #experiment-dashboard,
+      #app[data-ui-hidden="1"] #fish-inspector,
+      #app[data-ui-hidden="1"] #fish-view-hud {
+        display: none !important;
+      }
+    </style>
+    <div id="app" data-developer="1">
+      <h1 id="lab-mark">
+        <b id="lab-title">Aquarium</b>
+        <span id="lab-subtitle">MAIN PROJECT · Three.js</span>
+      </h1>
+      <button id="lab-reset" type="button" hidden>Reset</button>
+      <aside id="panel-holder" aria-label="Simulation parameters"></aside>
+      <div id="startup-status" role="status" aria-live="polite">Starting simulation…</div>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
