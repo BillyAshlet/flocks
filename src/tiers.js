@@ -64,7 +64,6 @@ const BASICS = [
 ];
 const PREDATION = [
   'relations.k',
-  'relations.KMax',
   'relations.hysteresis',
   'relations.pursuitWeight',
   'relations.schoolSenseFactor',
@@ -95,6 +94,12 @@ const PANIC = [
 // Body size slows sustained speed and turning; arrives with species.
 const TRAITS = ['traits.*'];
 const ECOLOGY = ['ecology.*', 'plankton.*'];
+// The prey size window. With only Gold and Red (tiers 3 and 4) it reads as
+// a broken switch: KMax at or below k means "no upper edge", so dragging it
+// turns hunting on, off, then on again. With three sizes it is what it is
+// meant to be: the edge that decides whether the largest fish also eats the
+// smallest (a web) or only the middle one (a chain).
+const FOOD_WEB = ['relations.KMax'];
 // Parameters of withoutDetails' mechanisms; hidden until tier 6.
 const DETAILS = [
   'relations.emergencyAlignment*',
@@ -144,6 +149,8 @@ export const TIERS = [
     },
     globals: [...BASICS, ...TRAITS],
     schoolFields: [...REYNOLDS_FIELDS, ...SPECIES_FIELDS],
+    // From the second species on, readers can add and remove schools.
+    allowSchoolEditing: true,
   },
   {
     number: 3,
@@ -157,6 +164,7 @@ export const TIERS = [
     },
     globals: [...BASICS, ...TRAITS, ...PREDATION],
     schoolFields: [...REYNOLDS_FIELDS, ...SPECIES_FIELDS],
+    allowSchoolEditing: true,
   },
   {
     number: 4,
@@ -170,6 +178,7 @@ export const TIERS = [
     globals: [...BASICS, ...TRAITS, ...PREDATION, ...PANIC],
     hidden: DETAILS,
     schoolFields: [...REYNOLDS_FIELDS, ...SPECIES_FIELDS],
+    allowSchoolEditing: true,
   },
   {
     number: 5,
@@ -178,9 +187,10 @@ export const TIERS = [
     configure(config) {
       withoutDetails(config);
     },
-    globals: [...BASICS, ...TRAITS, ...PREDATION, ...PANIC, ...ECOLOGY],
+    globals: [...BASICS, ...TRAITS, ...PREDATION, ...PANIC, ...FOOD_WEB, ...ECOLOGY],
     hidden: DETAILS,
     schoolFields: [...REYNOLDS_FIELDS, ...SPECIES_FIELDS, ...ENERGY_FIELDS],
+    allowSchoolEditing: true,
   },
   {
     number: 6,
