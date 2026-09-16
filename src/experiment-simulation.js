@@ -23,6 +23,7 @@ const EPSILON = 1e-8;
 const CHAMBER_EASE_RATE = 4;
 const CHAMBER_STOP_EPSILON = 0.02;
 const FORWARD = new THREE.Vector3(0, 0, 1);
+const UP = new THREE.Vector3(0, 1, 0);
 const LOCOMOTION = Object.freeze({
   CRUISE: 0,
   BURST: 1,
@@ -213,6 +214,12 @@ export class ExperimentSimulation {
       this.mesh.material.dispose();
       this.mesh = null;
     }
+    if (this.shadowMesh) {
+      this.shadowMesh.removeFromParent();
+      this.shadowMesh.geometry.dispose();
+      this.shadowMesh.material.dispose();
+      this.shadowMesh = null;
+    }
     if (this.planktonMesh) {
       this.planktonMesh.removeFromParent();
       this.planktonMesh.geometry.dispose();
@@ -357,6 +364,36 @@ export class ExperimentSimulation {
       transparent: this.config.visual.opacity < 1,
       opacity: this.config.visual.opacity,
     });
+    // A little light from above: backs a touch brighter, bellies darker.
+    // Unlit on purpose otherwise, so a school's color stays the color the
+    // panel shows instead of depending on scene lights.
+    material.onBeforeCompile = (shader) => {
+      shader.vertexShader = shader.vertexShader
+        .replace(
+          'void main() {',
+          'varying float vFishLight;\nvoid main() {'
+        )
+        .replace(
+          '#include <begin_vertex>',
+          `#include <begin_vertex>
+          vec3 fishNormal = normal;
+          #ifdef USE_INSTANCING
+            fishNormal = mat3( instanceMatrix ) * fishNormal;
+          #endif
+          fishNormal = normalize( mat3( modelMatrix ) * fishNormal );
+          vFishLight = dot( fishNormal, normalize( vec3( 0.3, 1.0, 0.35 ) ) );`
+        );
+      shader.fragmentShader = shader.fragmentShader
+        .replace(
+          'void main() {',
+          'varying float vFishLight;\nvoid main() {'
+        )
+        .replace(
+          '#include <color_fragment>',
+          `#include <color_fragment>
+          diffuseColor.rgb *= mix( 0.74, 1.1, vFishLight * 0.5 + 0.5 );`
+        );
+    };
     this.mesh = new THREE.InstancedMesh(geometry, material, this.count);
     this.mesh.name = 'experiment-fish';
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -367,6 +404,57 @@ export class ExperimentSimulation {
     this.mesh.instanceColor.needsUpdate = true;
     this.mesh.frustumCulled = false;
     this.scene.add(this.mesh);
+    this._buildShadowMesh();
+  }
+
+  // A soft oval under every fish on the tank floor. Fainter and wider the
+  // higher the fish swims, so the floor shows where a school is in depth,
+  // which a front view alone cannot.
+  _buildShadowMesh() {
+    const geometry = new THREE.PlaneGeometry(1, 1);
+    geometry.rotateX(-Math.PI / 2);
+    const material = new THREE.MeshBasicMaterial({
+      color: '#4a3f30',
+      transparent: true,
+      depthWrite: false,
+    });
+    // Instance color red carries each shadow's opacity; the oval's soft edge
+    // comes from the vertex position, so no texture is needed.
+    material.onBeforeCompile = (shader) => {
+      shader.vertexShader = shader.vertexShader
+        .replace(
+          'void main() {',
+          'varying vec2 vShadowXZ;\nvarying float vShadowAlpha;\nvoid main() {'
+        )
+        .replace(
+          '#include <begin_vertex>',
+          `#include <begin_vertex>
+          vShadowXZ = position.xz * 2.0;
+          vShadowAlpha = 1.0;
+          #ifdef USE_INSTANCING_COLOR
+            vShadowAlpha = instanceColor.r;
+          #endif`
+        );
+      shader.fragmentShader = shader.fragmentShader
+        .replace(
+          'void main() {',
+          'varying vec2 vShadowXZ;\nvarying float vShadowAlpha;\nvoid main() {'
+        )
+        .replace(
+          '#include <color_fragment>',
+          'diffuseColor.a *= vShadowAlpha * ( 1.0 - smoothstep( 0.15, 1.0, length( vShadowXZ ) ) );'
+        );
+    };
+    this.shadowMesh = new THREE.InstancedMesh(geometry, material, this.count);
+    this.shadowMesh.name = 'experiment-fish-shadows';
+    this.shadowMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    const none = new THREE.Color(0, 0, 0);
+    for (let index = 0; index < this.count; index += 1) {
+      this.shadowMesh.setColorAt(index, none);
+    }
+    this.shadowMesh.frustumCulled = false;
+    this.shadowMesh.renderOrder = -1;
+    this.scene.add(this.shadowMesh);
   }
 
   _buildPlanktonMesh() {
@@ -2707,7 +2795,18 @@ export class ExperimentSimulation {
     const corpseTint = new THREE.Color();
     const scale = new THREE.Vector3();
     const direction = new THREE.Vector3();
+    const shadows = this.shadowMesh;
+    const shadowScale = new THREE.Vector3();
+    const shadowPosition = new THREE.Vector3();
+    const shadowTurn = new THREE.Quaternion();
+    const shadowAlpha = new THREE.Color();
+    const floorY = -this.config.tank.height / 2 + 0.002;
+    const tankHeight = Math.max(EPSILON, this.config.tank.height);
+    const bodyLength =
+      this.config.visual.bodyLength + 2 * this.config.visual.bodyRadius;
+    const bodyWidth = 2 * this.config.visual.bodyRadius;
     for (let index = 0; index < this.count; index += 1) {
+      let castsShadow = false;
       const offset = index * 3;
       position.set(
         this.positions[offset],
@@ -2805,11 +2904,36 @@ export class ExperimentSimulation {
           rollQuaternion.setFromAxisAngle(FORWARD, this.rollAngles[index]);
           quaternion.multiply(rollQuaternion);
         }
+        if (shadows) {
+          const height = clamp((position.y - floorY) / tankHeight, 0, 1);
+          const spread = 1 + 1.4 * height;
+          shadowPosition.set(position.x, floorY, position.z);
+          shadowTurn.setFromAxisAngle(UP, Math.atan2(direction.x, direction.z));
+          shadowScale.set(
+            bodyWidth * scale.x * 2.2 * spread,
+            1,
+            bodyLength * scale.x * 1.3 * spread
+          );
+          matrix.compose(shadowPosition, shadowTurn, shadowScale);
+          shadows.setMatrixAt(index, matrix);
+          // Faint: a whole school's shadows overlap into one soft patch.
+          shadowAlpha.setRGB(0.09 * (1 - 0.7 * height), 0, 0);
+          shadows.setColorAt(index, shadowAlpha);
+          castsShadow = true;
+        }
+      }
+      if (shadows && !castsShadow) {
+        matrix.makeScale(0, 0, 0);
+        shadows.setMatrixAt(index, matrix);
       }
       matrix.compose(position, quaternion, scale);
       this.mesh.setMatrixAt(index, matrix);
     }
     this.mesh.instanceMatrix.needsUpdate = true;
+    if (shadows) {
+      shadows.instanceMatrix.needsUpdate = true;
+      shadows.instanceColor.needsUpdate = true;
+    }
     if (this._instanceColorDirty && this.mesh.instanceColor) {
       this.mesh.instanceColor.needsUpdate = true;
       this._instanceColorDirty = false;

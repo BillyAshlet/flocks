@@ -221,15 +221,20 @@ export function createScene(wrapper) {
     }
   }
 
+  // Home looks slightly down into the tank. Level, the floor is seen exactly
+  // edge-on, and the fish shadows on it (the depth cue) vanish.
+  const HOME_ELEVATION = THREE.MathUtils.degToRad(14);
   function home() {
     userMoved = false;
-    setView(
-      new THREE.Vector3(
-        0,
-        0,
-        fitDistance(TANK.width / 2, TANK.height / 2, TANK.depth / 2)
-      )
+    const up = Math.sin(HOME_ELEVATION);
+    const level = Math.cos(HOME_ELEVATION);
+    // The tank as seen from that angle: its depth adds to its height.
+    const distance = fitDistance(
+      TANK.width / 2,
+      (TANK.height / 2) * level + (TANK.depth / 2) * up,
+      (TANK.depth / 2) * level + (TANK.height / 2) * up
     );
+    setView(new THREE.Vector3(0, distance * up, distance * level));
   }
 
   // Named views are shared by keyboard shortcuts, the tuning panel and
