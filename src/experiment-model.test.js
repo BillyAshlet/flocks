@@ -80,14 +80,11 @@ test('main project derives predator and prey roles from live body size', () => {
   const [small, medium, large] = config.schools;
   assert.equal(relationBetween(medium, small, config.relations), 'pursuit');
   assert.equal(relationBetween(large, medium, config.relations), 'pursuit');
-  // With KMax = 1.667, large/small = 2.25 is outside the prey size window, so
-  // the two ignore each other. This keeps the three-level food chain
-  // (small <- medium <- large); without the upper bound the large school eats
-  // the small one directly and the medium school is bypassed.
-  assert.equal(relationBetween(large, small, config.relations), 'ignore');
-  // Symmetric: the large school cannot prey on the small one, so the small
-  // one does not flee it.
-  assert.equal(relationBetween(small, large, config.relations), 'ignore');
+  // KMax = 2.5 puts large/small = 2.25 inside the prey size window, so the
+  // large school also hunts the small one. With KMax = 1.667 it was outside,
+  // the large school had only the medium school to eat, and it starved.
+  assert.equal(relationBetween(large, small, config.relations), 'pursuit');
+  assert.equal(relationBetween(small, large, config.relations), 'evade');
   assert.equal(relationBetween(small, small, config.relations), 'peer');
 
   small.size = 3.2;

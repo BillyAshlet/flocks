@@ -3,10 +3,8 @@ import { sceneClearance } from './distance-field.js';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { createDefaultConfig } from './experiment-config.js';
-import {
-} from './experiment-model.js';
+import { energyCapacityFor, relationForRatio } from './experiment-model.js';
 import { ExperimentSimulation } from './experiment-simulation.js';
-import { relationForRatio } from './experiment-model.js';
 
 function smallSimulation(mode = 'steady', seed = 1001, withScene = false) {
   const config = createDefaultConfig();
@@ -482,16 +480,20 @@ test('low energy blocks burst sprint', () => {
   simulation.config.ecology.minBurstEnergyRatio = 1 / 3;
   const predator = simulation.schoolRanges[1].start;
   const prey = 0;
+  // The energy tank scales with body size, so the ratio is taken against this
+  // fish's own capacity, not the base energyCapacity.
+  const capacity = energyCapacityFor(
+    simulation.config,
+    simulation.config.schools[1]
+  );
   simulation.pursuitTargets[predator] = prey;
-  simulation.energy[predator] =
-    simulation.config.ecology.energyCapacity * 0.2;
+  simulation.energy[predator] = capacity * 0.2;
   assert.equal(simulation._canBurst(predator), false);
   assert.equal(
     simulation._movementState(predator, prey, false),
     'cruise'
   );
-  simulation.energy[predator] =
-    simulation.config.ecology.energyCapacity * 0.5;
+  simulation.energy[predator] = capacity * 0.5;
   assert.equal(simulation._canBurst(predator), true);
   assert.equal(
     simulation._movementState(predator, prey, false),
