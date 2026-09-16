@@ -38,26 +38,6 @@ function withoutPanic(config) {
   });
 }
 
-// Reynolds proportions carried over from the boid-aquarium preset
-// (2 x 1.2 x 0.8 m tank, 500 fish): about 29 neighbours inside the cohesion
-// radius, separation radius 40% and alignment radius 35% of it. This engine
-// derives radii from neighbour count and density, so the ratios transfer,
-// not the absolute radii.
-function aquariumProportions(config) {
-  Object.assign(config.perception, {
-    separationRadiusFactor: 0.12 / 0.3,
-    alignmentRadiusFactor: 0.106 / 0.3,
-  });
-  for (const school of config.schools) {
-    Object.assign(school, {
-      targetNeighbors: Math.min(29, school.count - 1),
-      separationWeight: 0.55,
-      alignmentWeight: 0.45,
-      cohesionWeight: 0.4,
-    });
-  }
-}
-
 // 360 degrees = the fish see all around. The forward cone arrives in tier 4,
 // together with panic, whose signal travels along it.
 function withoutFieldOfView(config) {
@@ -126,7 +106,6 @@ export const TIERS = [
     summary: 'Placeholder: why this tier exists.',
     configure(config) {
       keepSchools(config, ['gold']);
-      aquariumProportions(config);
       withoutFieldOfView(config);
       withoutEcology(config);
       withoutPredation(config);
