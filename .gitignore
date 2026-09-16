@@ -1,0 +1,13 @@
+# local working notes
+BRIEF.md
+
+# dependencies & build output
+node_modules/
+dist/
+
+# tooling
+.vercel/
+*.log
+
+# macOS
+.DS_Store
