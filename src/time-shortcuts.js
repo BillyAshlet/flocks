@@ -75,34 +75,31 @@ export class TimeShortcutController {
     this.doubleSpace = new SpaceDoubleTapDetector(doubleSpaceMs);
     this.enabled = true;
     this.hud = this._createHud();
-    this.valueLabel = this.hud.querySelector('#time-shortcut-value');
-    this.lastDisplayedValue = null;
     this.onKeyDown = (event) => this._handleKeyDown(event);
     this.onKeyUp = (event) => this._handleKeyUp(event);
     this.onBlur = () => this._releaseAll();
     target.addEventListener('keydown', this.onKeyDown);
     target.addEventListener('keyup', this.onKeyUp);
     target.addEventListener('blur', this.onBlur);
-    this.update(1);
   }
 
+  // The HUD only explains the two held keys. The live speed readout and the
+  // double-Space hint were removed to keep the top of the tank quiet; double
+  // Space still works, it is just no longer advertised here.
   _createHud() {
     const hud = document.createElement('section');
     hud.id = 'time-shortcut-hud';
     hud.setAttribute('aria-label', 'Time controls');
     hud.innerHTML = `
-      <strong id="time-shortcut-value">1×</strong>
       <span>HOLD ENTER&nbsp; 2×</span>
       <span>HOLD SPACE&nbsp; 0.2×</span>
-      <span>SPACE×2&nbsp; GLOBAL VIEW</span>
     `;
     this.root.appendChild(hud);
     return hud;
   }
 
   _apply(value) {
-    const applied = this.setTimeScale(value);
-    this.update(applied ?? value);
+    this.setTimeScale(value);
   }
 
   _handleKeyDown(event) {
@@ -160,15 +157,6 @@ export class TimeShortcutController {
       this.state.clear();
       this.doubleSpace.clear();
     }
-  }
-
-  update(value) {
-    const safe = Number.isFinite(Number(value)) ? Number(value) : 1;
-    if (safe === this.lastDisplayedValue) return;
-    this.lastDisplayedValue = safe;
-    this.hud.dataset.paused = safe <= 0 ? 'true' : 'false';
-    this.valueLabel.textContent =
-      safe <= 0 ? 'PAUSED' : `${safe.toFixed(safe < 1 ? 1 : 0)}×`;
   }
 
   dispose() {

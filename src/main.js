@@ -382,7 +382,6 @@ async function bootstrap() {
     cameraController.update(realDt);
     renderer.render(scene, camera);
     cameraController.renderPreview();
-    timeShortcuts.update(current.runtime.timeScale);
     schoolVisualizer.update(
       simulation,
       current,
