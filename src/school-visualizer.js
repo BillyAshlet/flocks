@@ -11,6 +11,7 @@
  * They draw what the engine actually uses.
  */
 import * as THREE from 'three';
+import { MECHANISMS } from './mechanisms.js';
 
 /**
  * key -> the panel rows that switch it (global `paths`, per-school `fields`)
@@ -23,19 +24,19 @@ import * as THREE from 'three';
 export const VISUALS = {
   separation: {
     label: 'separation radius',
-    color: '#8e5ea2',
+    color: MECHANISMS.separation.color,
     paths: ['perception.separationRadiusFactor'],
     gateFields: ['separationWeight'],
   },
   alignment: {
     label: 'alignment radius',
-    color: '#4f9a57',
+    color: MECHANISMS.alignment.color,
     paths: ['perception.alignmentRadiusFactor'],
     gateFields: ['alignmentWeight'],
   },
   cohesion: {
     label: 'cohesion radius',
-    color: '#34568b',
+    color: MECHANISMS.cohesion.color,
     fields: ['targetNeighbors'],
   },
   blindCone: {
@@ -45,17 +46,17 @@ export const VISUALS = {
   },
   ray: {
     label: 'look-ahead ray',
-    color: '#9c6b4e',
+    color: MECHANISMS.walls.color,
     paths: ['locomotion.avoidanceLookAhead', 'locomotion.avoidanceWeight'],
   },
   turn: {
     label: 'avoidance turn',
-    color: '#3f8f8a',
+    color: MECHANISMS.walls.color,
     paths: ['locomotion.avoidanceAngleStep'],
   },
   recenter: {
     label: 'recentering pull',
-    color: '#c65f8a',
+    color: MECHANISMS.walls.color,
     paths: [
       'locomotion.recenterWeight',
       'locomotion.recenterDelay',
