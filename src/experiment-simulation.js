@@ -1622,11 +1622,13 @@ export class ExperimentSimulation {
         : Math.max(0, 1 - panic * relations.cohesionDrop)) *
       socialScale *
       (hunger ? hunger.cohesion : 1);
-    // Receiver gain: the more panicked a fish is, the more it listens to its
-    // neighbors, which lets the wave push through layer by layer.
+    // Receiver gain: a fish listens harder to its neighbors when they are
+    // panicked and it is panicked too (neighbor panic x own panic), which lets
+    // the wave push through layer by layer. This only strengthens alignment
+    // steering; it does not raise panic, so it cannot feed itself.
     const receiverBoost = interactionsEnabled && relations.emergencyAlignment !== false
       ? Math.min(
-          1 + relations.alignmentReceiverBoost * this.neighborPanic[index],
+          1 + relations.alignmentReceiverBoost * this.neighborPanic[index] * panic,
           relations.alignmentReceiverMax
         )
       : 1;

@@ -186,8 +186,8 @@ export const DEFAULT_EXPERIMENT_CONFIG = Object.freeze({
     emergencyAlignment: true,
     emergencyAlignmentWeight: 4,
     alignmentSourceBoost: 10,
-    // Receiver gain: the more panicked a fish is, the more it listens to
-    // neighbours (the original's alignmentReceiverBoost/Max).
+    // Receiver gain on alignment: 1 + boost x neighbor panic x own panic,
+    // capped at alignmentReceiverMax.
     alignmentReceiverBoost: 1.5,
     alignmentReceiverMax: 2.5,
     // Escape aims at the predator's predicted position, not its current one.
