@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createParameterRegistry } from './experiment-config.js';
-import { PANEL_CATEGORIES, parameterCategory } from './parameter-categories.js';
+import { PANEL_CATEGORIES, panelGroup, parameterCategory } from './parameter-categories.js';
 import { TIERS, tierConfig } from './tiers.js';
 
 test('every parameter at every tier belongs to a panel category', () => {
@@ -24,6 +24,9 @@ test('categories follow what a parameter does to the model', () => {
   };
   assert.equal(byPath('runtime.timeScale'), 'run');
   assert.equal(byPath('tank.width'), 'environment');
+  assert.equal(byPath('locomotion.avoidanceWeight'), 'environment');
+  assert.equal(byPath('locomotion.recenterDelay'), 'environment');
+  assert.equal(byPath('locomotion.maxForce'), 'fish');
   assert.equal(byPath('plankton.regrowSeconds'), 'environment');
   assert.equal(byPath('plankton.color'), 'display');
   assert.equal(byPath('ecology.corpseDrag'), 'display');
@@ -34,4 +37,9 @@ test('categories follow what a parameter does to the model', () => {
   assert.equal(byPath('obstacles.enabled'), 'obstacles');
   // A school's color tells species apart; it is not decoration.
   assert.equal(byPath('schools.0.color'), 'fish');
+});
+
+test('wall parameters sit in a Walls folder, not under Motion', () => {
+  assert.equal(panelGroup({ path: 'locomotion.avoidanceWeight', group: '运动' }), '缸壁');
+  assert.equal(panelGroup({ path: 'locomotion.maxForce', group: '运动' }), '运动');
 });

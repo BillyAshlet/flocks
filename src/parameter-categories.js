@@ -2,7 +2,8 @@
  * Top-level panel categories, for readers who came for the model.
  *
  * run          time scale and seed.
- * environment  the world the fish live in: the tank and the plankton.
+ * environment  the world the fish live in: the tank, its walls (including how
+ *              fish steer away from them) and the plankton.
  * fish         every rule a fish follows, each species' own settings, and what
  *              happens between species.
  * display      how things are drawn. Changing it does not change the model.
@@ -23,6 +24,10 @@ export const PANEL_CATEGORIES = [
   'internal',
   'obstacles',
 ];
+
+// Wall avoidance and recentering are registered under Motion, but a reader
+// tuning them is tuning the tank's walls.
+const WALL_PATHS = /^locomotion\.(avoidance|recenter)/;
 
 const DISPLAY_PATHS = [
   /^ecology\.corpse/,
@@ -57,8 +62,14 @@ const GROUP_CATEGORY = new Map([
 /** The category of a registry spec, or null if its group is not mapped. */
 export function parameterCategory(spec) {
   if (spec.path.startsWith('schools.')) return 'fish';
+  if (WALL_PATHS.test(spec.path)) return 'environment';
   if (DISPLAY_PATHS.some((pattern) => pattern.test(spec.path))) return 'display';
   const group = spec.group ?? '';
   if (group.startsWith('障碍 ·')) return 'obstacles';
   return GROUP_CATEGORY.get(group) ?? null;
+}
+
+/** The folder a spec is shown under; wall parameters get a Walls folder. */
+export function panelGroup(spec) {
+  return WALL_PATHS.test(spec.path) ? '缸壁' : spec.group;
 }

@@ -89,6 +89,7 @@ const DICT = {
 
   // Panel categories (parameter-categories.js)
   环境: ['Environment', '环境'],
+  缸壁: ['Walls', '缸壁'],
   鱼: ['Fish', '鱼'],
   非研究部分: ['Non-research settings', '非研究部分'],
 

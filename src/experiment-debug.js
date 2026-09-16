@@ -18,7 +18,7 @@ import {
   visualsForField,
   visualsForPath,
 } from './school-visualizer.js';
-import { parameterCategory } from './parameter-categories.js';
+import { panelGroup, parameterCategory } from './parameter-categories.js';
 
 // The read-only "actual radius" rows switch the same spheres as their factors.
 const VISUAL_FOR_DERIVED_RADIUS = {
@@ -798,15 +798,15 @@ export function createExperimentDebug({
   function addGroupFolders(root, specs) {
     const folders = new Map();
     for (const spec of specs) {
-      let folder = folders.get(spec.group);
+      const group = panelGroup(spec);
+      let folder = folders.get(group);
       if (!folder) {
         folder = root.addFolder({
-          title: t(spec.group),
+          title: t(group),
           expanded:
-            !spec.group.startsWith('Advanced') &&
-            ['运行', '关系'].includes(spec.group),
+            !group.startsWith('Advanced') && ['运行', '关系'].includes(group),
         });
-        folders.set(spec.group, folder);
+        folders.set(group, folder);
       }
       bindSpec(folder, spec);
     }
