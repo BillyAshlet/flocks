@@ -69,6 +69,7 @@ const PREDATION = [
   'relations.pursuitWeight',
   'relations.schoolSenseFactor',
   'relations.burstRadiusFactor',
+  'perception.detectionLengthFactor',
   'relations.burstWeight',
   'relations.giveUpSeconds',
   'relations.targetTieTolerance',
@@ -77,6 +78,7 @@ const PREDATION = [
   'locomotion.interceptLookAhead',
 ];
 const PANIC = [
+  'perception.fovDegrees',
   'relations.evade*',
   'relations.panic*',
   'relations.direct*',
@@ -115,11 +117,6 @@ const REYNOLDS_FIELDS = [
 const SPECIES_FIELDS = ['name', 'color', 'size', 'cruiseSpeed', 'maxSpeed', 'turnSpeed'];
 const ENERGY_FIELDS = ['grazeRate', 'metabolismMultiplier'];
 
-// Visualization layers (see school-visualizer.js) arrive with the rules they
-// draw.
-const REYNOLDS_VISUALS = ['reynolds', 'walls'];
-const PREDATION_VISUALS = [...REYNOLDS_VISUALS, 'hunting'];
-const PANIC_VISUALS = [...PREDATION_VISUALS, 'fieldOfView', 'panic'];
 
 export const TIERS = [
   {
@@ -134,7 +131,6 @@ export const TIERS = [
     },
     globals: BASICS,
     schoolFields: REYNOLDS_FIELDS,
-    visuals: REYNOLDS_VISUALS,
   },
   {
     number: 2,
@@ -148,7 +144,6 @@ export const TIERS = [
     },
     globals: [...BASICS, ...TRAITS],
     schoolFields: [...REYNOLDS_FIELDS, ...SPECIES_FIELDS],
-    visuals: REYNOLDS_VISUALS,
   },
   {
     number: 3,
@@ -162,7 +157,6 @@ export const TIERS = [
     },
     globals: [...BASICS, ...TRAITS, ...PREDATION],
     schoolFields: [...REYNOLDS_FIELDS, ...SPECIES_FIELDS],
-    visuals: PREDATION_VISUALS,
   },
   {
     number: 4,
@@ -176,7 +170,6 @@ export const TIERS = [
     globals: [...BASICS, ...TRAITS, ...PREDATION, ...PANIC],
     hidden: DETAILS,
     schoolFields: [...REYNOLDS_FIELDS, ...SPECIES_FIELDS],
-    visuals: PANIC_VISUALS,
   },
   {
     number: 5,
@@ -188,7 +181,6 @@ export const TIERS = [
     globals: [...BASICS, ...TRAITS, ...PREDATION, ...PANIC, ...ECOLOGY],
     hidden: DETAILS,
     schoolFields: [...REYNOLDS_FIELDS, ...SPECIES_FIELDS, ...ENERGY_FIELDS],
-    visuals: PANIC_VISUALS,
   },
   {
     number: 6,
@@ -198,7 +190,6 @@ export const TIERS = [
     // null = no filter: every parameter, and schools can be added or removed.
     globals: null,
     schoolFields: null,
-    visuals: null,
     allowSchoolEditing: true,
   },
 ];
@@ -230,7 +221,6 @@ function visibility(tier) {
       !matchesPath(tier.hidden ?? [], spec.path),
     schoolField: (field) =>
       tier.schoolFields === null || tier.schoolFields.includes(field),
-    visual: (layer) => tier.visuals === null || tier.visuals.includes(layer),
   };
 }
 
@@ -253,9 +243,7 @@ export function tierPanelScope(number) {
       !(previous.allowSchoolEditing ?? false),
     showGlobal: shown.global,
     showSchoolField: shown.schoolField,
-    showVisual: shown.visual,
     isNewGlobal: isNew('global'),
     isNewSchoolField: isNew('schoolField'),
-    isNewVisual: isNew('visual'),
   };
 }

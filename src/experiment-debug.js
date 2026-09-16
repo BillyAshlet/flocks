@@ -11,14 +11,18 @@ import {
   toggleLanguage,
   translateOptions,
 } from './experiment-i18n.js';
-import { VISUAL_LAYERS } from './school-visualizer.js';
+import {
+  VISUALS,
+  visualOffered,
+  visualsForField,
+  visualsForPath,
+} from './school-visualizer.js';
 
-const VISUAL_LAYER_LABELS = {
-  reynolds: 'Reynolds radii',
-  walls: 'avoidance ray',
-  fieldOfView: 'blind cone (field of view)',
-  hunting: 'hunting radii + target',
-  panic: 'threat + signal radii',
+// The read-only "actual radius" rows switch the same spheres as their factors.
+const VISUAL_FOR_DERIVED_RADIUS = {
+  separationRadius: 'separation',
+  alignmentRadius: 'alignment',
+  cohesionRadius: 'cohesion',
 };
 
 function niceRangeNumber(value) {
@@ -196,6 +200,7 @@ export function createExperimentDebug({
   let roleBindings = [];
   let boidState = null;
   let boidBindings = [];
+  let visualRows = [];
   const rangeWindows = new Map();
   const defaultConfig = createDefaultConfig();
   const holder = document.getElementById('panel-holder');
@@ -474,6 +479,7 @@ export function createExperimentDebug({
       binding.on('change', applyChange);
       decorate();
       if (isNewSpec(spec)) markNew(binding.element);
+      wireVisualRow(binding.element, visualKeysForSpec(spec));
     }
 
     function rebuildBinding() {
@@ -618,11 +624,14 @@ export function createExperimentDebug({
         expanded: section.expanded,
       });
       if (section.derivedRadius) {
-        boidBindings.push(
-          folder.addBinding(boidState, section.derivedRadius, {
-            label: t('actual radius'),
-            readonly: true,
-          })
+        const radiusBinding = folder.addBinding(boidState, section.derivedRadius, {
+          label: t('actual radius'),
+          readonly: true,
+        });
+        boidBindings.push(radiusBinding);
+        wireVisualRow(
+          radiusBinding.element,
+          offeredVisuals([VISUAL_FOR_DERIVED_RADIUS[section.derivedRadius]])
         );
       }
       if (!section.globalAfterFields) {
@@ -639,24 +648,57 @@ export function createExperimentDebug({
         }
       }
     }
-    addVisualLayers(editor, school);
   }
 
-  // View-only toggles for this school; a tier offers only the layers whose
-  // rules it has introduced.
-  function addVisualLayers(editor, school) {
-    if (!controller.visualLayersFor) return;
-    const layers = controller.visualLayersFor(school);
-    const offered = VISUAL_LAYERS.filter(
-      (layer) => controller.panelScope?.showVisual(layer) ?? true
+  // Clicking a parameter's name shows what it shapes for the school being
+  // edited (a radius sphere, the blind cone, the look-ahead ray...), and the
+  // row takes that visual's color. Clicking again hides it.
+  function offeredVisuals(keys) {
+    return keys.filter((key) => key && visualOffered(key, controller.panelScope));
+  }
+
+  function visualKeysForSpec(spec) {
+    const match = /^schools\.\d+\.([^.]+)$/.exec(spec.path);
+    return offeredVisuals(
+      match ? visualsForField(match[1]) : visualsForPath(spec.path)
     );
-    if (offered.length === 0) return;
-    const folder = editor.addFolder({ title: t('可视化'), expanded: true });
-    for (const layer of offered) {
-      const binding = folder.addBinding(layers, layer, {
-        label: t(VISUAL_LAYER_LABELS[layer]),
-      });
-      if (controller.panelScope?.isNewVisual?.(layer)) markNew(binding.element);
+  }
+
+  function editedSchoolLayers() {
+    const school = controller.stage.schools[selectedSchoolIndex];
+    return school && controller.visualLayersFor
+      ? controller.visualLayersFor(school)
+      : null;
+  }
+
+  function wireVisualRow(element, keys) {
+    const label = element?.querySelector('.tp-lblv_l');
+    if (!label || keys.length === 0 || !editedSchoolLayers()) return;
+    element.classList.add('vis-row');
+    element.style.setProperty('--vis-color', VISUALS[keys[0]].color);
+    const names = keys.map((key) => t(VISUALS[key].label)).join(', ');
+    label.title = `${label.title ? `${label.title}\n` : ''}${
+      inChinese() ? `点击显示/隐藏：${names}` : `Click to show or hide: ${names}`
+    }`;
+    label.addEventListener('click', (event) => {
+      if (event.target.closest('.param-btn')) return;
+      const layers = editedSchoolLayers();
+      const allOn = keys.every((key) => layers[key]);
+      for (const key of keys) layers[key] = !allOn;
+      refreshVisualRows();
+    });
+    visualRows.push({ element, keys });
+    refreshVisualRows();
+  }
+
+  function refreshVisualRows() {
+    const layers = editedSchoolLayers();
+    visualRows = visualRows.filter((row) => row.element.isConnected);
+    for (const row of visualRows) {
+      row.element.classList.toggle(
+        'vis-on',
+        Boolean(layers) && row.keys.some((key) => layers[key])
+      );
     }
   }
 
@@ -720,6 +762,7 @@ export function createExperimentDebug({
     // switcher and selected-school editor therefore cannot retain listeners.
     pane?.dispose();
     holder.replaceChildren();
+    visualRows = [];
     const scope = controller.panelScope;
     if (!scope) addProjectSwitcher();
     const meta = projectMeta();

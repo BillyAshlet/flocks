@@ -197,6 +197,29 @@
         --tp-monitor-background-color: #fbf8f2;
         --tp-monitor-foreground-color: #4d6477;
       }
+      /* Rows that draw something in the tank: a hollow dot in the visual's
+         color; click the name to show it, and the row takes the color. */
+      #panel-holder .vis-row .tp-lblv_l {
+        cursor: pointer;
+      }
+      #panel-holder .vis-row .tp-lblv_l::before {
+        display: inline-block;
+        box-sizing: border-box;
+        width: 8px;
+        height: 8px;
+        margin-right: 6px;
+        border: 1.5px solid var(--vis-color);
+        border-radius: 50%;
+        vertical-align: 0;
+        content: "";
+      }
+      #panel-holder .vis-row.vis-on .tp-lblv_l {
+        color: var(--vis-color);
+        font-weight: 650;
+      }
+      #panel-holder .vis-row.vis-on .tp-lblv_l::before {
+        background: var(--vis-color);
+      }
       /* Parameters this tier adds over the tier before it. */
       #panel-holder .is-new {
         background: rgba(229, 164, 65, 0.16);

@@ -23,8 +23,9 @@ import { createExperimentDebug } from './experiment-debug.js';
 import { TimeShortcutController } from './time-shortcuts.js';
 import {
   SchoolVisualizer,
-  VISUAL_LAYERS,
+  VISUAL_KEYS,
   emptyVisualLayers,
+  visualOffered,
 } from './school-visualizer.js';
 import { TIER_COUNT, tierByNumber, tierConfig, tierPanelScope } from './tiers.js';
 
@@ -172,8 +173,8 @@ async function bootstrap() {
   const controller = {
     // Set per route; narrows the parameter panel to one tier.
     panelScope: null,
-    // View-only state, not part of the simulation config: which
-    // visualization layers each school shows, keyed by school id.
+    // View-only state, not part of the simulation config: which visuals
+    // each school shows, keyed by school id. Switched from the panel rows.
     visualLayers: new Map(),
     visualLayersFor(school) {
       let layers = this.visualLayers.get(school.id);
@@ -338,17 +339,18 @@ async function bootstrap() {
     world.resetTiming(performance.now());
   }
 
-  // Only tier pages draw overlays, and only the layers that tier has reached.
+  // Only tier pages draw overlays, and only visuals whose panel rows this
+  // tier shows, so a visual switched on in a later tier does not linger.
   function visibleLayers() {
     const scope = controller.panelScope;
     if (route.page !== 'tier' || !scope) return [];
+    const offered = Object.fromEntries(
+      VISUAL_KEYS.map((key) => [key, visualOffered(key, scope)])
+    );
     return current.schools.map((school) => {
       const chosen = controller.visualLayersFor(school);
       return Object.fromEntries(
-        VISUAL_LAYERS.map((layer) => [
-          layer,
-          chosen[layer] && scope.showVisual(layer),
-        ])
+        VISUAL_KEYS.map((key) => [key, Boolean(chosen[key] && offered[key])])
       );
     });
   }

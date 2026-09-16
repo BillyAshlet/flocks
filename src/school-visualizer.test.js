@@ -4,7 +4,11 @@ import { createDefaultConfig } from './experiment-config.js';
 import { deriveExperiment } from './experiment-model.js';
 import {
   SchoolVisualizer,
+  VISUAL_KEYS,
   emptyVisualLayers,
+  visualOffered,
+  visualsForField,
+  visualsForPath,
 } from './school-visualizer.js';
 import { tierPanelScope } from './tiers.js';
 
@@ -44,20 +48,22 @@ function fakeSimulation(config) {
   return simulation;
 }
 
-test('each school anchors its own overlay and draws only its layers', () => {
+test('each school anchors its own overlay and draws only the visuals switched on', () => {
   const config = createDefaultConfig();
   const simulation = fakeSimulation(config);
   const visualizer = new SchoolVisualizer(fakeScene());
-  const first = { ...emptyVisualLayers(), reynolds: true };
-  const second = { ...emptyVisualLayers(), hunting: true };
+  const first = { ...emptyVisualLayers(), cohesion: true };
+  const second = { ...emptyVisualLayers(), farSense: true };
 
   visualizer.update(simulation, config, [first, second], -1);
   const [a, b] = visualizer.overlays;
   assert.equal(a.anchor, 0);
   assert.equal(b.anchor, 2);
-  assert.equal(a.reynolds.visible, true);
-  assert.equal(a.hunting.visible, false);
-  assert.equal(b.reynolds.visible, false);
+  assert.equal(a.cohesion.visible, true);
+  assert.equal(a.separation.visible, false);
+  assert.equal(a.farSense.visible, false);
+  assert.equal(b.cohesion.visible, false);
+  assert.equal(b.nearLock.visible, false);
   assert.equal(
     a.cohesion.scale.x,
     simulation.derived.schools[0].cohesionRadius
@@ -73,7 +79,7 @@ test('the selected fish becomes the anchor of its school; a dead anchor moves on
   const config = createDefaultConfig();
   const simulation = fakeSimulation(config);
   const visualizer = new SchoolVisualizer(fakeScene());
-  const layers = [{ reynolds: true }, { reynolds: true }];
+  const layers = [{ cohesion: true }, { cohesion: true }];
 
   visualizer.update(simulation, config, layers, 1);
   assert.equal(visualizer.overlays[0].anchor, 1);
@@ -92,7 +98,7 @@ test('blind cone appears only with a real field of view', () => {
   const config = createDefaultConfig();
   const simulation = fakeSimulation(config);
   const visualizer = new SchoolVisualizer(fakeScene());
-  const layers = [{ fieldOfView: true }, {}];
+  const layers = [{ blindCone: true }, {}];
 
   config.perception.fovDegrees = 360;
   visualizer.update(simulation, config, layers);
@@ -104,12 +110,12 @@ test('blind cone appears only with a real field of view', () => {
   assert.ok(Math.abs(visualizer.overlays[0].blindAngle - Math.PI / 6) < 1e-9);
 });
 
-test('avoidance ray is grey and full length when clear, amber and cut at a hit', () => {
+test('look-ahead ray is faint when clear and cut at a hit; the turn arrow shows only on a hit', () => {
   const config = createDefaultConfig();
   const simulation = fakeSimulation(config);
   simulation.avoidanceHits = new Float32Array(4).fill(Infinity);
   const visualizer = new SchoolVisualizer(fakeScene());
-  const layers = [{ walls: true }, {}];
+  const layers = [{ ray: true, turn: true }, {}];
   const length = config.locomotion.avoidanceLookAhead;
 
   visualizer.update(simulation, config, layers);
@@ -117,23 +123,46 @@ test('avoidance ray is grey and full length when clear, amber and cut at a hit',
   const end = () => overlay.ray.geometry.attributes.position.getX(1);
   assert.equal(overlay.ray.visible, true);
   assert.ok(Math.abs(end() - length) < 1e-6);
-  assert.equal(overlay.wallArrow.visible, false);
+  assert.ok(overlay.ray.material.opacity < 0.5);
+  assert.equal(overlay.turnArrow.visible, false);
 
   simulation.avoidanceHits[0] = 0.1;
   simulation.avoidanceDirections[1] = 1;
   visualizer.update(simulation, config, layers);
   assert.ok(Math.abs(end() - 0.1) < 1e-6);
-  assert.equal(overlay.wallArrow.visible, true);
+  assert.ok(overlay.ray.material.opacity > 0.9);
+  assert.equal(overlay.turnArrow.visible, true);
 });
 
-test('tiers offer visualization layers together with their rules', () => {
+test('panel rows map to the visuals they shape', () => {
+  assert.deepEqual(visualsForField('targetNeighbors'), ['cohesion']);
+  assert.deepEqual(visualsForPath('perception.fovDegrees'), ['blindCone']);
+  assert.deepEqual(visualsForPath('perception.detectionLengthFactor'), [
+    'farSense',
+    'nearLock',
+    'threat',
+  ]);
+  assert.deepEqual(visualsForPath('relations.k'), []);
+});
+
+test('tiers offer visuals together with the rows that switch them', () => {
   const offered = (tier) =>
-    ['reynolds', 'walls', 'fieldOfView', 'hunting', 'panic'].filter((layer) =>
-      tierPanelScope(tier).showVisual(layer)
-    );
-  assert.deepEqual(offered(1), ['reynolds', 'walls']);
-  assert.deepEqual(offered(2), ['reynolds', 'walls']);
-  assert.deepEqual(offered(3), ['reynolds', 'walls', 'hunting']);
-  assert.deepEqual(offered(4), ['reynolds', 'walls', 'fieldOfView', 'hunting', 'panic']);
-  assert.deepEqual(offered(6), ['reynolds', 'walls', 'fieldOfView', 'hunting', 'panic']);
+    VISUAL_KEYS.filter((key) => visualOffered(key, tierPanelScope(tier)));
+  const reynolds = ['separation', 'alignment', 'cohesion', 'ray', 'turn', 'recenter'];
+  assert.deepEqual(offered(1), reynolds);
+  assert.deepEqual(offered(2), reynolds);
+  assert.deepEqual(offered(3), [...reynolds, 'farSense', 'nearLock']);
+  // The threat radius waits for prey to react; the alarm signal radius
+  // belongs to emergency alignment (tier 6).
+  assert.deepEqual(offered(4), [
+    'separation',
+    'alignment',
+    'cohesion',
+    'blindCone',
+    ...reynolds.slice(3),
+    'farSense',
+    'nearLock',
+    'threat',
+  ]);
+  assert.deepEqual(offered(6), VISUAL_KEYS);
 });
