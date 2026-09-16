@@ -24,7 +24,7 @@ import { TimeShortcutController } from './time-shortcuts.js';
 import {
   SchoolVisualizer,
   VISUAL_KEYS,
-  emptyVisualLayers,
+  allVisualLayers,
   visualOffered,
 } from './school-visualizer.js';
 import { TIER_COUNT, tierByNumber, tierConfig, tierPanelScope } from './tiers.js';
@@ -174,12 +174,13 @@ async function bootstrap() {
     // Set per route; narrows the parameter panel to one tier.
     panelScope: null,
     // View-only state, not part of the simulation config: which visuals
-    // each school shows, keyed by school id. Switched from the panel rows.
+    // each school shows, keyed by school id. Switched from the panel rows;
+    // every visual starts on.
     visualLayers: new Map(),
     visualLayersFor(school) {
       let layers = this.visualLayers.get(school.id);
       if (!layers) {
-        layers = emptyVisualLayers();
+        layers = allVisualLayers(true);
         this.visualLayers.set(school.id, layers);
       }
       return layers;

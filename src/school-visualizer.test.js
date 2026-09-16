@@ -5,7 +5,7 @@ import { deriveExperiment } from './experiment-model.js';
 import {
   SchoolVisualizer,
   VISUAL_KEYS,
-  emptyVisualLayers,
+  allVisualLayers,
   visualOffered,
   visualsForField,
   visualsForPath,
@@ -52,8 +52,8 @@ test('each school anchors its own overlay and draws only the visuals switched on
   const config = createDefaultConfig();
   const simulation = fakeSimulation(config);
   const visualizer = new SchoolVisualizer(fakeScene());
-  const first = { ...emptyVisualLayers(), cohesion: true };
-  const second = { ...emptyVisualLayers(), farSense: true };
+  const first = { ...allVisualLayers(false), cohesion: true };
+  const second = { ...allVisualLayers(false), farSense: true };
 
   visualizer.update(simulation, config, [first, second], -1);
   const [a, b] = visualizer.overlays;

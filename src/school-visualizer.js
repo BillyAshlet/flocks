@@ -87,8 +87,8 @@ export const VISUALS = {
 
 export const VISUAL_KEYS = Object.keys(VISUALS);
 
-export function emptyVisualLayers() {
-  return Object.fromEntries(VISUAL_KEYS.map((key) => [key, false]));
+export function allVisualLayers(on) {
+  return Object.fromEntries(VISUAL_KEYS.map((key) => [key, on]));
 }
 
 /** Visual keys switched by a global parameter path. */
