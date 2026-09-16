@@ -91,6 +91,23 @@ const PANIC = [
   'relations.cohesionDrop',
   'locomotion.panicSpeedFactor',
 ];
+// Panic knobs beyond the core six (vision cone, flee strength, pulse
+// threshold, refractory time, rise and decay). They tune how panic feels
+// rather than what it is, so they wait for tier 6's finer mechanisms and
+// tier 4 stays readable. The mechanisms themselves stay on at their defaults.
+const PANIC_FINE = [
+  'relations.evadePanicBoost',
+  'relations.evadeLateralWeight',
+  'relations.directOn',
+  'relations.directOff',
+  'relations.holdTime',
+  'relations.signalDecayTime',
+  'relations.escapePredictionTime',
+  'relations.cohesionDrop',
+  'relations.panicTurnBoost',
+  'relations.panicMinTrigger',
+  'locomotion.panicSpeedFactor',
+];
 // Body size slows sustained speed and turning; arrives with species.
 const TRAITS = ['traits.*'];
 const ECOLOGY = ['ecology.*', 'plankton.*'];
@@ -176,7 +193,7 @@ export const TIERS = [
       withoutDetails(config);
     },
     globals: [...BASICS, ...TRAITS, ...PREDATION, ...PANIC],
-    hidden: DETAILS,
+    hidden: [...DETAILS, ...PANIC_FINE],
     schoolFields: [...REYNOLDS_FIELDS, ...SPECIES_FIELDS],
     allowSchoolEditing: true,
   },
@@ -188,7 +205,7 @@ export const TIERS = [
       withoutDetails(config);
     },
     globals: [...BASICS, ...TRAITS, ...PREDATION, ...PANIC, ...FOOD_WEB, ...ECOLOGY],
-    hidden: DETAILS,
+    hidden: [...DETAILS, ...PANIC_FINE],
     schoolFields: [...REYNOLDS_FIELDS, ...SPECIES_FIELDS, ...ENERGY_FIELDS],
     allowSchoolEditing: true,
   },
