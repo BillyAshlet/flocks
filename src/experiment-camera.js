@@ -92,23 +92,23 @@ export class ExperimentCameraController {
     const inspector = document.createElement('aside');
     inspector.id = 'fish-inspector';
     inspector.hidden = true;
-    inspector.setAttribute('aria-label', '鱼个体观察窗口');
+    inspector.setAttribute('aria-label', 'Fish inspector');
     inspector.innerHTML = `
       <header>
         <span class="fish-inspector-index">SPECIMEN VIEW</span>
-        <button type="button" id="fish-inspector-close" aria-label="关闭鱼观察窗口">×</button>
+        <button type="button" id="fish-inspector-close" aria-label="Close fish inspector">×</button>
       </header>
-      <div id="fish-preview-viewport" aria-label="鱼的第三人称实时特写">
+      <div id="fish-preview-viewport" aria-label="Live third-person view of the fish">
         <span>LIVE · THIRD PERSON</span>
       </div>
       <div class="fish-inspector-copy">
         <strong id="fish-inspector-title">—</strong>
         <span id="fish-inspector-detail">—</span>
       </div>
-      <div class="fish-inspector-actions" role="group" aria-label="鱼观察视角">
-        <button type="button" id="fish-enter-closeup">特写视角 · 全屏</button>
-        <button type="button" id="fish-enter-follow">跟随视角 · 全屏</button>
-        <button type="button" id="fish-enter-orbit">绕看视角 · 全屏</button>
+      <div class="fish-inspector-actions" role="group" aria-label="Camera views">
+        <button type="button" id="fish-enter-closeup">Close-up · fullscreen</button>
+        <button type="button" id="fish-enter-follow">Follow · fullscreen</button>
+        <button type="button" id="fish-enter-orbit">Orbit · fullscreen</button>
       </div>
     `;
     document.getElementById('app').appendChild(inspector);
@@ -134,7 +134,7 @@ export class ExperimentCameraController {
     hud.innerHTML = `
       <span id="fish-view-mode">—</span>
       <strong id="fish-view-name">—</strong>
-      <kbd>ESC 退出</kbd>
+      <kbd>ESC to exit</kbd>
     `;
     document.getElementById('app').appendChild(hud);
     return hud;
@@ -295,12 +295,12 @@ export class ExperimentCameraController {
     const flees = relations.filter((value) => value === 'evade').length;
     const role =
       hunts && flees
-        ? '捕食者 / 被捕食者'
+        ? 'predator / prey'
         : hunts
-          ? '捕食者'
+          ? 'predator'
           : flees
-            ? '被捕食者'
-            : '同级个体';
+            ? 'prey'
+            : 'peer';
     const title = `${fish.school.name} #${fish.index}`;
     const detail =
       `${role} · panic ${fish.panic.toFixed(2)} · ` +
@@ -329,7 +329,7 @@ export class ExperimentCameraController {
       mode === CAMERA_MODE.CLOSEUP
         ? 'FULLSCREEN · CLOSE-UP'
         : mode === CAMERA_MODE.ORBIT
-          ? 'FULLSCREEN · ORBIT · 拖动旋转 / 滚轮缩放'
+          ? 'FULLSCREEN · ORBIT · drag to rotate / scroll to zoom'
           : 'FULLSCREEN · FOLLOW';
     if (mode === CAMERA_MODE.ORBIT) this._seedOrbitFromCamera();
     this.presentation.cameraSettings.orbitEnabled = false;

@@ -37,7 +37,7 @@ test('config JSON round-trips without loss and validates atomically', () => {
   assert.equal(validateConfig(imported.config).valid, true);
   assert.throws(
     () => importConfigJson('{"runtime":{"seed":3}}'),
-    /至少需要一个鱼群/
+    /At least one school is required/
   );
 });
 
@@ -99,7 +99,7 @@ test('removed cascade project fails closed during config import', () => {
   legacy.runtime.mode = 'cascade';
   assert.throws(
     () => importConfigJson(exportConfigJson(legacy)),
-    /runtime\.(project|mode) 不是允许值/
+    /runtime\.(project|mode) is not an allowed value/
   );
 });
 
@@ -108,7 +108,7 @@ test('removed global cohesion fails closed during config import', () => {
   legacy.perception.globalCohesionFactor = 0.35;
   assert.throws(
     () => importConfigJson(exportConfigJson(legacy)),
-    /未注册参数: perception\.globalCohesionFactor/
+    /Unregistered parameter: perception\.globalCohesionFactor/
   );
 });
 
@@ -118,5 +118,5 @@ test('invalid predation geometry warns without partially rejecting config', () =
   config.locomotion.panicSpeedFactor = 1.2;
   const result = validateConfig(config);
   assert.equal(result.valid, true);
-  assert.match(result.warnings.join(' '), /无法闭合距离/);
+  assert.match(result.warnings.join(' '), /may never close the distance/);
 });

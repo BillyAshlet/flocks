@@ -69,9 +69,9 @@ const VISUAL_SIZE_GLOBAL = 2.6; // ← 唯一要调的旋钮：全体视觉放�
 
 // 逐鱼群微调，在上面之后再乘。现在三群一致；要单独放大某群改这里。
 const VISUAL_SIZE_BOOST = Object.freeze({
-  small: 1,
-  medium: 1,
-  large: 1,
+  gold: 1,
+  blue: 1,
+  red: 1,
 });
 
 // 耐力明度：亮度 ∝ 【还能活多久】= 当前能量 ÷ 每秒代谢。
@@ -2932,7 +2932,7 @@ export class ExperimentSimulation {
       warnings.push('burstFactor ≤ panicSpeedFactor');
     }
     if (predatorPairs.some((pair) => pair.closingSpeed <= 0)) {
-      warnings.push('至少一条捕食关系的名义闭合速度 ≤ 0');
+      warnings.push('At least one predator pair has a nominal closing speed ≤ 0');
     }
     return {
       seed: this.seed,

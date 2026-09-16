@@ -57,14 +57,14 @@ export function zoomRangeWindow(state, value, factor, limits) {
 const PROJECTS = {
   aquarium: {
     eyebrow: 'MAIN PROJECT',
-    title: '主水族馆',
-    description: '体型实时决定捕食者与被捕食者；耐力与浮游已启用，饿死永久生效。',
+    title: 'Aquarium',
+    description: 'Size decides predator and prey in real time; energy and plankton are on, starvation is permanent.',
     dashboard: 'LIVE FOOD WEB',
   },
   ecology: {
     eyebrow: 'SUB-EXPERIMENT 02',
-    title: '生态淘汰',
-    description: '可耗竭浮游、真实饥饿与两层捕食力；仅剩一个种群时结算。',
+    title: 'Ecology run',
+    description: 'Depletable plankton, real hunger and two-layer predation; ends when one population remains.',
     dashboard: 'ECOLOGY LEDGER',
   },
 };
@@ -138,31 +138,32 @@ function downloadText(filename, text, type = 'application/json') {
   URL.revokeObjectURL(link.href);
 }
 
+const inChinese = () => getLanguage() === 'zh';
+
 function relationGlyph(relation) {
-  return {
-    pursuit: '追',
-    evade: '逃',
-    peer: '同',
-    ignore: '·',
-  }[relation];
+  return (
+    inChinese()
+      ? { pursuit: '追', evade: '逃', peer: '同', ignore: '·' }
+      : { pursuit: 'P', evade: 'E', peer: '=', ignore: '·' }
+  )[relation];
 }
 
 function relationLabel(relation) {
-  return {
-    pursuit: '捕食',
-    evade: '逃逸',
-    peer: '同级',
-    ignore: '忽略',
-  }[relation];
+  return (
+    inChinese()
+      ? { pursuit: '捕食', evade: '逃逸', peer: '同级', ignore: '忽略' }
+      : { pursuit: 'hunts', evade: 'flees', peer: 'peer', ignore: 'ignores' }
+  )[relation];
 }
 
 function roleLabel(relations = []) {
   const pursuit = relations.includes('pursuit');
   const evade = relations.includes('evade');
-  if (pursuit && evade) return '双重角色：捕食者 + 被捕食者';
-  if (pursuit) return '捕食者';
-  if (evade) return '被捕食者';
-  return '同级群体';
+  const zh = inChinese();
+  if (pursuit && evade) return zh ? '双重角色：捕食者 + 被捕食者' : 'predator and prey';
+  if (pursuit) return zh ? '捕食者' : 'predator';
+  if (evade) return zh ? '被捕食者' : 'prey';
+  return zh ? '同级群体' : 'peer';
 }
 
 function groupVisible(project, group) {
@@ -192,7 +193,7 @@ export function createExperimentDebug({
   const holder = document.getElementById('panel-holder');
   const dashboard = document.createElement('section');
   dashboard.id = 'experiment-dashboard';
-  dashboard.setAttribute('aria-label', '鱼群关系与实验实时指标');
+  dashboard.setAttribute('aria-label', 'Live school relations and metrics');
   dashboard.innerHTML = `
     <header>
       <span id="dashboard-kind">LIVE FOOD WEB</span>
@@ -233,7 +234,7 @@ export function createExperimentDebug({
         <span>${meta.eyebrow}</span>
         <strong>${meta.title}</strong>
       </header>
-      <div class="project-tabs" role="tablist" aria-label="项目与子实验">
+      <div class="project-tabs" role="tablist" aria-label="Projects">
         ${Object.entries(PROJECTS)
           .map(
             ([id, item]) => `
@@ -300,7 +301,9 @@ export function createExperimentDebug({
       );
     });
     actions.addButton({ title: t('导入 JSON') }).on('click', () => {
-      const text = window.prompt('粘贴完整 ExperimentConfig JSON');
+      const text = window.prompt(
+        inChinese() ? '粘贴完整 ExperimentConfig JSON' : 'Paste a complete ExperimentConfig JSON'
+      );
       if (!text) return;
       try {
         controller.importConfig(text);
@@ -434,20 +437,27 @@ export function createExperimentDebug({
     function decorate() {
       const label = binding.element.querySelector('.tp-lblv_l');
       if (!label) return;
+      const zh = inChinese();
       label.title = isNumeric
-        ? `当前量程 ${range.min}–${range.max} · 安全范围 ${spec.min}–${spec.max} · 默认 ${defaultValue}`
-        : `默认 ${defaultValue}`;
+        ? zh
+          ? `当前量程 ${range.min}–${range.max} · 安全范围 ${spec.min}–${spec.max} · 默认 ${defaultValue}`
+          : `range ${range.min}–${range.max} · safe ${spec.min}–${spec.max} · default ${defaultValue}`
+        : zh
+          ? `默认 ${defaultValue}`
+          : `default ${defaultValue}`;
       addLabelButton(
         label,
         '↺',
-        `恢复默认值 ${defaultValue} 和完整量程`,
+        zh
+          ? `恢复默认值 ${defaultValue} 和完整量程`
+          : `Reset to default ${defaultValue} and full range`,
         resetParameter
       );
       if (!isNumeric) return;
-      addLabelButton(label, '+', '缩小量程，以当前值为中心', () =>
+      addLabelButton(label, '+', zh ? '缩小量程，以当前值为中心' : 'Narrow the range around the current value', () =>
         zoom(0.5)
       );
-      addLabelButton(label, '−', '扩大量程，以当前值为中心', () =>
+      addLabelButton(label, '−', zh ? '扩大量程，以当前值为中心' : 'Widen the range around the current value', () =>
         zoom(2)
       );
     }
@@ -550,7 +560,10 @@ export function createExperimentDebug({
       relations: '—',
       derived: '—',
     };
-    roleBindings = [
+    // Roles only mean something when there is someone to hunt or flee.
+    const showRoles =
+      schools.length > 1 && controller.stage.relations.enabled !== false;
+    roleBindings = !showRoles ? [] : [
       editor.addBinding(roleState, 'role', {
         label: t('体型自动角色'),
         readonly: true,
@@ -731,11 +744,14 @@ export function createExperimentDebug({
             .join('  ')}`
       )
       .join('\n');
+    const ecologyOn = controller.current.ecology.enabled !== false;
+    const predationOn = controller.current.relations.enabled !== false;
     const population = metrics.population
       .map((item) => {
-        const ecology =
-          metrics.project === 'ecology' || metrics.project === 'aquarium'
-            ? ` E=${(item.averageEnergy * 100).toFixed(0)}% dead=${item.deaths.captured}/${item.deaths.starved}`
+        const ecology = ecologyOn
+          ? ` E=${(item.averageEnergy * 100).toFixed(0)}% dead=${item.deaths.captured}/${item.deaths.starved}`
+          : predationOn
+            ? ` eaten=${item.deaths.captured}`
             : '';
         return `${item.name} ${item.alive}/${item.target} size=${item.size.toFixed(2)} r=${item.neighborRadius.toFixed(3)}${ecology}`;
       })
@@ -748,14 +764,14 @@ export function createExperimentDebug({
         return `${pair.actor}→${pair.target} cap=${pair.captures}/${pair.chaseStarts} ${(pair.conversion * 100).toFixed(1)}% chase=${pair.averageChaseSeconds.toFixed(2)}s close=${closure}`;
       })
       .join('\n');
-    const bodies = metrics.rigidBodies
-      .map((body) => `${body.type}@y=${body.position[1].toFixed(2)}`)
-      .join(' ');
+    const relationsTitle = inChinese()
+      ? '体型派生关系（行作用于列）'
+      : 'Relations by size (row acts on column) · P hunts · E flees · = peer';
     metricsText.textContent =
-      `${population}\n\n体型派生关系（行作用于列）\n${matrix}` +
+      `${population}\n\n${relationsTitle}\n${matrix}` +
       `${capture ? `\n${capture}` : ''}` +
       `${
-        metrics.project === 'ecology' || metrics.project === 'aquarium'
+        ecologyOn
           ? `
 
 carrion=${metrics.ecology.plankton.level.toFixed(0)} eaten=${metrics.ecology.plankton.consumed.toFixed(0)}` +
@@ -767,7 +783,6 @@ outcome=${metrics.ecology.state}${metrics.ecology.winnerName ? ` winner=${metric
       }` +
       `\npairs=${metrics.pairCount} sim=${metrics.simulationMs.toFixed(1)}ms render=${metrics.renderFps.toFixed(0)}fps` +
       `\ncaptures=${metrics.captures} fx=${metrics.captureParticles} deaths=permanent` +
-      `\nbodies=${bodies || '—'} contacts=${metrics.dynamicContacts}` +
       `${metrics.warnings.length ? `\nwarning: ${metrics.warnings.join(' · ')}` : ''}`;
   }
 

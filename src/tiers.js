@@ -94,7 +94,7 @@ export const TIERS = [
     title: 'Reynolds flocking',
     summary: 'Placeholder: why this tier exists.',
     configure(config) {
-      keepSchools(config, ['small']);
+      keepSchools(config, ['gold']);
       withoutEcology(config);
       withoutPredation(config);
     },
@@ -106,6 +106,7 @@ export const TIERS = [
     title: 'Species',
     summary: 'Placeholder: why this tier exists.',
     configure(config) {
+      keepSchools(config, ['gold', 'red']);
       withoutEcology(config);
       withoutPredation(config);
     },
@@ -117,6 +118,7 @@ export const TIERS = [
     title: 'Predation',
     summary: 'Placeholder: why this tier exists.',
     configure(config) {
+      keepSchools(config, ['gold', 'red']);
       withoutEcology(config);
       withoutPanic(config);
     },
@@ -128,6 +130,7 @@ export const TIERS = [
     title: 'Panic',
     summary: 'Placeholder: why this tier exists.',
     configure(config) {
+      keepSchools(config, ['gold', 'red']);
       withoutEcology(config);
     },
     globals: [...BASICS, ...PREDATION, ...PANIC],

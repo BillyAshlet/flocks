@@ -46,7 +46,7 @@ function school({
       // 出生 blob 必须明显大于该群的 separationRadius，否则整群在出生瞬间
       // 全部落在彼此的排斥半径内，会被一起炸开。大群的 sepR 最大(0.189)
       // 而原来 blob 最小(0.22) —— 64% 的鱼互斥，这就是"开局往反方向跑"。
-      radius: id === 'large' ? 0.45 : 0.36,
+      radius: id === 'red' ? 0.45 : 0.36,
     },
     // 全部朝最长轴（x）。原来小/中朝 z，而 z 只有 x 的 1/2.5 长，
     // 整群列队同向出发 → 几秒内一起撞墙。
@@ -69,8 +69,8 @@ export const DEFAULT_EXPERIMENT_CONFIG = Object.freeze({
   },
   schools: [
     school({
-      id: 'small',
-      name: '小群',
+      id: 'gold',
+      name: 'Gold',
       color: '#e5a441',
       count: 400,
       size: 1,
@@ -79,8 +79,8 @@ export const DEFAULT_EXPERIMENT_CONFIG = Object.freeze({
       centerX: 0.32,
     }),
     school({
-      id: 'medium',
-      name: '中群',
+      id: 'blue',
+      name: 'Blue',
       color: '#4f9fcf',
       count: 200,
       size: 1.5,
@@ -89,8 +89,8 @@ export const DEFAULT_EXPERIMENT_CONFIG = Object.freeze({
       centerX: -0.05,
     }),
     school({
-      id: 'large',
-      name: '大群',
+      id: 'red',
+      name: 'Red',
       color: '#c95252',
       count: 80,
       size: 2.25,
@@ -761,12 +761,12 @@ const scalarEntries = [
     max: 12,
     step: 0.25,
   }),
-  entry('relations.giveUpSeconds', '关系', '追不上放弃 (s)', 'live', {
+  entry('relations.giveUpSeconds', '关系', 'give up after (s)', 'live', {
     min: 0.1,
     max: 10,
     step: 0.1,
   }),
-  entry('relations.targetTieTolerance', '关系', '选目标平局带', 'live', {
+  entry('relations.targetTieTolerance', '关系', 'target tie band', 'live', {
     min: 0,
     max: 0.5,
     step: 0.01,
@@ -1425,7 +1425,7 @@ function schoolEntries(config) {
     const p = `schools.${index}`;
     const group = `鱼群 · ${item.name}`;
     const gamePlayer =
-      config.runtime?.project === 'game' && item.id === 'medium';
+      config.runtime?.project === 'game' && item.id === 'blue';
     // bounds / chamber 是【可选】字段（每鱼群包围盒与隔间隔离，见
     // experiment-simulation.js 的 _refreshSchoolBounds / _isolateChambers）。
     // 校验器是双向的 —— 未登记的字段报错，已登记但缺失的字段同样报错，
@@ -1609,47 +1609,47 @@ export function validateConfig(candidate) {
   const errors = [];
   const warnings = [];
   if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
-    return { valid: false, errors: ['配置必须是对象'], warnings };
+    return { valid: false, errors: ['Config must be an object'], warnings };
   }
   if (!Array.isArray(candidate.schools) || candidate.schools.length < 1) {
-    errors.push('至少需要一个鱼群');
+    errors.push('At least one school is required');
     return { valid: false, errors, warnings };
   }
   let registry;
   try {
     registry = createParameterRegistry(candidate);
   } catch {
-    errors.push('配置结构不完整');
+    errors.push('Config structure is incomplete');
     return { valid: false, errors, warnings };
   }
   const registered = new Set(registry.map((item) => item.path));
   for (const path of listLeafPaths(candidate)) {
-    if (!registered.has(path)) errors.push(`未注册参数: ${path}`);
+    if (!registered.has(path)) errors.push(`Unregistered parameter: ${path}`);
   }
   for (const spec of registry) {
     const value = getPath(candidate, spec.path);
     if (value === undefined) {
-      errors.push(`缺少参数: ${spec.path}`);
+      errors.push(`Missing parameter: ${spec.path}`);
       continue;
     }
     if (spec.options && !Object.values(spec.options).includes(value)) {
-      errors.push(`${spec.path} 不是允许值`);
+      errors.push(`${spec.path} is not an allowed value`);
     }
     if (spec.min !== undefined) {
-      if (!Number.isFinite(value)) errors.push(`${spec.path} 必须是有限数`);
+      if (!Number.isFinite(value)) errors.push(`${spec.path} must be a finite number`);
       if (value < spec.min || value > spec.max) {
-        errors.push(`${spec.path} 超出 ${spec.min}–${spec.max}`);
+        errors.push(`${spec.path} is outside ${spec.min}–${spec.max}`);
       }
       if (spec.step === 1 && !Number.isInteger(value)) {
-        errors.push(`${spec.path} 必须是整数`);
+        errors.push(`${spec.path} must be an integer`);
       }
     }
   }
   const ids = candidate.schools?.map((item) => item.id) ?? [];
-  if (new Set(ids).size !== ids.length) errors.push('鱼群 id 必须唯一');
+  if (new Set(ids).size !== ids.length) errors.push('School ids must be unique');
   for (const school of candidate.schools) {
     if (school.maxSpeed < school.cruiseSpeed) {
-      errors.push(`${school.id}: maxSpeed 必须不小于 cruiseSpeed`);
+      errors.push(`${school.id}: maxSpeed must not be less than cruiseSpeed`);
     }
     const headingLength = Math.hypot(
       school.initialHeading.x,
@@ -1657,7 +1657,7 @@ export function validateConfig(candidate) {
       school.initialHeading.z
     );
     if (headingLength <= 1e-8) {
-      errors.push(`${school.id}: initialHeading 不能为零向量`);
+      errors.push(`${school.id}: initialHeading must not be a zero vector`);
     }
   }
   for (const [id, obstacle] of Object.entries(candidate.obstacles)) {
@@ -1666,14 +1666,14 @@ export function validateConfig(candidate) {
       obstacle.holeDiameter >= obstacle.width ||
       obstacle.holeDiameter >= obstacle.height
     ) {
-      errors.push(`${id}: holeDiameter 必须小于面板宽高`);
+      errors.push(`${id}: holeDiameter must be smaller than the panel width and height`);
     }
   }
   if (
     candidate.locomotion?.burstFactor <=
     candidate.locomotion?.panicSpeedFactor
   ) {
-    warnings.push('burstFactor ≤ panicSpeedFactor：捕食者可能无法闭合距离');
+    warnings.push('burstFactor ≤ panicSpeedFactor: predators may never close the distance');
   }
   return { valid: errors.length === 0, errors, warnings };
 }
@@ -1687,7 +1687,7 @@ export function importConfigJson(text) {
   try {
     parsed = JSON.parse(text);
   } catch (error) {
-    throw new Error(`JSON 解析失败: ${error.message}`);
+    throw new Error(`Could not parse JSON: ${error.message}`);
   }
   const result = validateConfig(parsed);
   if (!result.valid) throw new Error(result.errors.join('\n'));

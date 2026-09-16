@@ -422,7 +422,7 @@ test('ecology capture restores predator energy', () => {
   const pair = simulation
     .metrics()
     .predatorPairs.find(
-      (item) => item.actor === 'medium' && item.target === 'small'
+      (item) => item.actor === 'blue' && item.target === 'gold'
     );
   assert.equal(pair.captures, 1);
   assert.equal(pair.chaseStarts, 1);
@@ -606,7 +606,7 @@ test('chamber isolation makes two sub-tanks invisible to each other', () => {
   config.runtime.seed = 1001;
   config.ecology.enabled = false;
   config.plankton.enabled = false;
-  config.schools = config.schools.filter((school) => school.id !== 'large');
+  config.schools = config.schools.filter((school) => school.id !== 'red');
   for (const school of config.schools) {
     school.count = 12;
     school.targetNeighbors = Math.min(school.targetNeighbors, 11);
@@ -614,7 +614,7 @@ test('chamber isolation makes two sub-tanks invisible to each other', () => {
   const gap = 0.1;
   const half = (config.tank.height - gap) / 2;
   for (const school of config.schools) {
-    const top = school.id === 'medium';
+    const top = school.id === 'blue';
     school.chamber = top ? 'top' : 'bottom';
     school.bounds = {
       centerY: (top ? 1 : -1) * ((gap + half) / 2),
@@ -628,8 +628,8 @@ test('chamber isolation makes two sub-tanks invisible to each other', () => {
     physics: null,
   });
 
-  const player = config.schools.findIndex((school) => school.id === 'medium');
-  const other = config.schools.findIndex((school) => school.id !== 'medium');
+  const player = config.schools.findIndex((school) => school.id === 'blue');
+  const other = config.schools.findIndex((school) => school.id !== 'blue');
   assert.equal(simulation.relationMatrix[player][other], 'ignore');
   assert.equal(simulation.relationMatrix[other][player], 'ignore');
 

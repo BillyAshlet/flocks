@@ -89,7 +89,7 @@ export class TimeShortcutController {
   _createHud() {
     const hud = document.createElement('section');
     hud.id = 'time-shortcut-hud';
-    hud.setAttribute('aria-label', '时间快捷键');
+    hud.setAttribute('aria-label', 'Time controls');
     hud.innerHTML = `
       <strong id="time-shortcut-value">1×</strong>
       <span>HOLD ENTER&nbsp; 2×</span>

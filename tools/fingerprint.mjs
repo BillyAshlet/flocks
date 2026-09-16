@@ -25,7 +25,7 @@ const DT = 1 / 30;
 const SECONDS = 20;
 const SEEDS = [11, 4242];
 // Scaled-down populations keep the run fast while exercising every rule.
-const COUNTS = { small: 60, medium: 30, large: 12 };
+const COUNTS = { gold: 60, blue: 30, red: 12 };
 
 const SCENARIOS = [
   ['aquarium', () => {}],

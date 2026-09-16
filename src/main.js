@@ -70,8 +70,8 @@ function applyPopulationPreset(stage) {
   const presets = {
     // The large school needs enough members, otherwise its cohesion radius
     // never reaches the average spacing and it cannot find its own kind.
-    full: { small: 400, medium: 200, large: 80 },
-    performance: { small: 200, medium: 80, large: 40 },
+    full: { gold: 400, blue: 200, red: 80 },
+    performance: { gold: 200, blue: 80, red: 40 },
   };
   const counts = presets[stage.runtime.populationPreset];
   if (!counts) return;
