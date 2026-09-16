@@ -58,7 +58,8 @@ function aquariumProportions(config) {
   }
 }
 
-// 360 degrees = the fish see all around; the forward cone comes later.
+// 360 degrees = the fish see all around. The forward cone arrives in tier 4,
+// together with panic, whose signal travels along it.
 function withoutFieldOfView(config) {
   config.perception.fovDegrees = 360;
 }
@@ -147,6 +148,7 @@ export const TIERS = [
     summary: 'Placeholder: why this tier exists.',
     configure(config) {
       keepSchools(config, ['gold', 'red']);
+      withoutFieldOfView(config);
       withoutEcology(config);
       withoutPanic(config);
     },
