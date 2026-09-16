@@ -70,7 +70,6 @@ const BASICS = [
   'runtime.seed',
   'runtime.randomizeSeed',
   'runtime.spawnMode',
-  'debug.*',
   'locomotion.avoidanceWeight',
   'locomotion.boundaryWeight',
 ];
@@ -114,6 +113,12 @@ const REYNOLDS_FIELDS = [
 const SPECIES_FIELDS = ['name', 'color', 'size', 'cruiseSpeed', 'maxSpeed', 'turnSpeed'];
 const ENERGY_FIELDS = ['grazeRate', 'metabolismMultiplier'];
 
+// Visualization layers (see school-visualizer.js) arrive with the rules they
+// draw.
+const REYNOLDS_VISUALS = ['reynolds', 'walls'];
+const PREDATION_VISUALS = [...REYNOLDS_VISUALS, 'hunting'];
+const PANIC_VISUALS = [...PREDATION_VISUALS, 'fieldOfView', 'panic'];
+
 export const TIERS = [
   {
     number: 1,
@@ -128,6 +133,7 @@ export const TIERS = [
     },
     globals: BASICS,
     schoolFields: REYNOLDS_FIELDS,
+    visuals: REYNOLDS_VISUALS,
   },
   {
     number: 2,
@@ -141,6 +147,7 @@ export const TIERS = [
     },
     globals: BASICS,
     schoolFields: [...REYNOLDS_FIELDS, ...SPECIES_FIELDS],
+    visuals: REYNOLDS_VISUALS,
   },
   {
     number: 3,
@@ -154,6 +161,7 @@ export const TIERS = [
     },
     globals: [...BASICS, ...PREDATION],
     schoolFields: [...REYNOLDS_FIELDS, ...SPECIES_FIELDS],
+    visuals: PREDATION_VISUALS,
   },
   {
     number: 4,
@@ -165,6 +173,7 @@ export const TIERS = [
     },
     globals: [...BASICS, ...PREDATION, ...PANIC],
     schoolFields: [...REYNOLDS_FIELDS, ...SPECIES_FIELDS],
+    visuals: PANIC_VISUALS,
   },
   {
     number: 5,
@@ -173,6 +182,7 @@ export const TIERS = [
     configure() {},
     globals: [...BASICS, ...PREDATION, ...PANIC, ...ECOLOGY],
     schoolFields: [...REYNOLDS_FIELDS, ...SPECIES_FIELDS, ...ENERGY_FIELDS],
+    visuals: PANIC_VISUALS,
   },
   {
     number: 6,
@@ -182,6 +192,7 @@ export const TIERS = [
     // null = no filter: every parameter, and schools can be added or removed.
     globals: null,
     schoolFields: null,
+    visuals: null,
     allowSchoolEditing: true,
   },
 ];
@@ -216,5 +227,6 @@ export function tierPanelScope(number) {
       tier.globals === null || matchesPath(tier.globals, spec.path),
     showSchoolField: (field) =>
       tier.schoolFields === null || tier.schoolFields.includes(field),
+    showVisual: (layer) => tier.visuals === null || tier.visuals.includes(layer),
   };
 }

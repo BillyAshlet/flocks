@@ -405,10 +405,6 @@ export const DEFAULT_EXPERIMENT_CONFIG = Object.freeze({
     incidentalCapture: true,
     captureLengthFactor: 0.5,
   },
-  debug: {
-    perceptionRadii: false,
-    combatRadii: false,
-  },
   captureVfx: {
     enabled: true,
     particleCount: 12,
@@ -1199,8 +1195,6 @@ const scalarEntries = [
     max: 1,
     step: 0.01,
   }),
-  entry('debug.perceptionRadii', '可视化', '0号鱼 · 同群三力半径', 'live'),
-  entry('debug.combatRadii', '可视化', '0号鱼 · 捕食/逃逸半径', 'live'),
   entry('capture.incidentalCapture', '捕食', '顺路吞食（太小的猎物）', 'live'),
   entry(
     'capture.captureLengthFactor',

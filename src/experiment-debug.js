@@ -11,6 +11,15 @@ import {
   toggleLanguage,
   translateOptions,
 } from './experiment-i18n.js';
+import { VISUAL_LAYERS } from './school-visualizer.js';
+
+const VISUAL_LAYER_LABELS = {
+  reynolds: 'Reynolds radii',
+  walls: 'wall steering',
+  fieldOfView: 'blind cone (field of view)',
+  hunting: 'hunting radii + target',
+  panic: 'threat + signal radii',
+};
 
 function niceRangeNumber(value) {
   return Number.parseFloat(value.toPrecision(8));
@@ -627,6 +636,22 @@ export function createExperimentDebug({
           if (globalSpec) bindSpec(folder, globalSpec);
         }
       }
+    }
+    addVisualLayers(editor, school);
+  }
+
+  // View-only toggles for this school; a tier offers only the layers whose
+  // rules it has introduced.
+  function addVisualLayers(editor, school) {
+    if (!controller.visualLayersFor) return;
+    const layers = controller.visualLayersFor(school);
+    const offered = VISUAL_LAYERS.filter(
+      (layer) => controller.panelScope?.showVisual(layer) ?? true
+    );
+    if (offered.length === 0) return;
+    const folder = editor.addFolder({ title: t('可视化'), expanded: true });
+    for (const layer of offered) {
+      folder.addBinding(layers, layer, { label: t(VISUAL_LAYER_LABELS[layer]) });
     }
   }
 

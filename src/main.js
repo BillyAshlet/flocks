@@ -21,7 +21,11 @@ import { ExperimentSimulation } from './experiment-simulation.js';
 import { ExperimentCameraController } from './experiment-camera.js';
 import { createExperimentDebug } from './experiment-debug.js';
 import { TimeShortcutController } from './time-shortcuts.js';
-import { RadiusVisualizer } from './radius-visualizer.js';
+import {
+  SchoolVisualizer,
+  VISUAL_LAYERS,
+  emptyVisualLayers,
+} from './school-visualizer.js';
 import { TIER_COUNT, tierByNumber, tierConfig, tierPanelScope } from './tiers.js';
 
 const startup = document.getElementById('startup-status');
@@ -169,6 +173,17 @@ async function bootstrap() {
   const controller = {
     // Set per route; narrows the parameter panel to one tier.
     panelScope: null,
+    // View-only state, not part of the simulation config: which
+    // visualization layers each school shows, keyed by school id.
+    visualLayers: new Map(),
+    visualLayersFor(school) {
+      let layers = this.visualLayers.get(school.id);
+      if (!layers) {
+        layers = emptyVisualLayers();
+        this.visualLayers.set(school.id, layers);
+      }
+      return layers;
+    },
     get current() {
       return current;
     },
@@ -268,7 +283,7 @@ async function bootstrap() {
     },
   };
 
-  const radiusVisualizer = new RadiusVisualizer(scene);
+  const schoolVisualizer = new SchoolVisualizer(scene);
   timeShortcuts = new TimeShortcutController({
     setTimeScale(value) {
       stage.runtime.timeScale = value;
@@ -322,6 +337,21 @@ async function bootstrap() {
     renderChrome();
     if (push) history.pushState(null, '', routePath(route));
     world.resetTiming(performance.now());
+  }
+
+  // Only tier pages draw overlays, and only the layers that tier has reached.
+  function visibleLayers() {
+    const scope = controller.panelScope;
+    if (route.page !== 'tier' || !scope) return [];
+    return current.schools.map((school) => {
+      const chosen = controller.visualLayersFor(school);
+      return Object.fromEntries(
+        VISUAL_LAYERS.map((layer) => [
+          layer,
+          chosen[layer] && scope.showVisual(layer),
+        ])
+      );
+    });
   }
 
   function goToTier(number) {
@@ -396,7 +426,12 @@ async function bootstrap() {
     renderer.render(scene, camera);
     cameraController.renderPreview();
     timeShortcuts.update(current.runtime.timeScale);
-    radiusVisualizer.update(simulation, current);
+    schoolVisualizer.update(
+      simulation,
+      current,
+      visibleLayers(),
+      cameraController.selected
+    );
     debug.update(nowMs);
   });
   setStartup('Ready', 'ready');
