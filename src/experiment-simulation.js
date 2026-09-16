@@ -249,7 +249,6 @@ export class ExperimentSimulation {
     // Panic propagation: direct threat level, neighbor panic, neighbor escape direction.
     this.threatLevel = new Float32Array(this.count);
     this.neighborPanic = new Float32Array(this.count);
-    this.neighborEvade = new Float32Array(this.count * 3);
     // Emergency alignment channel: panicked headings stay out of the normal alignment average.
     this.emergencyAlign = new Float32Array(this.count * 3);
     this.emergencyUrgency = new Float32Array(this.count);
@@ -274,7 +273,6 @@ export class ExperimentSimulation {
     // Roll: the body banks into turns. Visual only.
     this.rollAngles = new Float32Array(this.count);
     this.prevHeadings = new Float32Array(this.count * 3);
-    this.escapeDir = new Float32Array(this.count * 3);
     this.energy = new Float32Array(this.count);
     // One shared energy pool per school: part of each meal flows in and is split evenly each step.
     this.energyPools = new Float64Array(config.schools.length);
@@ -446,7 +444,6 @@ export class ExperimentSimulation {
     this.captureVfx?.reset();
     this.alive.fill(1);
     this.panic.fill(0);
-    this.escapeDir.fill(0);
     this.lockedTargets.fill(-1);
     this.excludedTargets.fill(-1);
     this.chaseBestDistance2.fill(Infinity);
@@ -700,11 +697,9 @@ export class ExperimentSimulation {
     this.panic.fill(0);
     this.threatLevel.fill(0);
     this.neighborPanic.fill(0);
-    this.neighborEvade.fill(0);
     this.emergencyAlign.fill(0);
     this.emergencyUrgency.fill(0);
     this.evadeForces.fill(0);
-    this.escapeDir.fill(0);
     this.lockedTargets.fill(-1);
     this.excludedTargets.fill(-1);
     this.chaseBestDistance2.fill(Infinity);
@@ -796,7 +791,6 @@ export class ExperimentSimulation {
     this.threatLevel.fill(0);
     this.neighborPanic.fill(0);
     this.heardSignal.fill(0);
-    this.neighborEvade.fill(0);
     this.emergencyAlign.fill(0);
     this.emergencyUrgency.fill(0);
     this.pursuitTargets.fill(-1);
@@ -963,11 +957,11 @@ export class ExperimentSimulation {
     if (distance2 <= derived.cohesionRadius ** 2) {
       this.sameNeighbors[i] += 1;
       this.sameNeighbors[j] += 1;
-      // Startle wave: panic and escape direction spread along neighbor chains
-      // (reading last step's values). It also respects the field of view, so
-      // the wave is directional instead of spreading everywhere at once.
-      const jo3 = j * 3;
-      const io3 = i * 3;
+      // Startle wave: the alarm pulse and panic level spread along neighbor
+      // chains (reading last step's values). It also respects the field of
+      // view, so the wave is directional instead of spreading everywhere at
+      // once. The escape direction does not spread: fish that never saw the
+      // predator turn with the school through alignment.
       if (interactionsEnabled && seeIJ) {
         // The social signal carries the alarm pulse, not the panic value: the
         // pulse decays to zero, while a continuous value would echo forever.
@@ -977,13 +971,6 @@ export class ExperimentSimulation {
         if (this.panic[j] > this.neighborPanic[i]) {
           this.neighborPanic[i] = this.panic[j];
         }
-        add3(
-          this.neighborEvade,
-          i,
-          this.escapeDir[jo3],
-          this.escapeDir[jo3 + 1],
-          this.escapeDir[jo3 + 2]
-        );
       }
       if (interactionsEnabled && seeJI) {
         const signalBack =
@@ -992,13 +979,6 @@ export class ExperimentSimulation {
         if (this.panic[i] > this.neighborPanic[j]) {
           this.neighborPanic[j] = this.panic[i];
         }
-        add3(
-          this.neighborEvade,
-          j,
-          this.escapeDir[io3],
-          this.escapeDir[io3 + 1],
-          this.escapeDir[io3 + 2]
-        );
       }
       // Cohesion weight: 'inverse' weights by 1/(d^2 + soft^2), a cheap
       // approximation of topological interaction (Ballerini et al.: starlings
@@ -1718,26 +1698,15 @@ export class ExperimentSimulation {
       );
     }
 
-    // Escape direction: a fish that saw the threat uses its own; otherwise it
-    // uses the one passed on by neighbors, so fish that never saw the predator
-    // still turn with the school. Design rule: only fish that directly
-    // perceive a predator get a geometric escape vector. Socially panicked
-    // fish know only their neighbors' headings, not the predator's position;
-    // anything else would be omniscience.
+    // Escape direction. Design rule: only fish that directly perceive a
+    // predator get a geometric escape vector. Socially panicked fish know only
+    // their neighbors' headings, not the predator's position; anything else
+    // would be omniscience. They turn with the school through alignment.
     const ex = this.evadeForces[offset];
     const ey = this.evadeForces[offset + 1];
     const ez = this.evadeForces[offset + 2];
     const escapeMagnitude = Math.hypot(ex, ey, ez);
-    if (escapeMagnitude > EPSILON) {
-      const inverseEscape = 1 / escapeMagnitude;
-      this.escapeDir[offset] = ex * inverseEscape;
-      this.escapeDir[offset + 1] = ey * inverseEscape;
-      this.escapeDir[offset + 2] = ez * inverseEscape;
-    } else {
-      this.escapeDir[offset] = 0;
-      this.escapeDir[offset + 1] = 0;
-      this.escapeDir[offset + 2] = 0;
-    }
+    const inverseEscape = escapeMagnitude > EPSILON ? 1 / escapeMagnitude : 0;
     // Emergency alignment: one fish that sees danger outweighs the average of
     // twenty calm neighbors. This is what actually carries the startle wave.
     // It is off while scattering; otherwise it keeps pulling fish that want to
@@ -1768,9 +1737,9 @@ export class ExperimentSimulation {
       interactionsEnabled && panic > relations.panicMinTrigger;
     if (directThreat > 0) {
       applyRule(
-        this.escapeDir[offset],
-        this.escapeDir[offset + 1],
-        this.escapeDir[offset + 2],
+        ex * inverseEscape,
+        ey * inverseEscape,
+        ez * inverseEscape,
         relations.evadeWeight * directThreat
       );
     }
