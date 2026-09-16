@@ -92,6 +92,7 @@ const DICT = {
   缸壁: ['Walls', '缸壁'],
   鱼: ['Fish', '鱼'],
   非研究部分: ['Non-research settings', '非研究部分'],
+  更多参数: ['More parameters', '更多参数'],
 
   // Groups: each side of ' · ' is looked up separately, so the fragments are listed here
   Advanced: ['Advanced', '高级'],

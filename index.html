@@ -220,14 +220,18 @@
       #panel-holder .vis-row.vis-on .tp-lblv_l::before {
         background: var(--vis-color);
       }
-      /* Parameters this tier adds over the tier before it. */
-      #panel-holder .is-new {
-        background: rgba(229, 164, 65, 0.16);
-        box-shadow: inset 3px 0 0 #d69a3a;
+      /* Core parameters this tier adds over the tier before it: set in bold
+         and a size up rather than highlighted. A folder holding one is bold
+         too, so it still shows when collapsed. */
+      #panel-holder .is-new .tp-lblv_l,
+      #panel-holder .is-new.tp-btnv .tp-btnv_t,
+      #panel-holder .has-new > .tp-fldv_b .tp-fldv_t {
+        color: var(--lab-ink);
+        font-weight: 700;
       }
-      #panel-holder .has-new > .tp-fldv_b .tp-fldv_t::after {
-        content: ' •';
-        color: #d69a3a;
+      #panel-holder .is-new .tp-lblv_l,
+      #panel-holder .is-new.tp-btnv .tp-btnv_t {
+        font-size: 1.15em;
       }
       #project-switcher {
         margin-bottom: 8px;

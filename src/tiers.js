@@ -117,6 +117,32 @@ const ECOLOGY = ['ecology.*', 'plankton.*'];
 // meant to be: the edge that decides whether the largest fish also eats the
 // smallest (a web) or only the middle one (a chain).
 const FOOD_WEB = ['relations.KMax'];
+// Energy and plankton knobs beyond tier 5's core: living cost, hunting cost,
+// what a catch is worth, how a meal is shared, and how fast plankton regrows.
+// The rest shape the numbers rather than the idea, so they wait for tier 6,
+// like PANIC_FINE. Display-only paths (carcasses, particles) are not listed;
+// they stay under Non-research settings.
+const ECOLOGY_FINE = [
+  'ecology.enabled',
+  'ecology.seekHungerRatio',
+  'ecology.energyCapacity',
+  'ecology.capacitySizeExponent',
+  'ecology.initialEnergyRatio',
+  'ecology.initialEnergyJitter',
+  'ecology.energyShareRadius',
+  'ecology.basalSizeExponent',
+  'ecology.minBurstEnergyRatio',
+  'ecology.burstSizeScaled',
+  'ecology.planktonEnergy',
+  'ecology.grazeSizeExponent',
+  'ecology.grazeHungerRatio',
+  'plankton.enabled',
+  'plankton.halfSaturationFraction',
+  'plankton.forageRadius',
+  'plankton.senseRadius',
+  'plankton.usesPerParticle',
+  'plankton.maxIntakePerFish',
+];
 // Parameters of withoutDetails' mechanisms; hidden until tier 6.
 const DETAILS = [
   'relations.emergencyAlignment*',
@@ -126,6 +152,21 @@ const DETAILS = [
   'relations.scatterLatch',
   'relations.panicScatter*',
   'ecology.desperation*',
+  'ecology.debtSettleSeconds',
+];
+// Tier 6 unhides everything, about sixty research knobs at once. Its core is
+// the switch and main knobs of each mechanism it adds; the rest of what it
+// adds is shown folded under More and not marked as new.
+const FULL_CORE = [
+  'relations.emergencyAlignment',
+  'relations.emergencyAlignmentWeight',
+  'relations.signalRadiusFactor',
+  'relations.scatterLatch',
+  'relations.panicScatterEnter',
+  'ecology.desperation',
+  'ecology.desperationEnterRatio',
+  'ecology.desperationSpeedBoost',
+  'ecology.desperationDebt',
   'ecology.debtSettleSeconds',
 ];
 
@@ -205,7 +246,7 @@ export const TIERS = [
       withoutDetails(config);
     },
     globals: [...BASICS, ...TRAITS, ...PREDATION, ...PANIC, ...FOOD_WEB, ...ECOLOGY],
-    hidden: [...DETAILS, ...PANIC_FINE],
+    hidden: [...DETAILS, ...PANIC_FINE, ...ECOLOGY_FINE],
     schoolFields: [...REYNOLDS_FIELDS, ...SPECIES_FIELDS, ...ENERGY_FIELDS],
     allowSchoolEditing: true,
   },
@@ -217,6 +258,7 @@ export const TIERS = [
     // null = no filter: every parameter, and schools can be added or removed.
     globals: null,
     schoolFields: null,
+    core: FULL_CORE,
     allowSchoolEditing: true,
   },
 ];
@@ -261,6 +303,10 @@ export function tierPanelScope(number) {
   const before = previous ? visibility(previous) : null;
   const isNew = (kind) => (item) =>
     before !== null && shown[kind](item) && !before[kind](item);
+  // Without a `core` list everything a tier adds is core.
+  const isCore = (path) => !tier.core || matchesPath(tier.core, path);
+  const isNewGlobal = isNew('global');
+  const isNewSchoolField = isNew('schoolField');
   return {
     eyebrow: `TIER ${tier.number}`,
     allowSchoolEditing: tier.allowSchoolEditing ?? false,
@@ -270,7 +316,13 @@ export function tierPanelScope(number) {
       !(previous.allowSchoolEditing ?? false),
     showGlobal: shown.global,
     showSchoolField: shown.schoolField,
-    isNewGlobal: isNew('global'),
-    isNewSchoolField: isNew('schoolField'),
+    isNewGlobal,
+    isNewSchoolField,
+    // What the panel marks as new: added here and part of the tier's core.
+    isNewCoreGlobal: (spec) => isNewGlobal(spec) && isCore(spec.path),
+    isNewCoreSchoolField: (field) =>
+      isNewSchoolField(field) && isCore(`schools.${field}`),
+    // Added here but not core: folded under More.
+    isDetailGlobal: (spec) => isNewGlobal(spec) && !isCore(spec.path),
   };
 }

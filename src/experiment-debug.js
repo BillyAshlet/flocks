@@ -98,7 +98,9 @@ export const SCHOOL_SECTIONS = [
   {
     title: '生态角色',
     expanded: false,
-    fields: ['grazeRate'],
+    // metabolismMultiplier had a schema entry but no section, so it never
+    // reached the panel.
+    fields: ['grazeRate', 'metabolismMultiplier'],
   },
   {
     title: '分离 · Separation',
@@ -761,9 +763,13 @@ export function createExperimentDebug({
 
   function isNewSpec(spec) {
     const scope = controller.panelScope;
-    if (!scope?.isNewGlobal) return false;
+    if (!scope?.isNewCoreGlobal) return false;
+    // Display and engine settings are not what a tier teaches.
+    if (['display', 'internal'].includes(parameterCategory(spec))) return false;
     const match = /^schools\.\d+\.([^.]+)/.exec(spec.path);
-    return match ? scope.isNewSchoolField(match[1]) : scope.isNewGlobal(spec);
+    return match
+      ? scope.isNewCoreSchoolField(match[1])
+      : scope.isNewCoreGlobal(spec);
   }
 
   // A research tier can narrow the panel to the parameters it introduces.
@@ -818,14 +824,21 @@ export function createExperimentDebug({
     // parameter-categories.test.js keeps that from happening silently.
     const inCategory = (...names) =>
       globals.filter((spec) => names.includes(parameterCategory(spec) ?? 'fish'));
-    addGroupFolders(root, inCategory('run'));
-    const environment = inCategory('environment');
+    const isDetail = (spec) => controller.panelScope?.isDetailGlobal(spec) ?? false;
+    const research = (...names) => inCategory(...names).filter((spec) => !isDetail(spec));
+    addGroupFolders(root, research('run'));
+    const environment = research('environment');
     if (environment.length > 0) {
       addGroupFolders(root.addFolder({ title: t('环境'), expanded: true }), environment);
     }
     const fish = root.addFolder({ title: t('鱼'), expanded: true });
     addSchoolEditor(fish, registry);
-    addGroupFolders(fish, inCategory('fish'));
+    addGroupFolders(fish, research('fish'));
+    // A tier's details: research parameters, just not the ones to start with.
+    const details = inCategory('run', 'environment', 'fish').filter(isDetail);
+    if (details.length > 0) {
+      addGroupFolders(root.addFolder({ title: t('更多参数'), expanded: false }), details);
+    }
     const nonResearch = inCategory('display', 'internal');
     if (nonResearch.length > 0) {
       addGroupFolders(
