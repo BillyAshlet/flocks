@@ -116,22 +116,6 @@ export function sceneClearance(point, config, includeWalls = true) {
   return distance;
 }
 
-export function numericGradient(sample, point, epsilon) {
-  const e = Math.max(EPSILON, epsilon);
-  const x =
-    sample([point[0] + e, point[1], point[2]]) -
-    sample([point[0] - e, point[1], point[2]]);
-  const y =
-    sample([point[0], point[1] + e, point[2]]) -
-    sample([point[0], point[1] - e, point[2]]);
-  const z =
-    sample([point[0], point[1], point[2] + e]) -
-    sample([point[0], point[1], point[2] - e]);
-  const magnitude = Math.hypot(x, y, z);
-  if (magnitude <= EPSILON) return [0, 0, 0];
-  return [x / magnitude, y / magnitude, z / magnitude];
-}
-
 function insideRingAabb(point, obstacle, margin) {
   if (!obstacle.enabled || obstacle.type !== 'ring') return false;
   const local = toObstacleLocal(point, obstacle);
@@ -248,8 +232,8 @@ export class DistanceField3D {
     return lerp(lerp(c00, c10, ty), lerp(c01, c11, ty), tz);
   }
 
-  // Clearance only, no gradient: the grid value, refined analytically near
-  // surfaces exactly as query() does.
+  // The grid value, refined analytically near surfaces and obstacles, where
+  // trilinear interpolation of a signed distance is least accurate.
   clearance(point) {
     if (!this.config.distanceField.enabled) {
       return sceneClearance(point, this.config);
@@ -265,41 +249,5 @@ export class DistanceField3D {
       return sceneClearance(point, this.config);
     }
     return clearance;
-  }
-
-  query(point) {
-    if (!this.config.distanceField.enabled) {
-      const clearance = sceneClearance(point, this.config);
-      return {
-        clearance,
-        gradient: numericGradient(
-          (candidate) => sceneClearance(candidate, this.config),
-          point,
-          this.config.distanceField.gradientEpsilon
-        ),
-        analytic: true,
-      };
-    }
-    let clearance = this.sample(point);
-    const refineDistance =
-      this.config.distanceField.analyticRefineDistance;
-    const refine =
-      Math.abs(clearance) < refineDistance ||
-      enabledObstacleSpecs(this.config).some((obstacle) =>
-        insideRingAabb(point, obstacle, refineDistance)
-      );
-    const sampler = refine
-      ? (candidate) => sceneClearance(candidate, this.config)
-      : (candidate) => this.sample(candidate);
-    if (refine) clearance = sampler(point);
-    return {
-      clearance,
-      gradient: numericGradient(
-        sampler,
-        point,
-        this.config.distanceField.gradientEpsilon
-      ),
-      analytic: refine,
-    };
   }
 }

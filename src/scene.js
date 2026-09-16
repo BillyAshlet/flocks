@@ -1,7 +1,14 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TANK, onTankChange } from './world.js';
-import { TANK_VISUAL_PARAMS } from './evolution-model.js';
+
+const TANK_VISUAL_PARAMS = {
+  // Soft interior grid lines only help depth and camera orientation.
+  // They never affect boid / predator physics.
+  gridEnabled: true,
+  gridOpacity: 0.28,
+  gridDivisions: 4,
+};
 
 // Presentation: canonical landscape → viewport. The CSS rotation comes
 // from input.js (R = −(hold + framebuffer), see the frame model there);

@@ -129,7 +129,6 @@ const MAP_GROUPS = new Set([
   '障碍距离场',
   'Advanced · Distance Field',
   '障碍',
-  'Advanced · Physics Spawn',
 ]);
 const ECOLOGY_GROUPS = new Set([
   'Trait Coupling',

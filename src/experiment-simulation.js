@@ -216,11 +216,10 @@ function set3(array, index, x, y, z) {
 }
 
 export class ExperimentSimulation {
-  constructor({ scene, config, distanceField, physics }) {
+  constructor({ scene, config, distanceField }) {
     this.scene = scene;
     this.config = config;
     this.distanceField = distanceField;
-    this.physics = physics;
     this.relations = new RelationMatrix();
     this.hash = new SpatialHash3D(1);
     this.hiddenFish = -1;
@@ -232,7 +231,6 @@ export class ExperimentSimulation {
       fps: 0,
       pairCount: 0,
       captures: 0,
-      dynamicContacts: 0,
     };
     this.rebuild(config);
   }
@@ -461,7 +459,6 @@ export class ExperimentSimulation {
     this._isolateChambers();
     this.metricsState.pairCount = 0;
     this.metricsState.captures = 0;
-    this.metricsState.dynamicContacts = 0;
     this.chaseTelemetry = new Map();
     this.deathCounts = this.config.schools.map(() => ({
       captured: 0,
@@ -833,7 +830,6 @@ export class ExperimentSimulation {
     this.targetAlignment.fill(-Infinity);
     this.targetDistance2.fill(Infinity);
     this.metricsState.pairCount = 0;
-    this.metricsState.dynamicContacts = 0;
   }
 
   _telemetryFor(actorSchool, targetSchool) {
@@ -1946,20 +1942,6 @@ export class ExperimentSimulation {
     fy += Math.sin(phase * 1.73 + 2.1) * this.config.locomotion.wanderWeight;
     fz += Math.cos(phase * 1.17) * this.config.locomotion.wanderWeight;
 
-    const dynamic = interactionsEnabled
-      ? this.physics?.interactFish(point, [
-          this.velocities[offset],
-          this.velocities[offset + 1],
-          this.velocities[offset + 2],
-        ])
-      : null;
-    if (dynamic) {
-      fx += dynamic.force[0] * this.config.locomotion.avoidanceWeight;
-      fy += dynamic.force[1] * this.config.locomotion.avoidanceWeight;
-      fz += dynamic.force[2] * this.config.locomotion.avoidanceWeight;
-      this.metricsState.dynamicContacts += dynamic.contacts;
-    }
-
     const force = normalize3(fx, fy, fz);
     // 冲刺时给一点额外力预算即可。原来是 ×burstWeight(10)，
     // 直接把总力钳制从 5.2 抬到 52，等于取消了钳制。
@@ -2685,7 +2667,6 @@ export class ExperimentSimulation {
     }
     this._capture(dt);
     this._updateEcology(dt);
-    this.physics?.step(dt);
     this.updateMesh();
   }
 
@@ -3048,8 +3029,6 @@ export class ExperimentSimulation {
       pairCount: this.metricsState.pairCount,
       captures: this.metricsState.captures,
       captureParticles: this.captureVfx?.particles.length ?? 0,
-      dynamicContacts: this.metricsState.dynamicContacts,
-      rigidBodies: this.physics?.metrics?.() ?? [],
       simulationMs: this.metricsState.frameMs,
       simulationFps: this.metricsState.fps,
       renderFps: this.metricsState.renderFps ?? 0,

@@ -22,14 +22,12 @@ function smallSimulation(mode = 'steady', seed = 1001, withScene = false) {
   config.schools[2].targetNeighbors = 1;
   if (mode === 'ecology') config.traits.enabled = true;
   const neutralField = {
-    query: () => ({ clearance: 1, gradient: [0, 0, 0] }),
     clearance: () => 1,
   };
   return new ExperimentSimulation({
     scene: withScene ? new THREE.Scene() : null,
     config,
     distanceField: neutralField,
-    physics: null,
   });
 }
 
@@ -626,7 +624,6 @@ test('chamber isolation makes two sub-tanks invisible to each other', () => {
     scene: null,
     config,
     distanceField: null,
-    physics: null,
   });
 
   const player = config.schools.findIndex((school) => school.id === 'blue');

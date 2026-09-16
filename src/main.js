@@ -144,7 +144,6 @@ async function bootstrap() {
     scene,
     config: current,
     distanceField,
-    physics: null,
   });
   world.systems.push(simulation);
   const cameraController = new ExperimentCameraController({

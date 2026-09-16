@@ -63,7 +63,6 @@ for (const [name, tweak] of SCENARIOS) {
       scene: null,
       config,
       distanceField: new DistanceField3D(config),
-      physics: null,
     });
     while (sim.elapsed < SECONDS) sim._advance(DT);
 

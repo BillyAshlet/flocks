@@ -185,33 +185,6 @@ export function metabolicRate(config, school, bursting = false) {
   return basal + ecology.burstMetabolicRate * burstScale * multiplier;
 }
 
-export function stepPlankton({
-  level,
-  capacity,
-  growthRate,
-  requestedConsumption,
-  dt,
-}) {
-  const safeCapacity = Math.max(EPSILON, capacity);
-  const current = Math.max(0, Math.min(safeCapacity, level));
-  const growth =
-    growthRate * current * (1 - current / safeCapacity) * Math.max(0, dt);
-  const available = Math.min(safeCapacity, current + growth);
-  const consumed = Math.min(
-    available,
-    Math.max(0, requestedConsumption)
-  );
-  return {
-    level: Math.max(0, available - consumed),
-    growth,
-    consumed,
-    fulfillment:
-      requestedConsumption > EPSILON
-        ? consumed / requestedConsumption
-        : 1,
-  };
-}
-
 export function planktonIntake({
   available,
   maxIntake,

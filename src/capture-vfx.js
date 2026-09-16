@@ -1,6 +1,36 @@
 import * as THREE from 'three';
 
-import { CAPTURE_FX_PARAMS } from './evolution-model.js';
+const CAPTURE_FX_PARAMS = {
+  enabled: true,
+  // Fibonacci-sphere debris count is driven by density * shell area.
+  // particleCount remains a hard clamp / fallback ceiling.
+  particleCount: 8,
+  density: 1.0,
+  spawnRadius: 0.04,
+  spawnInterval: 0.02,
+  lifetime: 0.5,
+  cubeSize: 0.018,
+  // Deep blue so the bite trail still reads on the pale tank.
+  cubeColor: '#1e4f8c',
+  // Half the previous default so debris hangs near the bite instead of
+  // rocketing straight up and reading like UI confetti.
+  upwardSpeed: 0.12,
+  reverseVelocityFactor: 0.4,
+  radialSpeed: 0.18,
+  // Predator bite flash: log-time progress, exponential fade back.
+  biteFlashDuration: 0.2,
+  biteFlashScaleBoost: 0.28,
+  biteFlashSaturationBoost: 0.55,
+  biteFlashDarken: 0.12,
+  // Local brightening shell around the predator at the bite moment.
+  // Falloff is linear * exp(-k r/R), stronger near the predator center.
+  biteGlowEnabled: true,
+  biteGlowColor: '#ffffff',
+  biteGlowRadius: 0.28,
+  biteGlowDuration: 0.35,
+  biteGlowStrength: 0.55,
+  biteGlowFalloff: 2.4,
+};
 
 const MAX_PARTICLES = 256;
 const EPSILON = 1e-8;

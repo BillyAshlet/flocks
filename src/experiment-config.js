@@ -365,9 +365,6 @@ export const DEFAULT_EXPERIMENT_CONFIG = Object.freeze({
   },
   plankton: {
     enabled: true,
-    capacity: 600,
-    initialFraction: 0.8,
-    growthRate: 0.12,
     halfSaturationFraction: 0.2,
     // 【单位是「口」】：一次觅食最多吃几口。一颗浮游有 usesPerParticle 口。
     maxIntakePerFish: 4,
@@ -397,8 +394,6 @@ export const DEFAULT_EXPERIMENT_CONFIG = Object.freeze({
     // 深绿让浮游资源在深蓝水体中保持自然的藻类观感，并与蓝/橙/红鱼群区分。
     color: '#14532d',
     opacity: 0.75,
-    // 存量下限：logistic 在 0 处 growth=0，吃光就永不恢复
-    minFraction: 0.01,
   },
   visual: {
     bodyLength: 0.03,
@@ -464,15 +459,11 @@ export const DEFAULT_EXPERIMENT_CONFIG = Object.freeze({
     gravity: -0.05,
     persist: true,
   },
-  spatialHash: {
-    enabled: true,
-  },
   distanceField: {
     enabled: true,
     cellSize: 0.05,
     paddingCells: 1,
     analyticRefineDistance: 0.1,
-    gradientEpsilon: 0.025,
   },
   obstacles: {
     enabled: false,
@@ -1104,23 +1095,6 @@ const scalarEntries = [
     step: 0.01,
   }),
   entry('plankton.enabled', '浮游资源', 'plankton enabled', 'live'),
-  entry('plankton.capacity', '浮游资源', 'carrying capacity', 'reset', {
-    min: 1,
-    max: 10000,
-    step: 1,
-  }),
-  entry(
-    'plankton.initialFraction',
-    '浮游资源',
-    'initial fraction',
-    'reset',
-    { min: 0, max: 1, step: 0.01 }
-  ),
-  entry('plankton.growthRate', '浮游资源', 'logistic growth /s', 'live', {
-    min: 0,
-    max: 3,
-    step: 0.01,
-  }),
   entry(
     'plankton.halfSaturationFraction',
     '浮游资源',
@@ -1171,11 +1145,6 @@ const scalarEntries = [
     'rebuildScene',
     { min: 0, max: 10000, step: 1 }
   ),
-  entry('plankton.minFraction', '浮游资源', '存量下限比例', 'live', {
-    min: 0,
-    max: 0.3,
-    step: 0.005,
-  }),
   entry('plankton.pointSize', '浮游资源', 'particle size', 'live', {
     min: 0.001,
     max: 0.08,
@@ -1357,7 +1326,6 @@ const scalarEntries = [
     max: 0,
     step: 0.001,
   }),
-  entry('spatialHash.enabled', 'Advanced · Spatial Hash', 'hash enabled', 'reset'),
   entry('distanceField.enabled', '障碍距离场', 'distance field enabled', 'rebuildField'),
   entry('distanceField.cellSize', '障碍距离场', 'field cell size', 'rebuildField', {
     min: 0.02,
@@ -1377,13 +1345,6 @@ const scalarEntries = [
     'analytic refine distance',
     'live',
     { min: 0, max: 0.5, step: 0.005 }
-  ),
-  entry(
-    'distanceField.gradientEpsilon',
-    'Advanced · Distance Field',
-    'gradient epsilon',
-    'live',
-    { min: 0.005, max: 0.2, step: 0.005 }
   ),
   entry('obstacles.enabled', '障碍', 'map enabled', 'rebuildField'),
   entry('camera.fov', '相机', 'FOV', 'live', {

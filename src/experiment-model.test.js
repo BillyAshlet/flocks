@@ -12,7 +12,6 @@ import {
   planktonIntake,
   relationBetween,
   relationForRatio,
-  stepPlankton,
   visualLength,
 } from './experiment-model.js';
 import { createDefaultConfig } from './experiment-config.js';
@@ -140,15 +139,6 @@ test('ecology helpers implement logistic food, size-scaled drain and terminal ou
   // 输出侧退了回去。改成乘之后这条耦合才是自洽的。
   // 见 ECOLOGY-DECISIONS.md §1。
   assert.ok(largeRate > smallRate, '体型越大，绝对代谢越高');
-  const resource = stepPlankton({
-    level: 300,
-    capacity: 600,
-    growthRate: 0.12,
-    requestedConsumption: 10,
-    dt: 1,
-  });
-  assert.ok(resource.growth > 0);
-  assert.equal(resource.consumed, 10);
   assert.deepEqual(ecologyOutcome([3, 0, 0]), {
     state: 'winner',
     winnerIndex: 0,
