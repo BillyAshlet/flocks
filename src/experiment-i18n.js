@@ -76,7 +76,7 @@ const DICT = {
   'recenter duration (s)': ['recenter duration (s)', '回中持续 (s)'],
   运动: ['Motion', '运动'],
   生态能量: ['Ecology · energy', '生态能量'],
-  'Trait Coupling': ['Trait Coupling', '三轴耦合'],
+  'Trait Coupling': ['Trait Coupling', '体型耦合'],
   浮游资源: ['Plankton', '浮游资源'],
   视觉: ['Visual', '视觉'],
   捕食: ['Predation', '捕食'],
