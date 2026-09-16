@@ -10,7 +10,7 @@
 // 词条形式：'源字符串': ['English', '中文']。
 // 查不到的原样返回 —— 鱼群名、障碍 key 这类用户数据不该被翻译。
 
-const STORAGE_KEY = 'downstream.panelLanguage';
+const STORAGE_KEY = 'flocks.panelLanguage';
 const FALLBACK = 'en';
 
 let language = FALLBACK;
