@@ -80,8 +80,8 @@
       #lab-mark {
         margin: 0;
       }
-      /* 重置按钮：贴在 lab-mark 下方。只有开发者模式显示 —— 游客壳里
-         不该出现一个能把场景清空的按钮。 */
+      /* Reset button, placed under lab-mark. Shown only in developer mode:
+         the visitor shell should not expose a button that clears the scene. */
       #lab-reset {
         position: absolute;
         top: calc(max(14px, env(safe-area-inset-top)) + 46px);
@@ -570,8 +570,8 @@
         #lab-mark {
           display: none;
         }
-        /* 但开发者模式下必须保留 —— 它是唯一的出口，窄窗口下把它藏掉
-           等于又变成"进去了只能刷新"。 */
+        /* Keep it in developer mode: it is the only way out, and hiding it on
+           narrow windows leaves reloading the page as the only exit. */
         #app[data-developer="1"] #lab-mark {
           display: block;
         }

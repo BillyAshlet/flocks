@@ -1,14 +1,15 @@
-// 参数面板的中英切换。
+// English / Chinese switch for the parameter panel.
 //
-// 【为什么是查表，不是把 config 里的字符串改成双语】
-// experiment-config.js 里的 group 名同时是**查找键**：groupVisible()、
-// MAP_GROUPS / ECOLOGY_GROUPS / CAPTURE_GROUPS、SCHOOL_SECTIONS.fields，
-// 还有 addGlobalParameters 里 folders 这个 Map 的 key。
-// 把源字符串改成 { en, zh } 会把这些查找全部打断。
-// 所以：源字符串保持不变，只在 addFolder / addBinding 的那一刻翻译。
+// Why a lookup table instead of bilingual strings in the config:
+// group names in experiment-config.js double as lookup keys (groupVisible(),
+// MAP_GROUPS / ECOLOGY_GROUPS / CAPTURE_GROUPS, SCHOOL_SECTIONS.fields, and
+// the folders Map in addGlobalParameters). Turning the source strings into
+// { en, zh } objects would break every one of those lookups, so the source
+// strings stay unchanged and are translated only at addFolder / addBinding time.
 //
-// 词条形式：'源字符串': ['English', '中文']。
-// 查不到的原样返回 —— 鱼群名、障碍 key 这类用户数据不该被翻译。
+// Entry format: 'source string': ['English', 'Chinese'].
+// Strings with no entry are returned as-is, so user data such as school
+// names and obstacle keys is never translated.
 
 const STORAGE_KEY = 'flocks.panelLanguage';
 const FALLBACK = 'en';
@@ -18,7 +19,7 @@ try {
   const saved = localStorage.getItem(STORAGE_KEY);
   if (saved === 'en' || saved === 'zh') language = saved;
 } catch {
-  // 隐私模式下 localStorage 会抛，默认英文就行。
+  // localStorage throws in private browsing; fall back to English.
 }
 
 export function getLanguage() {
@@ -30,7 +31,7 @@ export function setLanguage(next) {
   try {
     localStorage.setItem(STORAGE_KEY, language);
   } catch {
-    // 存不下就只在本次会话生效。
+    // If it cannot be stored, the choice lasts for this session only.
   }
   return language;
 }
@@ -42,7 +43,7 @@ export function toggleLanguage() {
 // ---------------------------------------------------------------------------
 
 const DICT = {
-  // 分组 —— 顶层
+  // Groups: top level
   项目: ['Project', '项目'],
   运行: ['Runtime', '运行'],
   缸体: ['Tank', '缸体'],
@@ -80,7 +81,7 @@ const DICT = {
   相机: ['Camera', '相机'],
   鱼群: ['School', '鱼群'],
 
-  // 分组 —— ' · ' 的两侧会各自查表，所以这些片段单列
+  // Groups: each side of ' · ' is looked up separately, so the fragments are listed here
   Advanced: ['Advanced', '高级'],
   Runtime: ['Runtime', '运行'],
   Tank: ['Tank', '缸体'],
@@ -99,9 +100,9 @@ const DICT = {
   'wall margin': ['wall margin', '边界余量'],
   'wall margin · 硬边界': ['wall margin', '硬边界 · wall margin'],
 
-  // 鱼群编辑器的分区标题。
-  // 这三条源字符串本来就是双语写的（'分离 · Separation'），逐段翻译会
-  // 折成 'Separation · Separation'，所以在这里精确命中，绕过分段逻辑。
+  // School editor section titles. These source strings are already bilingual
+  // (Chinese · English), and per-fragment translation turned them into
+  // 'Separation · Separation', so exact entries here bypass the split logic.
   '分离 · Separation': ['Separation', '分离 · Separation'],
   '对齐 · Alignment': ['Alignment', '对齐 · Alignment'],
   '凝聚 · Cohesion': ['Cohesion', '凝聚 · Cohesion'],
@@ -109,7 +110,7 @@ const DICT = {
   生态角色: ['Ecological role', '生态角色'],
   出生布局: ['Spawn layout', '出生布局'],
 
-  // 面板自己的按钮 / 标题
+  // Panel buttons and titles
   参数: ['Parameters', '参数'],
   配置文件: ['Config file', '配置文件'],
   恢复默认值: ['restore defaults', '恢复默认值'],
@@ -133,7 +134,7 @@ const DICT = {
   派生感知: ['derived perception', '派生感知'],
   'actual radius': ['actual radius', '实际半径'],
 
-  // 下拉选项
+  // Dropdown options
   '主项目 · 水族馆': ['Main · aquarium', '主项目 · 水族馆'],
   '子实验 · 生态淘汰': ['Sub · ecological attrition', '子实验 · 生态淘汰'],
   'Predation · permanent death': ['Predation · permanent death', '捕食 · 永久死亡'],
@@ -156,7 +157,7 @@ const DICT = {
   Game: ['Game', '游戏'],
   Obstacle: ['Obstacle', '障碍'],
 
-  // 参数标签 —— 源是英文的，补中文
+  // Parameter labels with English source strings
   project: ['project', '项目'],
   mode: ['mode', '模式'],
   'population preset': ['population preset', '总量预设'],
@@ -241,7 +242,7 @@ const DICT = {
   'capture length': ['capture length', '捕食距离'],
   'burst radius': ['burst radius', '冲刺半径'],
 
-  // 障碍物字段 —— 这些标签是从对象的键名直接生成的
+  // Obstacle fields: these labels are generated directly from object keys
   type: ['type', '类型'],
   enabled: ['enabled', '启用'],
   x: ['x', 'x'],
@@ -257,7 +258,7 @@ const DICT = {
   cube: ['cube', '立方体'],
   column: ['column', '圆柱'],
 
-  // 参数标签 —— 源是中文的，补英文
+  // Parameter labels with Chinese source strings
   隔间: ['chamber', '隔间'],
   小群数量: ['pod count', '小群数量'],
   '小群内间距 ×': ['in-pod spacing ×', '小群内间距 ×'],
@@ -356,8 +357,8 @@ const DICT = {
   '跟随高度 / size': ['follow height / size', '跟随高度 / size'],
 };
 
-// 动态拼出来的标签：${kind} spawn ${axis} / heading ${axis} / spawn ${axis}。
-// 轴名（x/y/z）和 kind 是数据，不翻译。
+// Labels built at runtime: ${kind} spawn ${axis} / heading ${axis} / spawn ${axis}.
+// The axis (x/y/z) and kind are data and stay untranslated.
 const PATTERNS = [
   [/^heading (.+)$/, (m) => `朝向 ${m[1]}`],
   [/^spawn (.+)$/, (m) => `出生位置 ${m[1]}`],
@@ -373,8 +374,8 @@ function lookup(text, lang) {
 }
 
 /**
- * 翻译一个界面字符串。查不到就原样返回 —— 鱼群名、障碍 key 这类
- * 用户数据本来就不该被翻译。
+ * Translate a UI string. Strings with no entry are returned as-is, since
+ * user data such as school names and obstacle keys must not be translated.
  */
 export function t(text, lang = language) {
   if (typeof text !== 'string' || text === '') return text;
@@ -382,7 +383,7 @@ export function t(text, lang = language) {
   const exact = lookup(text, lang);
   if (exact !== null) return exact;
 
-  // 'Advanced · Runtime'、'鱼群 · 大' 这种复合标题：两侧各自查表再拼回去。
+  // Compound titles such as 'Advanced · Runtime': translate each side, then rejoin.
   if (text.includes(SEPARATOR)) {
     const parts = text.split(SEPARATOR);
     const translated = parts.map((part) => lookup(part.trim(), lang));
@@ -403,7 +404,7 @@ export function t(text, lang = language) {
   return text;
 }
 
-/** 翻译 Tweakpane 的 options 映射（键是显示名，值是取值）。 */
+/** Translate a Tweakpane options map (keys are display names, values are the option values). */
 export function translateOptions(options, lang = language) {
   const result = {};
   for (const [display, value] of Object.entries(options)) {

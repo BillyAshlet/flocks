@@ -61,8 +61,8 @@ export function zoomRangeWindow(state, value, factor, limits) {
   };
 }
 
-// ⚠️ 这里的【键顺序就是标签页顺序】——下面用 Object.entries(PROJECTS) 渲染。
-// 调整顺序请直接调整条目位置，不要另加排序数组。
+// Key order here is the tab order: tabs are rendered with Object.entries(PROJECTS).
+// To reorder tabs, move the entries; do not add a separate ordering array.
 const PROJECTS = {
   aquarium: {
     eyebrow: 'MAIN PROJECT',
@@ -266,8 +266,8 @@ export function createExperimentDebug({
     holder.appendChild(switcher);
   }
 
-  // 语言只是显示层的事，不进 config —— 所以它不受「重置本场」
-  // 和「恢复默认值」影响，切换后重建面板就够了。
+  // Language is display-only and never enters the config, so "reset current project"
+  // and "restore defaults" leave it alone; switching only needs a panel rebuild.
   function addLanguageToggle(root) {
     const title =
       getLanguage() === 'en' ? 'Language · English → 中文' : '语言 · 中文 → English';

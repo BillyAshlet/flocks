@@ -141,9 +141,10 @@ function normalize3(x, y, z) {
 
 // Reynolds-style steering: each rule becomes a desired velocity at maxSpeed,
 // minus the current velocity, clamped to maxForce, and only then weighted.
-// Summing raw magnitudes instead (cohesion ~ distance, alignment ~ velocity
-// difference, separation ~ 1/d^2) mixes units, so the effective weight
-// ratios drift with density and distance.
+// Earlier the rules summed raw magnitudes (cohesion ~ distance, alignment ~
+// velocity difference, separation ~ 1/d^2). Those units differ, so the
+// effective weight ratios drifted with density and distance; that was the
+// root cause of the motion not looking like classic boids.
 function steerToward(dx, dy, dz, vx, vy, vz, maxSpeed, maxForce, out) {
   const length = Math.hypot(dx, dy, dz);
   if (length <= EPSILON) {
@@ -410,7 +411,9 @@ export class ExperimentSimulation {
   }
 
   reset(seed = undefined) {
-    // The simulation is deterministic, so a fixed seed replays the same run.
+    // A fresh random seed per run by default. The simulation is deterministic,
+    // so a fixed seed gives identical spawn positions, velocities and wander
+    // phases, and every run plays out exactly the same.
     if (seed === undefined) {
       seed = this.config.runtime.randomizeSeed
         ? (Math.random() * 0xffffffff) >>> 0
@@ -455,9 +458,9 @@ export class ExperimentSimulation {
     this.directLatch.fill(0);
     this.rollAngles.fill(0);
     this.prevHeadings.fill(0);
-    // Initial energy needs per-fish jitter. Metabolism is deterministic
-    // (basalRate / size^0.75), so identical starting energy makes a whole
-    // school starve in the same second.
+    // Initial energy needs per-fish jitter. Earlier every fish in a school
+    // started with the same energy, and metabolism is deterministic
+    // (basalRate / size^0.75), so the first wave starved in the same second.
     {
       const jitter = Math.max(0, this.config.ecology.initialEnergyJitter ?? 0);
       const ratio = this.config.ecology.initialEnergyRatio;
@@ -637,7 +640,8 @@ export class ExperimentSimulation {
           direction[2] * school.cruiseSpeed
         );
         this.wanderPhases[index] = this.rng.range(0, Math.PI * 2);
-        // Continuous random rates; a few discrete rates cause visible synchronized wander.
+        // Earlier the rate came from index % 13, only 13 distinct values, and
+        // the school showed visibly synchronized wander. Now it is continuous.
         this.wanderRates[index] = this.rng.range(0.55, 0.95);
       }
     }
@@ -690,7 +694,7 @@ export class ExperimentSimulation {
 
 
   _clearGameplayInteractionState() {
-    // TUNING is a clean, non-scoring preview. Clearing every interaction
+    // The locomotion preview is clean and non-scoring. Clearing every interaction
     // latch here guarantees a previous scene can never leak panic or pursuit
     // state into the selection screen.
     this.panic.fill(0);
@@ -724,7 +728,7 @@ export class ExperimentSimulation {
       prevHeadings: this.prevHeadings.slice(),
     };
     this.locomotionPreview = false;
-    // Reset from the submitted config so relation hysteresis
+    // Reset from the submitted config so relation hysteresis,
     // energy and the future ecology RNG exactly match direct balance trials.
     // Restore only visible kinematics afterward; no frame is rendered between
     // reset and restore, so Start remains spatially continuous.
@@ -752,8 +756,10 @@ export class ExperimentSimulation {
     this.planktonMesh.visible = visible;
     // The points are the model: live particles are compacted into the buffer
     // at their real positions, so what is drawn is exactly the food that
-    // remains. Showing the first N of a fixed random cloud in proportion to
-    // total stock would depict spatial food the model does not have.
+    // remains. Earlier this showed the first N points of a fixed random cloud
+    // in proportion to total stock, so fish eating at the top of the tank made
+    // points vanish at the bottom. That was a progress bar drawn as dots,
+    // depicting spatial food the model did not have.
     let visibleCount = 0;
     if (visible) {
       const array = this.planktonMesh.geometry.attributes.position.array;
@@ -1375,8 +1381,9 @@ export class ExperimentSimulation {
 
   _canBurst(index) {
     if (!this.config.ecology?.enabled) return true;
-    // 【拼命时无视能量门槛】。这是这条机制存在的首要理由：原来能量掉到
-    // 1/3 以下就再也不扑，于是「冲不动 → 抓不到 → 更饿」是个死锁。
+    // A desperate fish ignores the energy threshold. This is the main reason
+    // desperation exists: earlier a fish below 1/3 energy never lunged again,
+    // so "too weak to sprint -> cannot catch -> hungrier" was a deadlock.
     if (this.desperation[index]) return true;
     const minRatio = Number.isFinite(this.config.ecology.minBurstEnergyRatio)
       ? this.config.ecology.minBurstEnergyRatio
@@ -1385,11 +1392,12 @@ export class ExperimentSimulation {
   }
 
   /**
-   * 拼命 → 【只加追击速度】；力竭 → 全局减速。
+   * Desperation boosts pursuit speed only; exhaustion slows the fish everywhere.
    *
-   * 加速必须限定在 BURST：不然逃跑的鱼也一起变快，猎物和捕食者同时提速，
-   * 净效果是【大鱼反而追不上小鱼】—— 那正好和这条机制的目的相反。
-   * 力竭则是真的虚弱，全局生效。
+   * The boost must be limited to BURST. Otherwise fleeing fish speed up too,
+   * prey and predator accelerate together, and the net effect is that large
+   * fish can no longer catch small ones, the opposite of the intent.
+   * Exhaustion is real weakness, so it applies in every state.
    */
   _desperationSpeedScale(index, state) {
     if (!this.config.ecology?.enabled) return 1;
@@ -1398,7 +1406,8 @@ export class ExperimentSimulation {
         ? Math.max(1, this.config.ecology.desperationSpeedBoost ?? 1)
         : 1;
     }
-    // armed=0 且不在计时内 = 用完了还没缓过来 = 力竭。
+    // Not armed and outside the desperation window: used up and not yet
+    // recovered, i.e. exhausted.
     if (!this.desperationArmed[index]) {
       return Math.max(
         0.05,
@@ -1424,8 +1433,9 @@ export class ExperimentSimulation {
     return state;
   }
 
-  // 候选比较：最近优先；两者距离相差不超过较远那条的 targetTieTolerance
-  // 算平局，平局取更顺路（alignment 大）的，仍相同取更近的。
+  // Candidate comparison: nearest first. Distances within targetTieTolerance
+  // of the farther one count as tied; ties go to the better aligned
+  // candidate, then to the nearer one.
   _preferCandidate(distance2, alignment, bestDistance2, bestAlignment) {
     if (!(bestDistance2 < Infinity)) return true;
     if (!this._withinTieBand(distance2, bestDistance2)) {
@@ -1460,7 +1470,7 @@ export class ExperimentSimulation {
     const burstRadius = detection * relations.burstRadiusFactor;
     const range2 = burstRadius * burstRadius;
 
-    // 放弃过的那条：死了、或者离开范围一次，就解除排除。
+    // A given-up target stops being excluded once it dies or leaves range.
     const excluded = this.excludedTargets[index];
     if (
       excluded >= 0 &&
@@ -1474,9 +1484,9 @@ export class ExperimentSimulation {
     let previousDistance2 = Infinity;
     if (previous >= 0 && this.alive[previous]) {
       previousDistance2 = this._distance2(index, previous);
-      // ① 出范围 → 不保留
+      // Leaving burstRadius drops the lock.
       if (previousDistance2 <= range2) {
-        // ② 追不上：giveUpSeconds 内没有追到新的最近距离
+        // Give up if no new closest distance is reached within giveUpSeconds.
         if (previousDistance2 < this.chaseBestDistance2[index]) {
           this.chaseBestDistance2[index] = previousDistance2;
           this.chaseStall[index] = 0;
@@ -1492,8 +1502,9 @@ export class ExperimentSimulation {
       }
     }
 
-    // 本帧最佳候选（_directedRelation 已按最近优先选出、跳过了排除的那条）。
-    // 没有锁 → 直接用；有锁 → ③ 只在它【明显】更近（跳出平局带）时换。
+    // Best candidate this step (_directedRelation already picked nearest first
+    // and skipped the excluded target). With no lock, take it; with a lock,
+    // switch only if it is clearly nearer, outside the tie band.
     const fresh = this.pursuitTargets[index];
     if (
       fresh >= 0 &&
@@ -1530,11 +1541,12 @@ export class ExperimentSimulation {
     const cohesionCount = this.cohesionCounts[index];
     const alignmentCount = this.alignmentCounts[index];
 
-    // --- 恐慌：先算，因为它要放大 alignment / cohesion ---
-    // 自己看见的（连续，按距离衰减） vs 从邻居继承的（惊扰波）
+    // Panic comes first because it scales alignment and cohesion. It combines
+    // what the fish sees itself (continuous, distance-scaled) with what it
+    // inherits from neighbors (the startle wave).
     const relations = this.config.relations;
-    // --- 脉冲/闩锁式恐慌 ---
-    // 直接威胁走滞回：越过 directOn 才闩上，掉到 directOff 以下才松开。
+    // The direct threat uses hysteresis: it latches above directOn and
+    // releases only below directOff.
     let panic = 0;
     if (interactionsEnabled) {
       const threat = this.threatLevel[index];
@@ -1550,8 +1562,10 @@ export class ExperimentSimulation {
       this.panicHold[index] = Math.max(0, this.panicHold[index] - dt);
       this.refractory[index] = Math.max(0, this.refractory[index] - dt);
 
-      // 社会触发：收到的脉冲够强、自己没被直接威胁闩住、且不在不应期内。
-      // 不应期是关键 —— 没有它，脉冲会在鱼群里来回反射永不停止。
+      // Social trigger: the heard pulse is strong enough, the fish is not
+      // latched by a direct threat, and it is not refractory. The refractory
+      // period is essential; without it the pulse reflects around the school
+      // forever.
       let emitPulse = enteredDirect;
       if (
         !latched &&
@@ -1569,7 +1583,7 @@ export class ExperimentSimulation {
         );
       }
 
-      // 惊吓期间恐慌被【钉在满值】，这才有四散而逃
+      // During a startle panic is pinned at full, which is what makes fish scatter.
       const panicTarget = Math.max(
         latched ? threat : 0,
         this.panicHold[index] > 0 ? 1 : 0
@@ -1587,8 +1601,8 @@ export class ExperimentSimulation {
           Math.exp(-dt / Math.max(relations.signalDecayTime, 1e-6));
       panic = this.panic[index];
     }
-    // 【炸开门闩】。越过 enter 进高段，掉回 exit 以下才回低段 ——
-    // 单一阈值会在边界来回抖。
+    // Scatter latch: enter above panicScatterEnter, leave only below
+    // panicScatterExit. A single threshold flickers at the boundary.
     if (interactionsEnabled && relations.scatterLatch !== false) {
       const enter = relations.panicScatterEnter ?? 1;
       const exit = relations.panicScatterExit ?? 0;
@@ -1601,23 +1615,26 @@ export class ExperimentSimulation {
       this.scattering[index] = 0;
     }
 
-    // 受惊时凝聚力下降 —— flash expansion（原版验证过的方向）。
-    // 同步不靠放大 alignmentWeight，而靠下面独立的应急对齐通道。
-    // 冲刺时压低社交权重（而不是把追击力放大 10 倍）。捕食者会"脱队扑食"，
-    // 但整体力量级不变，运动仍然平滑；松开后自己归队。
+    // Under threat cohesion drops (flash expansion). Synchrony comes from the
+    // separate emergency alignment channel below, not from a larger
+    // alignmentWeight. While bursting, social weights are suppressed instead
+    // of multiplying the pursuit force by 10: the predator breaks away to
+    // lunge, but the total force stays in range, motion stays smooth, and it
+    // rejoins the school afterwards.
     const lockedOn =
       interactionsEnabled &&
       this.pursuitTargets[index] >= 0 && this.alive[this.pursuitTargets[index]];
     const socialScale = lockedOn
       ? this.config.locomotion.burstSocialSuppression
       : 1;
-    // 【删掉了「体型→独行」】(perception.socialSizeExponent)。它是第三条
-    // 体型耦合，而三轴语义里只有「体型大 → 速度、耐力降」。留着就得把
-    // 「更独来独往」也写进语义，那会让「体型」变成四件事 —— 而每多一条
-    // 隐藏耦合，平衡就多一个没人知道来源的维度。
-    // 饿了就散：对齐与凝聚随能量下降而衰减
+    // Body size deliberately does not make fish more solitary. A size-to-
+    // sociality exponent was removed: it was a third size coupling, while size
+    // should only trade against speed and stamina. Every hidden coupling adds
+    // a balance dimension whose source nobody can trace.
+    // Hunger loosens the school: alignment and cohesion fade as energy drops.
     const hunger = hungerResponse(this._energyRatio(index));
-    // 高段【内聚整个归零】，不只是按 cohesionDrop 打折 —— 那才是"各逃各的"。
+    // While scattering, cohesion goes to zero rather than being scaled by
+    // cohesionDrop; that is what makes every fish flee on its own.
     const cohesionWeight =
       school.cohesionWeight *
       (this.scattering[index]
@@ -1625,7 +1642,8 @@ export class ExperimentSimulation {
         : Math.max(0, 1 - panic * relations.cohesionDrop)) *
       socialScale *
       (hunger ? hunger.cohesion : 1);
-    // 接收方增益：自己越慌，越会去听邻居 —— 波才能一层层推下去
+    // Receiver gain: the more panicked a fish is, the more it listens to its
+    // neighbors, which lets the wave push through layer by layer.
     const receiverBoost = interactionsEnabled && relations.emergencyAlignment !== false
       ? Math.min(
           1 + relations.alignmentReceiverBoost * this.neighborPanic[index],
@@ -1664,7 +1682,8 @@ export class ExperimentSimulation {
       fz += STEER_SCRATCH[2] * weight;
     };
 
-    // 分离在恐慌时用更高的 safetySpeed —— 逃窜中互相让位的力更强
+    // Separation uses a higher safetySpeed under panic, so fleeing fish give
+    // way to each other more strongly.
     const safetySpeed = ruleMaxSpeed * (1 + 0.25 * panic);
     steerToward(
       this.separation[offset],
@@ -1699,10 +1718,12 @@ export class ExperimentSimulation {
       );
     }
 
-    // 逃逸方向：自己看见了就用自己的，没看见就用邻居传来的。
-    // 这样没看见捕食者的鱼也会跟着整群一起转向。
-    // 原版设计声明：只有【直接】感知到捕食者的鱼才获得几何逃逸向量。
-    // 社会性恐慌的鱼只知道邻居的航向，不知道捕食者的位置 —— 否则等于全知。
+    // Escape direction: a fish that saw the threat uses its own; otherwise it
+    // uses the one passed on by neighbors, so fish that never saw the predator
+    // still turn with the school. Design rule: only fish that directly
+    // perceive a predator get a geometric escape vector. Socially panicked
+    // fish know only their neighbors' headings, not the predator's position;
+    // anything else would be omniscience.
     const ex = this.evadeForces[offset];
     const ey = this.evadeForces[offset + 1];
     const ez = this.evadeForces[offset + 2];
@@ -1717,10 +1738,10 @@ export class ExperimentSimulation {
       this.escapeDir[offset + 1] = 0;
       this.escapeDir[offset + 2] = 0;
     }
-    // 应急对齐：一条鱼看见危险，它的航向会压过二十条镇定邻居的平均值。
-    // 这是惊扰波真正的载体。
-    // 【高段就不再一致了】。炸开的时候关掉应急对齐 —— 否则它会把想散开的
-    // 鱼一直拽回同一个方向，"各逃各的"永远出不来。
+    // Emergency alignment: one fish that sees danger outweighs the average of
+    // twenty calm neighbors. This is what actually carries the startle wave.
+    // It is off while scattering; otherwise it keeps pulling fish that want to
+    // split back onto one heading, and they never flee separately.
     if (
       interactionsEnabled &&
       this.emergencyUrgency[index] > 0 &&
@@ -1739,7 +1760,7 @@ export class ExperimentSimulation {
       );
     }
 
-    // 逃逸强度随恐慌连续变化，不再是"看见/没看见"的开关
+    // Escape strength varies continuously with panic instead of switching on sight.
     const directThreat = interactionsEnabled
       ? this.threatLevel[index]
       : 0;
@@ -1757,33 +1778,25 @@ export class ExperimentSimulation {
     const localPredationCount = interactionsEnabled
       ? this.predationCounts[index]
       : 0;
-    // 【锁定成功之后第一层退场】。
-    //
-    // 两条捕食力的分工本来是「远距离朝猎物群质心靠拢」和「近距离扑锁定的
-    // 那一条」。但它们一直叠着施加：锁定的猎物在鱼群边缘时，质心力往【群
-    // 中心】拽、冲刺力往【那一条】拽，1.05 : 2.2 这个比例足够把冲刺方向
-    // 拽偏、又不足以主导 —— 合力斜着插进两者中间的空处。
-    // 那就是"捕食时转向很奇怪"的来源。
-    //
-    // 【有锁定就退场，和能不能冲刺无关】。
-    //
-    // 捕食判定里【没有】冲刺这一项：只要锁定的那条进入捕食半径、冷却为 0，
-    // 就吃得到 —— 一条冲不动的鱼，猎物游到嘴边照样能吃。所以"能量不够就
-    // 保留质心力"是把两件独立的事绑在了一起。
-    //
-    // 而且一旦锁定，目标就已经确定了，再往【猎物群质心】拉只会把它从
-    // 要吃的那一条身上拽开。
-    // ── 捕食转向：两种状态，【互斥】────────────────────────────────
-    //
-    //   LOCKED   锁定了一条 → 只朝那一条
-    //   SCAN     没锁定     → 朝感知范围内猎物群的质心（远距离靠拢）
-    //
-    // 两者【任何时刻只有一个生效】。同时施加时，锁定的猎物在鱼群边缘会让
-    // 两个方向打架：质心力往群中心拽、目标力往那一条拽，合力斜插进中间的
-    // 空处 —— 那就是"捕食时转向很奇怪"的来源。
-    //
-    // 权重是同一个 pursuitWeight，只有【方向】随状态切换。冲刺力（burst）
-    // 在能量够时叠加在上面，它不属于这个二选一。
+    // Hunting steer has two mutually exclusive states:
+    //   locked  a target is locked -> steer toward that fish only
+    //   scan    no lock            -> steer toward the centroid of prey in
+    //                                 sensing range (long-range approach)
+    // Earlier both forces were applied together. When the locked prey sat at
+    // the edge of its school, the centroid force pulled toward the school
+    // center and the lunge pulled toward the one fish; at 1.05 : 2.2 the
+    // centroid force was strong enough to bend the lunge but not to dominate,
+    // so the sum cut diagonally into the empty space between them. That was
+    // the odd turning during hunts.
+    // A lock ends scanning whether or not the fish can burst. Capture has no
+    // burst requirement (a locked target inside capture radius is eaten even
+    // by a fish too weak to sprint), so keeping the centroid force on low
+    // energy tied two independent things together. Once the target is chosen,
+    // pulling toward the prey school's centroid only drags the predator away
+    // from it.
+    // Both states use the same pursuitWeight; only the direction changes. The
+    // burst force is added on top when energy allows and is not part of this
+    // choice.
     const lockedTarget = interactionsEnabled ? this.pursuitTargets[index] : -1;
     const hasLock = lockedTarget >= 0 && this.alive[lockedTarget];
     const bursting = hasLock && this._canBurst(index);
@@ -1810,8 +1823,8 @@ export class ExperimentSimulation {
         hx,
         hy,
         hz,
-        // 拼命时追得更凶 —— 只加速度的话，一条又快又不往猎物方向拐的鱼
-        // 只是在乱窜。
+        // A desperate fish also pursues harder. Speed alone gives a fast fish
+        // that does not turn toward its prey, which just darts around.
         this.config.relations.pursuitWeight *
           (this.desperation[index]
             ? Math.max(1, this.config.ecology?.desperationPursuitBoost ?? 1)
@@ -1822,8 +1835,9 @@ export class ExperimentSimulation {
     const target = lockedTarget;
     if (bursting) {
       const targetOffset = target * 3;
-      // 用【锁住那条】的实际距离。targetDistance2 是本帧最佳候选的距离，
-      // 两者可以不是同一条鱼 —— 原来这里读错了，提前量算在别的鱼身上。
+      // Use the distance to the locked fish. targetDistance2 belongs to this
+      // step's best candidate, which can be a different fish; earlier this read
+      // it and computed the lead on the wrong fish.
       const distance = Math.sqrt(this._distance2(index, target));
       const lookAhead = Math.min(
         this.config.locomotion.interceptLookAhead,
@@ -1843,9 +1857,10 @@ export class ExperimentSimulation {
         iy - this.positions[offset + 1],
         iz - this.positions[offset + 2]
       );
-      // 冲刺追击也走归一化转向。原来是裸力 ×10，量级是其它所有规则总和的
-      // 2 倍以上，且不减速度、不钳 maxForce —— 锁定目标的鱼等于脱离了鱼群，
-      // 这就是多群下"像离子对撞"的直接来源。
+      // Burst pursuit also goes through normalized steering. Earlier it was a
+      // raw force x10, more than twice all other rules combined, with no
+      // velocity subtraction and no maxForce clamp: a locked fish effectively
+      // left its school, which made multi-school scenes look like colliding ions.
       applyRule(
         pursuit[0],
         pursuit[1],
@@ -1854,18 +1869,18 @@ export class ExperimentSimulation {
       );
     }
 
-    // 【觅食转向】。只有真的饿了才去找 —— 见 ecology.seekHungerRatio 的注释。
-    //
-    // 方向是感知范围内颗粒的加权重心（1/d 加权，不是「朝最近那一颗」——
-    // 后者只有一颗时会让鱼死盯着它抖）。范围内一颗都没有就没有力：
-    // 鱼不知道该往哪走，不假装它有信息。
+    // Foraging steer, only when actually hungry (see ecology.seekHungerRatio
+    // in experiment-config.js). The direction is the 1/d-weighted centroid of
+    // particles in sensing range, not the nearest particle, which makes a fish
+    // fixate and jitter when only one is left. With no particle in range there
+    // is no force: the fish does not know where to go and does not pretend to.
     if (this.config.ecology?.enabled && this.config.plankton?.enabled) {
       const seekGate =
         energyCapacityFor(this.config, school) *
         (this.config.ecology.seekHungerRatio ?? 0.5);
       const energy = this.energy[index];
       if (energy < seekGate && seekGate > EPSILON) {
-        // 紧迫度：从门槛处 0，到能量耗尽时 1。越饿转向越强。
+        // Urgency runs from 0 at the threshold to 1 at empty; hungrier fish turn harder.
         const urgency = Math.min(1, Math.max(0, 1 - energy / seekGate));
         const toFood = this.food.directionAt(
           this.positions[offset],
@@ -1913,8 +1928,9 @@ export class ExperimentSimulation {
     fz += Math.cos(phase * 1.17) * this.config.locomotion.wanderWeight;
 
     const force = normalize3(fx, fy, fz);
-    // 冲刺时给一点额外力预算即可。原来是 ×burstWeight(10)，
-    // 直接把总力钳制从 5.2 抬到 52，等于取消了钳制。
+    // Bursting gets a modest extra force budget. Earlier the budget was
+    // multiplied by burstWeight (10), which raised the clamp from 5.2 to 52
+    // and effectively removed it.
     const forceBudget =
       target >= 0 && this.alive[target]
         ? this.config.locomotion.maxForce *
@@ -1940,8 +1956,9 @@ export class ExperimentSimulation {
       1
     );
     const angle = Math.acos(dot);
-    // 冲刺中转向能力大幅下降：猎物一躲，捕食者会冲过头再绕回来。
-    // 直接用本帧的锁定状态，避免读到上一帧的 locomotionStates。
+    // Turning ability drops sharply while bursting: when prey dodges, the
+    // predator overshoots and circles back. This step's lock is read directly
+    // to avoid last step's locomotionStates.
     const burstingNow = target >= 0 && this.alive[target];
     const turnSpeed =
       effectiveTurnSpeed(this.config, school) *
@@ -1956,7 +1973,8 @@ export class ExperimentSimulation {
       oldDirection[1] * (1 - turnAlpha) + nextDirection[1] * turnAlpha,
       oldDirection[2] * (1 - turnAlpha) + nextDirection[2] * turnAlpha
     );
-    // 俯仰钳制：鱼不像潜艇那样垂直上下游。没有这条，逃窜时会直上直下。
+    // Pitch clamp: fish do not climb or dive vertically like submarines.
+    // Without it, fleeing fish would shoot straight up and down.
     const maxPitch = (this.config.locomotion.maxPitchDegrees * Math.PI) / 180;
     const horizontal = Math.hypot(turned[0], turned[2]);
     const pitch = Math.atan2(turned[1], Math.max(horizontal, EPSILON));
@@ -1986,29 +2004,19 @@ export class ExperimentSimulation {
   }
 
   /**
-   * 每个鱼群各自的活动包围盒。不声明 bounds 就是整缸（现有行为不变）。
+   * Schools in different chambers do not exist for each other: every relation
+   * between them becomes ignore.
    *
-   * 这是给 T2「上下两个迷你水缸」准备的。引擎里 TANK 是模块级单例，被
-   * 7 个文件引用 39 次，真开两个缸是结构级改动；但缸壁本来就是【硬钳制】
-   * （这里直接改写坐标，不是加力），把那个盒子按鱼群拆开就够了 ——
-   * 视觉上是两个缸，机制上零泄漏。
+   * Separate bounds are not enough, because a box stops bodies but not sight.
+   * Measured with a 0.10 m gap between sub-tanks, the 0.33 m capture radius
+   * reached across the divider (2 captures in 30 s); even with a 1.0 m gap
+   * the 1.18 m sensing radius still covered the full tank height, panic still
+   * reached 0.895 and pursuits still started. Widening the gap does not fix it.
    *
-   * 为什么不用隔板障碍物：避障是【软转向力】，不是硬约束 —— 一条被吓到、
-   * 正全速逃命的鱼完全可能顶穿它。演示两个隔离的环境，不能用一堵会漏的墙。
-   * （原来这里还引用了 panicAvoidanceSuppression「恐慌时避障被压低」当
-   *   补充理由，那个参数已删除；结论不受影响。）
-   */
-  /**
-   * 不同【隔间】的鱼群互相不存在：关系一律降为 ignore。
-   *
-   * 光给鱼群各自的包围盒不够 —— 盒子挡得住身体，挡不住视线。实测两个
-   * 子缸中间留 0.10m 时，捕食半径 0.33m 直接跨过隔板咬到对面（30 秒内
-   * 捕获 2 次）；就算把间隔拉到 1.0m，感知半径 1.18m 仍然覆盖整个缸高，
-   * 恐慌值照样 0.895、追击照样发起。拉宽间隔治不了根。
-   *
-   * 改关系矩阵是最省的切法：捕食、逃逸、恐慌、目标锁定全都读它，
-   * 一处降为 ignore 就等于让两边互不存在 —— 这才是"两个缸"的真实语义。
-   * 社群力（对齐/凝聚）本来就只在同鱼群内生效，不受影响。
+   * The relation matrix is the cheapest cut: predation, evasion, panic and
+   * target locking all read it, so one ignore makes the two sides mutually
+   * invisible, which is what two tanks really means. Social forces
+   * (alignment, cohesion) only act within a school and are unaffected.
    */
   _isolateChambers() {
     const schools = this.config.schools;
@@ -2023,14 +2031,16 @@ export class ExperimentSimulation {
   }
 
   /**
-   * 冻结某些隔间：那一半的鱼原地不动，也不参与任何捕食。
+  /**
+   * Freeze some chambers: fish there hold still and take no part in predation.
    *
-   * T2 同屏有两个缸，两边同时在追逐时观察者应接不暇 —— 而这一课的全部
-   * 意义就是"看清"。冻结做成【按隔间】而不是全局暂停：全局停只是两边
-   * 一起停，分缸停才能一次只看一个。
+   * With two tanks on screen, simultaneous chases on both sides are too much
+   * to follow. Freezing is per chamber rather than a global pause: a global
+   * pause stops both sides together, while a per-chamber freeze lets the
+   * viewer watch one side at a time.
    *
-   * 走运行时状态而不是 config，是因为改 config 会触发校验与重建 ——
-   * 暂停不该让鱼重排。
+   * This is runtime state rather than config, because changing config
+   * triggers validation and a rebuild, and pausing should not rearrange fish.
    */
   setFrozenChambers(chambers = []) {
     const frozen = new Set(chambers);
@@ -2046,11 +2056,13 @@ export class ExperimentSimulation {
   }
 
   /**
-   * 让每个隔间的时间倍率【指数逼近】目标，而不是瞬间切到 0/1。
+   * Each chamber's time scale approaches its target exponentially instead of
+   * jumping to 0 or 1.
    *
-   * 硬冻结的观感是"卡住"，缓入缓出的观感才是"停下来"。逼近到阈值以下就
-   * 吸附到 0 —— 指数曲线永远到不了 0，不吸附的话鱼会以肉眼看不见的速度
-   * 永远漂移，而且捕食判定也一直在跑。
+   * A hard freeze looks stuck; easing in and out looks like stopping. Below a
+   * threshold the value snaps to 0: an exponential never reaches 0, so
+   * without the snap fish would drift forever at an invisible speed and
+   * capture checks would keep running.
    */
   _easeChamberScales(dt) {
     if (!this.chamberTargets) return;
@@ -2064,7 +2076,7 @@ export class ExperimentSimulation {
     }
   }
 
-  /** 这条鱼当前的时间倍率。1 = 正常，0 = 完全停住。 */
+  /** This fish's current time scale: 1 = normal, 0 = fully stopped. */
   _timeScaleFor(index) {
     return this.chamberScales?.[this.schoolIds[index]] ?? 1;
   }
@@ -2073,6 +2085,18 @@ export class ExperimentSimulation {
     return this._timeScaleFor(index) === 0;
   }
 
+  /**
+   * Per-school activity bounds. A school without bounds uses the whole tank.
+   *
+   * The tank walls are a hard clamp (_integrate rewrites coordinates rather
+   * than adding a force), so splitting that box per school is enough to show
+   * two tanks with zero leakage, without actually creating a second tank.
+   *
+   * A partition obstacle would not work: obstacle avoidance is a soft
+   * steering force, not a hard constraint, and a startled fish fleeing at
+   * full speed can push straight through it. Two isolated environments cannot
+   * be shown with a wall that leaks.
+   */
   _refreshSchoolBounds() {
     const tank = this.config.tank;
     const margin = tank.wallMargin;
@@ -2115,18 +2139,10 @@ export class ExperimentSimulation {
   }
 
   /**
-   * 某个鱼群现在还活着几条。教学关的世代循环每帧都要问一次，所以走这条而不是
-   * metrics() —— 后者会把捕食对、遥测、闭合时间全算一遍，代价大得多。
-   * 找不到该鱼群时返回 0（换课途中配置可能一时对不上）。
-   *
-   * ⚠️ 名字不能叫 aliveCount —— 类里已经有一个【按下标】取的同名方法，
-   * 后定义的会静默覆盖先定义的，传进去的 id 会被当成下标去查
-   * schoolRanges，然后在 range.start 上炸掉。
-   */
-  /**
-   * 【过渡用】。外部（metrics、面板、测试、fingerprint 工具）还在读写
-   * 「浮游总量」这个概念。空间浮游落地时这个访问器要一起删掉 ——
-   * 到那时「总量」就不再是一个有意义的量了。
+   * Transitional. External code (metrics, the panel, tests, fingerprint
+   * tooling) still reads and writes a tank-wide plankton total. This accessor
+   * should go together with the move to spatial plankton, after which a total
+   * is no longer a meaningful quantity.
    */
   get planktonLevel() {
     return this.food.level;
@@ -2136,6 +2152,17 @@ export class ExperimentSimulation {
     this.food.level = value;
   }
 
+  /**
+   * Number of living fish in a school, looked up by school id. Callers that
+   * poll every frame should use this rather than metrics(), which also
+   * computes predator pairs, telemetry and closure times. Returns 0 when the
+   * school is not found (the config can briefly disagree during a switch).
+   *
+   * It must not be named aliveCount: the class already has an aliveCount that
+   * takes an index. The later definition would silently override the earlier
+   * one, the id would be used as an index into schoolRanges, and it would
+   * crash on range.start.
+   */
   aliveCountFor(schoolId) {
     const index = this.config.schools.findIndex(
       (school) => school.id === schoolId
@@ -2153,17 +2180,15 @@ export class ExperimentSimulation {
     return count;
   }
 
-  /** 浮尸缓慢上浮到水面并停在那里。 */
+  /** Corpses rise slowly to the surface and stay there. */
   _floatCorpses(dt) {
-    // 上浮是【加速度】，不是固定速率。
-    //
-    // 原来是把 riseSpeed × t 当成一个速度偏移加上去，靠 t（渐变进度）
-    // 手动做"刚死时几乎不动"的渐入。改成浮力加速度之后那个渐入是【白送的】：
-    // 速度从 0 开始自己长起来，不需要 t 这个乘子。
-    //
-    // 而且它和已有的阻尼一起给出【终末速度】= 加速度 / 阻尼系数 ——
-    // 尸体先加速、再稳定地飘，这正是浮力对抗水阻的真实形状，
-    // 比一个凭空恒定的速率好看也更说得通。
+    // Rising is an acceleration, not a fixed rate. Earlier riseSpeed * t was
+    // added as a velocity offset, with the fade progress t hand-building a
+    // "barely moves right after death" ease-in. With buoyant acceleration that
+    // ease-in comes for free, since velocity grows from 0 on its own. Together
+    // with the existing drag it gives a terminal velocity of accel / drag: the
+    // corpse speeds up, then drifts steadily, the real shape of buoyancy
+    // against water resistance.
     const riseAccel = Math.max(
       0,
       this.config.ecology.corpseRiseAccel ?? 0.15
@@ -2179,13 +2204,13 @@ export class ExperimentSimulation {
       if (!this.corpse[index]) continue;
       this.corpseAge[index] += dt;
       const offset = index * 3;
-      // 残余动量指数衰减 —— 滑行一段后停住
+      // Leftover momentum decays exponentially, so the body glides and stops.
       const damping = Math.exp(-drag * dt);
       this.velocities[offset] *= damping;
       this.velocities[offset + 1] *= damping;
       this.velocities[offset + 2] *= damping;
-      // 浮力：每帧往上加一点速度。阻尼在上面已经作用过，所以两者共同
-      // 收敛到终末速度 riseAccel / drag。
+      // Buoyancy adds a little upward velocity each step. Drag has already
+      // been applied above, so the two converge to riseAccel / drag.
       this.velocities[offset + 1] += riseAccel * dt;
       this.positions[offset] += this.velocities[offset] * dt;
       this.positions[offset + 1] += this.velocities[offset + 1] * dt;
@@ -2207,21 +2232,21 @@ export class ExperimentSimulation {
       this.deathCounts[schoolIndex].captured += 1;
     } else if (reason === 'starved') {
       this.deathCounts[schoolIndex].starved += 1;
-      // 尸体不再是碎屑粒子，而是鱼模型本身：留在原地、变灰、缓慢上浮到水面。
-      // 真实的死鱼因鱼鳔残气多半是浮起来的。
+      // The corpse is the fish model itself: it stays in place, turns grey and
+      // slowly rises. Real dead fish mostly float on gas left in the swim bladder.
       this.corpse[index] = 1;
       this.corpseAge[index] = 0;
-      // 不清零速度 —— 让它带着原来的动量滑行一段再停，死亡才有过程感
+      // Velocity is not zeroed: the body glides on its momentum before
+      // stopping, so death has a visible process.
     }
     return true;
   }
 
   _updateEcology(dt) {
     if (!this.config.ecology?.enabled) return;
-    // 浮游生物重新启用：logistic 再生的场模型。浮尸能量更高，所以
-    // 觅食时先找浮尸，没有才吃浮游。
     this.food.regrow(dt);
-    // 一餐分三份：自己 / 附近 / 同族全场。见 experiment-config.js 的注释。
+    // Each meal is split three ways: the fish itself, nearby fish, and the
+    // whole school. See experiment-config.js.
     const localShare = clamp(this.config.ecology.energyShareLocal ?? 0, 0, 1);
     const schoolShare = clamp(this.config.ecology.energyShareSchool ?? 0, 0, 1);
     const shareFraction = Math.min(1, localShare + schoolShare);
@@ -2243,24 +2268,29 @@ export class ExperimentSimulation {
       const schoolIndex = this.schoolIds[index];
       const school = this.config.schools[schoolIndex];
       if (!(school.grazeRate > 0)) continue;
-      // 【滤食频率随体型走】。school.grazeRate 现在是倍率，真正的速率
-      // 还要乘 size^grazeSizeExponent —— 大鱼滤食能力更强（鳃/口面积），
-      // 但不足以覆盖它按 size^0.75 放大的消耗，差额就是它必须捕猎的部分。
+      // Grazing rate scales with body size. school.grazeRate is a multiplier;
+      // the real rate also multiplies size^grazeSizeExponent. Larger fish
+      // graze more (gill and mouth area), but not enough to cover their
+      // size^0.75 metabolism, and the gap is what they have to hunt for.
       const grazeRate =
         school.grazeRate *
         Math.pow(
           Math.max(EPSILON, school.size),
           this.config.ecology.grazeSizeExponent ?? 0
         );
-      // 【优先吃鱼】正在锁定猎物的鱼不觅食。中群/大群几乎总在追猎，
-      // 所以主动吃浮游的概率天然最低；小群从不追猎（体型比落在 evade 侧），
-      // 所以它只能靠浮游和浮尸。
+      // Hunting comes first: a fish locked on prey does not graze. Medium and
+      // large schools are almost always hunting, so they graze least; the
+      // small school never hunts (its size ratios fall on the evade side), so
+      // it lives on plankton.
       if (this.pursuitTargets[index] >= 0) continue;
-      // 能量罐随体型变，所以上限要【逐鱼】算，不能在循环外算一次。
+      // Capacity scales with body size, so the limit is per fish, not computed
+      // once outside the loop.
       const capacityLimit = energyCapacityFor(this.config, school);
-      // 【饥饿门控】吃饱了就不吃。这一条是浮游可持续的关键：
-      // 无约束觅食是 64/s 消耗 vs 18/s 再生（几秒吃光且 level=0 后永不恢复）；
-      // 只在能量低于阈值时进食，系统自动收敛到约 4/s，有 4.5 倍余量。
+      // Hunger gate: a full fish does not eat. This is what keeps plankton
+      // sustainable. Earlier, unconstrained grazing consumed 64/s against 18/s
+      // of regrowth, emptied the stock within seconds, and at level 0 it never
+      // recovered. Eating only below the threshold settles at about 4/s, a
+      // 4.5x margin.
       const hungerGate =
         capacityLimit * (this.config.ecology.grazeHungerRatio ?? 0.8);
       if (this.energy[index] >= hungerGate) continue;
@@ -2271,20 +2301,20 @@ export class ExperimentSimulation {
       let gain = 0;
       let ate = false;
 
-      // 【浮尸不再是食物】。它上浮、还被墙夹住，carrionRadius 只有 0.08 ——
-      // 实际几乎吃不到，是带着配置旋钮的死代码。更要紧的是方向：
-      // 死鱼喂活鱼是【正反馈】，一批死完剩下的反而更好活，
-      // 和「一群一群死」正好相反。（浮尸的视觉保留 —— 一条鱼翻肚上浮是
-      // 「刚才死了一条」唯一看得见的信号。见 ECOLOGY-DECISIONS.md §2。）
-      //
-      // 顺带去掉了一个 O(N) 的内层扫描：每条觅食的鱼原来要遍历全部鱼找浮尸。
+      // Corpses are no longer food. They rise and get pinned against the
+      // walls, and carrionRadius was only 0.08, so they were almost never
+      // eaten: dead code with a config knob. More importantly, dead fish
+      // feeding living ones is positive feedback: after one wave dies the rest
+      // survive more easily, the opposite of schools dying off group by group.
+      // The floating corpse visual stays, since a fish rising belly-up is the
+      // only visible sign that one just died.
       if (planktonOn) {
         const maxIntake = Math.max(
           0,
           this.config.plankton.maxIntakePerFish
         );
-        // 【这儿有多少】，不是「总共还有多少」—— 标量后端忽略坐标，
-        // 空间后端会返回附近的。这就是这次重构挪动的那条接缝。
+        // Food available here, not tank-wide: bites within reach of this
+        // position.
         const available = this.food.availableAt(
           this.positions[offset],
           this.positions[offset + 1],
@@ -2293,14 +2323,16 @@ export class ExperimentSimulation {
         const requested = planktonIntake({
           available,
           maxIntake,
-          // 【局部尺度】的半饱和常数。available 已经是「半径内」的存量，
-          // 半饱和常数还按全场容量算的话，饱和项会把摄入压成零。
+          // Half-saturation on the local scale. available is already the
+          // stock within reach; a constant based on whole-tank capacity would
+          // make the saturation term crush intake to zero.
           halfSaturation: this.food.halfSaturation,
         });
-        // 【按实际取到的算，不是按请求的算】。Holling-II 给出的是「想吃多少」，
-        // 而颗粒是离散的（只能整口整口地取），实际拿到的往往更少。
-        // 原来能量按【请求】发放、返回值被丢掉，等于凭空多给 —— 不致命，
-        // 但界面上的「吃到了多少」和鱼身上涨的能量对不上，是在说谎。
+        // Energy follows what was actually taken, not what was requested.
+        // Holling type II gives the desired intake, but particles are discrete
+        // (whole bites only), so the actual amount is often smaller. Earlier
+        // energy was granted on the request and take()'s return value was
+        // discarded, so the reported intake and the fish's energy gain disagreed.
         const intake =
           requested > 0
             ? this.food.take(
@@ -2312,14 +2344,17 @@ export class ExperimentSimulation {
             : 0;
         if (intake > 0) {
           this.planktonConsumed += intake;
-          // 满摄入保持既有恢复量；资源不足时按真实摄入等比下降。
-          // energyConversion 终于成为有效参数，而不是只出现在面板。
+          // Full intake keeps the existing recovery; scarce food scales it down
+          // with actual intake. This is also what makes energyConversion take
+          // effect; earlier it only appeared in the panel.
           const intakeFraction =
             maxIntake > EPSILON ? intake / maxIntake : 0;
-          // 【不乘 grazeRate】。它在上面已经决定了「多久吃一次」，再乘进
-          // 收益就是同一个参数在乘法链里出现两次 —— 平方效应。
-          // 默认配置下大鱼 grazeRate 0.01 意味着浮游收入是小鱼的【万分之一】，
-          // 而它的消耗还是小鱼的 1.8 倍。一口值多少不该取决于谁在吃。
+          // Not multiplied by grazeRate, which already sets how often a fish
+          // eats; multiplying the gain too would square the same parameter.
+          // Under the default config that gave a large fish with grazeRate
+          // 0.01 one ten-thousandth of a small fish's plankton income, while
+          // its drain was 1.8x. What a bite is worth should not depend on who
+          // eats it.
           gain =
             planktonEnergy *
             intakeFraction *
@@ -2334,11 +2369,11 @@ export class ExperimentSimulation {
         capacityLimit,
         this.energy[index] + gain * (1 - shareFraction)
       );
-      // 同族全场那一档走原来的池子，逐帧按存活数平分。
+      // The school-wide share goes to the pool, split among living fish each step.
       this.energyPools[schoolIndex] += gain * schoolShare;
-      // 【附近】那一档当场分掉：谁物理上在这一片，谁就分到。
-      // 不看族群 id —— 一小群一起吃饱、一小群一起饿死，
-      // 「一群一群地死」是这么涌现的。
+      // The nearby share is split on the spot among whoever is physically
+      // close, regardless of school id. Small groups eat well together and
+      // starve together, which is how dying off group by group emerges.
       if (localShare > 0 && shareRadius2 > 0) {
         const neighbours = [];
         this.hash.forEachCandidate(index, (other) => {
@@ -2358,24 +2393,22 @@ export class ExperimentSimulation {
             );
           }
         } else {
-          // 附近一条鱼都没有：这一份归自己（独行者不该被罚）。
+          // No fish nearby: this share goes to the eater; loners are not penalized.
           this.energy[index] = Math.min(
             capacityLimit,
             this.energy[index] + gain * localShare
           );
         }
       }
-      // 进食特效
       this.captureVfx?.emitFeed?.(
         this.positions[offset],
         this.positions[offset + 1],
         this.positions[offset + 2]
       );
     }
-    // （原来这里还会 += carrionEaten —— 把浮尸的【条数】加进一个记能量的
-    //   计数器，两种单位混在一起，这个指标一直是没有意义的。）
 
-    // 分发共享池：按各族存活数平均。超出容量的部分丢弃（不累积到下一帧）。
+    // Distribute each school's pool evenly among its living fish. Energy above
+    // capacity is discarded, not carried to the next step.
     const perFishShare = this.energyPools.map((pool, schoolIndex) => {
       if (!(pool > 0)) return 0;
       const alive = this._activeSchoolCount(schoolIndex);
@@ -2406,7 +2439,7 @@ export class ExperimentSimulation {
     for (let index = 0; index < this.count; index += 1) {
       if (!this.alive[index]) continue;
       const school = this.config.schools[this.schoolIds[index]];
-      // 阈值跟着这条鱼自己的能量罐走。
+      // Thresholds follow this fish's own capacity.
       const fishCapacity = energyCapacityFor(this.config, school);
       const enterAt = fishCapacity * (eco.desperationEnterRatio ?? 0);
       const recoverAt = fishCapacity * (eco.desperationRecoverRatio ?? 1);
@@ -2417,11 +2450,12 @@ export class ExperimentSimulation {
           this.locomotionStates[index] === LOCOMOTION.BURST
         ) * dt;
 
-      // ── 孤注一掷 ────────────────────────────────────────────────
-      // 门闩：能量回到恢复线就重新上膛（同时也就退出了力竭）。
+      // Desperation. The latch re-arms once energy reaches the recovery line,
+      // which also ends exhaustion.
       if (this.energy[index] >= recoverAt) this.desperationArmed[index] = 1;
       if (this.desperation[index]) {
-        // 计时到了还没缓过来 → 退出，进入力竭（armed 仍是 0，速度 ×0.8）。
+        // Timer expired without recovering: leave desperation and become
+        // exhausted (armed stays 0, speed x0.8).
         if (this.elapsed >= this.desperationUntil[index]) {
           this.desperation[index] = 0;
         }
@@ -2437,9 +2471,10 @@ export class ExperimentSimulation {
           this.elapsed + Math.max(0, eco.desperationSeconds ?? 0);
       }
 
-      // 拼命期间【当场只付一部分，剩下的记成债】。
-      // 债【不会被吃饱抹掉】—— 它照常从能量里扣，扣到 0 一样会死：
-      // 被到期的账单杀死。那才是「代价会被继承」在单条鱼身上的样子。
+      // During desperation only part of the cost is paid now; the rest becomes
+      // debt. Eating does not erase debt: it keeps draining energy and can
+      // still kill at 0, so the fish dies of the bill coming due. That is what
+      // an inherited cost looks like for a single fish.
       if (this.desperation[index] && costShare < 1) {
         const deferred = drain * (1 - costShare);
         this.debt[index] += deferred;
@@ -2454,8 +2489,8 @@ export class ExperimentSimulation {
         drain += settle;
       }
 
-      // 减法不需要再夹上限（x − drain ≤ x ≤ capacity），原来那层
-      // Math.min 是从「加能量」那段复制过来的，永远不会触发。
+      // Subtraction needs no upper clamp (x - drain <= x <= capacity). Earlier
+      // a Math.min copied from the energy-gain code sat here and never fired.
       this.energy[index] -= drain;
       if (this.energy[index] <= 0) starved.push(index);
     }
@@ -2471,19 +2506,22 @@ export class ExperimentSimulation {
   }
 
   /**
-   * 【顺路吞食】的目标:体型比超出 KMax（"太小,不值得追"）而恰好贴上来的鱼。
+   * Incidental prey: a fish too small to be worth chasing (size ratio above
+   * KMax) that happens to be within reach.
    *
-   * 不需要锁定、不需要追击 —— 只判定"它已经在嘴边了"。这补的是一个真实的
-   * 缺口:大鱼的主动猎物只有体型比落在 [k, KMax] 里的那一群,而代谢按体型
-   * 放大之后那一群根本不够养活它。鲸不追单只磷虾,但游过磷虾云照样会吞。
+   * No lock and no chase, only "it is already at the mouth". This fills a
+   * real gap: a large fish's active prey is only the school with size ratio
+   * in [k, KMax], and once metabolism scales with size that school alone
+   * cannot feed it. A whale does not chase a single krill, but swallows krill
+   * as it swims through a cloud.
    */
   _findIncidentalPrey(predator) {
     const predatorSchool = this.schoolIds[predator];
     const predatorConf = this.config.schools[predatorSchool];
     const kMax = this.config.relations.KMax;
     if (!(kMax > 0)) return -1;
-    // 哈希是每步 _advance 里建的。测试会绕过整步直接调 _capture，
-    // 那时它还是空的 —— 没有邻居可查就等于没有顺路撞上的。
+    // The hash is built in each _advance step. Tests call _capture directly
+    // and skip the step, leaving it empty; no neighbors means nothing in reach.
     if (!this.hash?.positions) return -1;
     const po = predator * 3;
     let best = -1;
@@ -2493,7 +2531,7 @@ export class ExperimentSimulation {
       const otherSchool = this.schoolIds[other];
       if (otherSchool === predatorSchool) return;
       const otherConf = this.config.schools[otherSchool];
-      // 只捡【太小以致被忽略】的那一类；正常猎物走锁定那条路。
+      // Only prey too small to be targeted; normal prey goes through the lock.
       if (predatorConf.size / otherConf.size <= kMax) return;
       const radius = captureRadius(this.config, predatorConf, otherConf);
       const oo = other * 3;
@@ -2515,11 +2553,11 @@ export class ExperimentSimulation {
       if (this._isFrozen(predator) || !this.alive[predator]) {
         continue;
       }
-      // 优先级:【正在追的那条够得着就吃它;够不着才看嘴边有没有别的】。
-      //
-      // 第一版写成"没有锁定目标时才找顺路的",结果它永远不触发 ——
-      // 大鱼几乎总锁着一条 medium。而锁定管的是【往哪儿游】，不该决定
-      // 【嘴里碰到什么】:鲸追着一条鱼的时候，路过的磷虾照样会被吞掉。
+      // Priority: eat the locked target if it is in reach; only otherwise
+      // check for anything else at the mouth. The first version looked for
+      // incidental prey only when there was no lock, and it never fired,
+      // because large fish are almost always locked on a medium fish. The
+      // lock decides where to swim, not what the mouth touches.
       let prey = -1;
       let incidental = false;
       const locked = this.pursuitTargets[predator];
@@ -2702,18 +2740,18 @@ export class ExperimentSimulation {
         scale.setScalar(0);
         quaternion.identity();
       } else if (!this.alive[index]) {
-        // 浮尸：保留鱼模型，肚皮朝上，灰色
+        // Corpse: keep the fish model, belly up, grey.
         if (this.corpse[index]) {
           const schoolIndex = this.schoolIds[index];
           const school = this.config.schools[schoolIndex];
-          // 尺寸就是鱼自身的体型（同样走视觉放大，死后不该突然改变大小）
+          // Body size with the same visual scaling, so size does not jump at death.
           scale.setScalar(visualSizeOf(school.size, school.id));
           const fade = Math.max(
             0.01,
             this.config.ecology.corpseFadeTime ?? 1.6
           );
           const t = clamp(this.corpseAge[index] / fade, 0, 1);
-          // 逐渐翻身：从死亡时的朝向平滑转到肚皮朝上
+          // Roll gradually from the heading at death to belly up.
           direction
             .set(
               this.prevHeadings[offset],
@@ -2725,7 +2763,7 @@ export class ExperimentSimulation {
           quaternion.setFromUnitVectors(FORWARD, direction);
           rollQuaternion.setFromAxisAngle(FORWARD, Math.PI * t);
           quaternion.multiply(rollQuaternion);
-          // 颜色渐变：本族颜色 → 灰
+          // Color fades from the school color to grey.
           if (this.mesh.instanceColor) {
             corpseTint
               .copy(this.schoolColors[schoolIndex])
@@ -2739,11 +2777,12 @@ export class ExperimentSimulation {
         }
       } else {
         const school = this.config.schools[this.schoolIds[index]];
-        // 视觉放大：判定用 school.size，画面用 visualSizeOf(size)
+        // Rules use school.size; rendering uses visualSizeOf.
         scale.setScalar(visualSizeOf(school.size, school.id));
-        // 耐力明度：亮度 ∝ 还能活多久 = 当前能量 ÷ 每秒代谢。
-        // TUNING 时能量恒满 → 显示"这套选择能撑多久"；RUNNING 时能量
-        // 下降 → 显示"现在还能撑多久"。冲刺不计入，否则亮度会闪。
+        // Stamina brightness follows survival time = energy / metabolic rate.
+        // In the preview energy stays full, so it shows how long the trait
+        // choice lasts; while running it shows how long the fish has left.
+        // Burst cost is excluded, otherwise brightness would flicker.
         if (this.mesh.instanceColor && STAMINA_TINT_STRENGTH !== 0) {
           const drain = metabolicRate(this.config, school, false);
           const seconds =
@@ -2766,8 +2805,8 @@ export class ExperimentSimulation {
           )
           .normalize();
         if (direction.lengthSq() <= EPSILON) direction.copy(FORWARD);
-        // --- 侧倾（banking）：转弯时鱼体侧过来 ---
-        // 用上一帧与本帧朝向的叉积估转向率；其竖直分量就是水平转向的方向。
+        // Banking: the turn rate is estimated from the cross product of last and
+        // current heading; its vertical component gives the turn direction.
         const visual = this.config.visual;
         const px = this.prevHeadings[offset];
         const py = this.prevHeadings[offset + 1];
@@ -2965,10 +3004,10 @@ export class ExperimentSimulation {
     return {
       seed: this.seed,
       elapsed: this.elapsed,
-      // 仿真当前走哪个分支。true = _advanceLocomotionPreview（只跑运动，
-      // 捕食/生态/计时全部不执行）。排查「鱼在游但什么都不发生」时，
-      // 这是第一个该看的值 —— 缺了它我曾经把 elapsed 恒为 0 误判成
-      // 「elapsed 不是仿真时间」，绕了很远。
+      // Which branch the simulation runs. true = _advanceLocomotionPreview
+      // (motion only; predation, ecology and time are skipped). Check this
+      // first when fish swim but nothing happens: earlier, without it, an
+      // elapsed stuck at 0 was misread as elapsed not being simulation time.
       locomotionPreview: this.locomotionPreview,
       project: this.config.runtime.project,
       mode: this.config.runtime.mode,
