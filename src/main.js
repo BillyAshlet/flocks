@@ -350,11 +350,21 @@ async function bootstrap() {
     debug.revealParameter(path);
   }
 
+  // The paper's live values read the school being edited in the panel.
+  let paperView = null;
+  function paperState() {
+    const index = Math.min(debug.selectedSchool, current.schools.length - 1);
+    const school = current.schools[index];
+    const derived = simulation.derived?.schools?.[index];
+    return school && derived ? { config: current, school, derived } : null;
+  }
+
   function renderChrome() {
     const onTier = route.page === 'tier';
     home.hidden = onTier;
     labReset.hidden = !onTier;
     if (!onTier) {
+      paperView = null;
       document.title = 'flocks';
       return;
     }
@@ -368,7 +378,10 @@ async function bootstrap() {
     }
     tierPrev.disabled = tier.number === 1;
     tierNext.disabled = tier.number === TIER_COUNT;
-    renderPaper(paper, tier, TIER_COUNT, { onParameter: openParameter });
+    paperView = renderPaper(paper, tier, TIER_COUNT, {
+      onParameter: openParameter,
+      getState: paperState,
+    });
     document.title = `flocks · ${tier.title}`;
   }
 
@@ -452,6 +465,7 @@ async function bootstrap() {
   window.experiment = experimentApi;
 
   let lastFrame = performance.now();
+  let lastPaperUpdate = 0;
   let smoothedFrameMs = 16.7;
   renderer.setAnimationLoop((nowMs) => {
     const realDt = Math.min(0.1, Math.max(0, (nowMs - lastFrame) / 1000));
@@ -473,6 +487,10 @@ async function bootstrap() {
       cameraController.selected
     );
     debug.update(nowMs);
+    if (paperView && nowMs - lastPaperUpdate > 150) {
+      lastPaperUpdate = nowMs;
+      paperView.update();
+    }
   });
   setStartup('Ready', 'ready');
   setTimeout(() => {

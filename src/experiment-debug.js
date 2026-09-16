@@ -1120,5 +1120,8 @@ outcome=${metrics.ecology.state}${metrics.ecology.winnerName ? ` winner=${metric
     get pane() {
       return pane;
     },
+    get selectedSchool() {
+      return selectedSchoolIndex;
+    },
   };
 }

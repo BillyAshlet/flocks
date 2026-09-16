@@ -279,6 +279,56 @@
         font: 12.5px var(--mono);
         white-space: nowrap;
       }
+      /* Values from the running simulation under a formula. A value that
+         changes lights up for a moment. */
+      #paper .live {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: 4px 14px;
+        margin: -4px 0 16px;
+        padding: 7px 10px;
+        border-radius: 3px;
+        background: var(--plate);
+        font: 12.5px/1.5 var(--mono);
+      }
+      #paper .live-label {
+        color: var(--muted);
+        font: 650 10.5px var(--sans);
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+      #paper .live-item {
+        display: inline-flex;
+        align-items: baseline;
+        gap: 4px;
+        white-space: nowrap;
+      }
+      #paper .live-symbol .katex {
+        font-size: 1.05em;
+      }
+      #paper .live-equals {
+        color: var(--muted);
+      }
+      #paper .live-value {
+        padding: 0 3px;
+        border-radius: 2px;
+        color: var(--ink);
+        font-variant-numeric: tabular-nums;
+      }
+      #paper .live-value.glow {
+        animation: live-glow 1.4s ease-out;
+      }
+      @keyframes live-glow {
+        0% {
+          background: #f6d77a;
+          box-shadow: 0 0 10px 2px rgba(246, 200, 90, 0.75);
+        }
+        100% {
+          background: transparent;
+          box-shadow: 0 0 0 0 rgba(246, 200, 90, 0);
+        }
+      }
       /* Symbols linked to a slider. Clicking one opens the slider's folder. */
       #paper [data-param] {
         border-radius: 2px;
