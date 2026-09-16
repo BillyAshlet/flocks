@@ -13,6 +13,7 @@ import {
 } from './experiment-i18n.js';
 import {
   VISUALS,
+  allVisualLayers,
   visualOffered,
   visualsForField,
   visualsForPath,
@@ -201,6 +202,9 @@ export function createExperimentDebug({
   let boidState = null;
   let boidBindings = [];
   let visualRows = [];
+  // Visuals the user switched off for the school being edited.
+  const visualsOff = new Set();
+  let shownVisuals = allVisualLayers(false);
   const rangeWindows = new Map();
   const defaultConfig = createDefaultConfig();
   const holder = document.getElementById('panel-holder');
@@ -650,9 +654,11 @@ export function createExperimentDebug({
     }
   }
 
-  // Clicking a parameter's name shows what it shapes for the school being
-  // edited (a radius sphere, the blind cone, the look-ahead ray...), and the
-  // row takes that visual's color. Clicking again hides it.
+  // Visuals follow the panel. A row that shapes something in the tank (a
+  // radius sphere, the blind cone, the look-ahead ray...) shows it while the
+  // row is on screen, that is, while every folder around it is expanded, for
+  // the school being edited. Clicking the row's name turns it off; clicking
+  // again turns it back on. Expanding a folder turns its visuals on again.
   function offeredVisuals(keys) {
     return keys.filter((key) => key && visualOffered(key, controller.panelScope));
   }
@@ -664,27 +670,34 @@ export function createExperimentDebug({
     );
   }
 
-  function editedSchoolLayers() {
-    const school = controller.stage.schools[selectedSchoolIndex];
-    return school && controller.visualLayersFor
-      ? controller.visualLayersFor(school)
-      : null;
+  function rowOnScreen(element) {
+    for (let node = element.parentElement; node && node !== holder; node = node.parentElement) {
+      if (node.classList.contains('tp-fldv') && !node.classList.contains('tp-fldv-expanded')) {
+        return false;
+      }
+      if (node.classList.contains('tp-rotv') && !node.classList.contains('tp-rotv-expanded')) {
+        return false;
+      }
+    }
+    return element.isConnected;
   }
 
   function wireVisualRow(element, keys) {
     const label = element?.querySelector('.tp-lblv_l');
-    if (!label || keys.length === 0 || !editedSchoolLayers()) return;
+    if (!label || keys.length === 0) return;
     element.classList.add('vis-row');
     element.style.setProperty('--vis-color', VISUALS[keys[0]].color);
     const names = keys.map((key) => t(VISUALS[key].label)).join(', ');
     label.title = `${label.title ? `${label.title}\n` : ''}${
-      inChinese() ? `点击显示/隐藏：${names}` : `Click to show or hide: ${names}`
+      inChinese() ? `点击隐藏/显示：${names}` : `Click to hide or show: ${names}`
     }`;
     label.addEventListener('click', (event) => {
       if (event.target.closest('.param-btn')) return;
-      const layers = editedSchoolLayers();
-      const allOn = keys.every((key) => layers[key]);
-      for (const key of keys) layers[key] = !allOn;
+      const allOn = keys.every((key) => shownVisuals[key]);
+      for (const key of keys) {
+        if (allOn) visualsOff.add(key);
+        else visualsOff.delete(key);
+      }
       refreshVisualRows();
     });
     visualRows.push({ element, keys });
@@ -692,15 +705,50 @@ export function createExperimentDebug({
   }
 
   function refreshVisualRows() {
-    const layers = editedSchoolLayers();
     visualRows = visualRows.filter((row) => row.element.isConnected);
+    shownVisuals = allVisualLayers(false);
+    for (const row of visualRows) {
+      if (!rowOnScreen(row.element)) continue;
+      for (const key of row.keys) {
+        if (!visualsOff.has(key)) shownVisuals[key] = true;
+      }
+    }
     for (const row of visualRows) {
       row.element.classList.toggle(
         'vis-on',
-        Boolean(layers) && row.keys.some((key) => layers[key])
+        row.keys.some((key) => shownVisuals[key])
       );
     }
   }
+
+  // Folders open and close through Tweakpane's own buttons; watch their class.
+  const foldObserver = new MutationObserver((mutations) => {
+    let changed = false;
+    for (const mutation of mutations) {
+      const node = mutation.target;
+      const folder = node.classList.contains('tp-fldv') || node.classList.contains('tp-rotv');
+      if (!folder) continue;
+      changed = true;
+      const expanded =
+        node.classList.contains('tp-fldv-expanded') ||
+        node.classList.contains('tp-rotv-expanded');
+      const wasExpanded = /tp-(fldv|rotv)-expanded/.test(mutation.oldValue ?? '');
+      if (expanded && !wasExpanded) {
+        for (const row of visualRows) {
+          if (node.contains(row.element)) {
+            for (const key of row.keys) visualsOff.delete(key);
+          }
+        }
+      }
+    }
+    if (changed) refreshVisualRows();
+  });
+  foldObserver.observe(holder, {
+    attributes: true,
+    attributeFilter: ['class'],
+    attributeOldValue: true,
+    subtree: true,
+  });
 
   // Highlight what this tier adds over the tier before it. The enclosing
   // folders get a marker too, so a new parameter inside a collapsed folder
@@ -762,7 +810,10 @@ export function createExperimentDebug({
     // switcher and selected-school editor therefore cannot retain listeners.
     pane?.dispose();
     holder.replaceChildren();
+    // A rebuilt panel is a freshly opened one: its visuals start on again.
     visualRows = [];
+    visualsOff.clear();
+    shownVisuals = allVisualLayers(false);
     const scope = controller.panelScope;
     if (!scope) addProjectSwitcher();
     const meta = projectMeta();
@@ -881,7 +932,14 @@ outcome=${metrics.ecology.state}${metrics.ecology.winnerName ? ` winner=${metric
   return {
     update,
     rebuildPane,
+    // What the tank should draw: visuals for the school being edited only.
+    visualLayersBySchool(schoolCount) {
+      return Array.from({ length: schoolCount }, (_, index) =>
+        index === selectedSchoolIndex ? shownVisuals : null
+      );
+    },
     dispose() {
+      foldObserver.disconnect();
       pane?.dispose();
       dashboard.remove();
     },

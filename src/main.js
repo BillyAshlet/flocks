@@ -21,12 +21,7 @@ import { ExperimentSimulation } from './experiment-simulation.js';
 import { ExperimentCameraController } from './experiment-camera.js';
 import { createExperimentDebug } from './experiment-debug.js';
 import { TimeShortcutController } from './time-shortcuts.js';
-import {
-  SchoolVisualizer,
-  VISUAL_KEYS,
-  allVisualLayers,
-  visualOffered,
-} from './school-visualizer.js';
+import { SchoolVisualizer } from './school-visualizer.js';
 import { TIER_COUNT, tierByNumber, tierConfig, tierPanelScope } from './tiers.js';
 
 const startup = document.getElementById('startup-status');
@@ -173,18 +168,6 @@ async function bootstrap() {
   const controller = {
     // Set per route; narrows the parameter panel to one tier.
     panelScope: null,
-    // View-only state, not part of the simulation config: which visuals
-    // each school shows, keyed by school id. Switched from the panel rows;
-    // every visual starts on.
-    visualLayers: new Map(),
-    visualLayersFor(school) {
-      let layers = this.visualLayers.get(school.id);
-      if (!layers) {
-        layers = allVisualLayers(true);
-        this.visualLayers.set(school.id, layers);
-      }
-      return layers;
-    },
     get current() {
       return current;
     },
@@ -340,20 +323,13 @@ async function bootstrap() {
     world.resetTiming(performance.now());
   }
 
-  // Only tier pages draw overlays, and only visuals whose panel rows this
-  // tier shows, so a visual switched on in a later tier does not linger.
+  // Only tier pages draw overlays; the panel decides which (see the visual
+  // rows in experiment-debug.js).
   function visibleLayers() {
-    const scope = controller.panelScope;
-    if (route.page !== 'tier' || !scope) return [];
-    const offered = Object.fromEntries(
-      VISUAL_KEYS.map((key) => [key, visualOffered(key, scope)])
-    );
-    return current.schools.map((school) => {
-      const chosen = controller.visualLayersFor(school);
-      return Object.fromEntries(
-        VISUAL_KEYS.map((key) => [key, Boolean(chosen[key] && offered[key])])
-      );
-    });
+    if (route.page !== 'tier' || !debug) return [];
+    return debug
+      .visualLayersBySchool(current.schools.length)
+      .map((layers) => layers ?? {});
   }
 
   function goToTier(number) {
