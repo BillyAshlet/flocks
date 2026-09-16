@@ -1,9 +1,11 @@
 /**
  * Plankton field: particles with positions, not a single pool number.
  *
- * Why not a global scalar: when food is one number, a fish anywhere draws from the same
- * stock, and fish eating in one part of the tank make dots vanish elsewhere. The picture
- * would claim spatial food that the model does not have.
+ * Why not a global scalar: food used to be one number, `planktonLevel`, that every fish
+ * drew from wherever it was. The 700 dots on screen were scattered once, never moved, and
+ * the first N were shown by ratio, so fish eating at the top of the tank made dots vanish
+ * at the bottom. It was a progress bar drawn as dots, and the picture claimed spatial food
+ * that the model did not have.
  *
  * Why particles rather than a concentration grid:
  * 1. A field is too smooth. Every fish gets "some" food decided by arithmetic, which is
@@ -46,11 +48,12 @@ export class SpatialPlanktonField {
       0.1,
       config.plankton.regrowSeconds ?? 20
     );
-    // All food is counted in bites. availableAt returns bites, maxIntakePerFish is the most
-    // bites per feeding, and halfSaturation is also in bites. Total food = particles x uses
-    // per particle. Converting bites into an abstract stock (capacity / (particles x uses))
-    // made one bite 0.167 while maxIntakePerFish was 0.04, so fish could never eat a single
-    // bite; the two numbers had no common scale. plankton.capacity is not used here.
+    // All food is counted in bites. Earlier, bites were converted into an abstract stock
+    // (capacity / (particles x uses)), which made one bite 0.167 while maxIntakePerFish was
+    // 0.04: a bite was four times the intake limit, so fish could never eat a single one.
+    // The two numbers came from separate sources with no common scale. Now availableAt
+    // returns bites, maxIntakePerFish is the most bites per feeding, halfSaturation is in
+    // bites, and total food = particles x uses per particle.
 
     // reach: how close a particle must be to eat it. sense: how far away food can be seen.
     this.reach = Math.max(1e-4, config.plankton.forageRadius ?? 0.12);
@@ -62,8 +65,9 @@ export class SpatialPlanktonField {
 
   /**
    * Fixed-size grid indexed by flat array offsets, not a Map with string keys. The tank is
-   * bounded, so the cell count is fixed; string keys cost 27 string builds per query,
-   * about 2.2 million allocations per second at 679 fish.
+   * bounded, so the cell count is fixed. SpatialHash3D in experiment-model.js builds 27
+   * string keys per query, which came to about 2.2 million allocations per second at
+   * 679 fish; this grid avoids repeating that.
    *
    * Cell size is the sensing radius, not the eating reach, so foraging needs only the 3x3x3
    * block; eating scans the same 27 cells and filters by the smaller reach. One grid, one
@@ -159,8 +163,9 @@ export class SpatialPlanktonField {
    * Holling type II half-saturation constant, in bites.
    *
    * The reference amount is the bites one fish can reach when food fills the whole tank,
-   * so halfSaturationFraction is a fraction of one fish's full local share rather than of
-   * the tank-wide total.
+   * so halfSaturationFraction is a fraction of one fish's full local share. Its meaning is
+   * unchanged from when it was measured against the whole tank's abstract stock; only the
+   * reference moved to one fish's reach and the unit to bites.
    */
   get halfSaturation() {
     const tank = this.config.tank;

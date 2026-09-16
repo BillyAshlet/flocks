@@ -7,10 +7,11 @@ export const CAMERA_MODE = Object.freeze({
   GLOBAL: 'global',
   CLOSEUP: 'closeup',
   FOLLOW: 'follow',
-  // ORBIT：跟随鱼的【位置】，但视角由玩家自由拖动。
-  // CLOSEUP 和 FOLLOW 的机位都由 frame.forward 推出来，等于死锁在鱼头
-  // 朝向上 —— 鱼一转弯整个世界跟着转，想绕着鱼看一圈是做不到的。
-  // 教学关要让玩家自己转着看体型差异，必须有一个世界坐标系不动的模式。
+  // ORBIT follows the fish's position, but the viewer drags the view angle freely.
+  // CLOSEUP and FOLLOW both derive the camera from frame.forward, which locks the view
+  // to the fish's heading: when the fish turns the whole world turns with it, so there
+  // was no way to look around a fish. Comparing body sizes by circling a fish needs a
+  // mode whose world frame stays still.
   ORBIT: 'orbit',
 });
 
@@ -20,20 +21,22 @@ export function cameraModeAfterEscape(mode) {
 
 const ORBIT_YAW_PER_PIXEL = 0.0065;
 const ORBIT_PITCH_PER_PIXEL = 0.0055;
-const ORBIT_PITCH_LIMIT = 1.45; // 略小于 π/2，避免正上/正下时 lookAt 退化
+const ORBIT_PITCH_LIMIT = 1.45; // just under π/2, so lookAt does not degenerate straight above or below
 const ORBIT_ZOOM_PER_DELTA = 0.0012;
 const ORBIT_DISTANCE_MIN = 0.16;
 const ORBIT_DISTANCE_MAX = 3.2;
 /**
- * 绕鱼观察时滚轮【调焦距，不推拉机位】。
+ * In orbit view the wheel changes focal length; it does not dolly the camera.
  *
- * 这是个取景语气的选择：这个作品的姿态是「实验台前的观察者」，而观察者
- * 是凑近镜头，不是走过去。推拉会同时改透视——同一条鱼在不同缩放下体型
- * 比例看着不一样，而这一课要读的正是体型；变焦只放大，比例锁死。
- * 顺带解决一个实际问题：推到 0.16 会把近裁剪面怼进鱼身体里。
+ * This is a framing choice: the stance is an observer at a lab bench, who leans into
+ * the lens rather than walking over. Dollying also changes perspective, so the same
+ * fish looks proportioned differently at different zoom levels, and body size is exactly
+ * what the viewer is here to read; zooming only magnifies and keeps proportions fixed.
+ * It also avoids a practical problem: dollying in to 0.16 pushes the near clipping
+ * plane into the fish's body.
  *
- * 代价是【长焦压平纵深】：拉到 6° 时不同深度的鱼会失去分离感。
- * 6°–60° 这个范围是留给手感调的，不是算出来的。
+ * The cost is that a long lens flattens depth: at 6° fish at different depths lose
+ * their separation. The 6°–60° range was tuned by feel, not derived.
  */
 const ORBIT_FOV_MIN = 6;
 const ORBIT_FOV_MAX = 60;
@@ -58,8 +61,9 @@ export class ExperimentCameraController {
     this.dragPointer = null;
     this.dragStart = null;
     this.savedPose = null;
-    // 绕轨视角状态：yaw/pitch 是世界坐标系下的球面角，不随鱼头朝向变化
-    // distance 只决定进入 ORBIT 时的机位，之后不再变——缩放走 fov。
+    // Orbit state: yaw/pitch are spherical angles in world space and do not follow the
+    // fish's heading. distance only sets the camera position on entering ORBIT and then
+    // stays fixed; zoom goes through fov.
     this.orbit = { yaw: 0, pitch: 0.28, distance: 0.9, fov: null };
     this.raycaster = new THREE.Raycaster();
     this.pointer = new THREE.Vector2();
@@ -207,9 +211,9 @@ export class ExperimentCameraController {
       { passive: false }
     );
     window.addEventListener('keydown', (event) => {
-      // 演示卫生：一键收掉全部调试 UI。路演、截图、录屏都需要。
-      // 注意：数字键 0/1/3/7 已被 scene.js 的 Blender 风格视角预设占用
-      // （Digit1 = 正视图），所以这里用 H（hide）。
+      // One key hides all debug UI, for demos, screenshots and recordings.
+      // Digits 0/1/3/7 are already taken by the Blender-style view presets in
+      // scene.js (Digit1 = front view), so this uses H (hide).
       if (event.key === 'h' || event.key === 'H') {
         const node = event.target;
         if (node && (node.tagName === 'INPUT' || node.tagName === 'TEXTAREA')) {
@@ -352,13 +356,13 @@ export class ExperimentCameraController {
     return this._enterMode(CAMERA_MODE.ORBIT);
   }
 
-  /** 当前焦距；还没滚过滚轮时用本场配置的 FOV。 */
+  /** Current focal length; before any wheel input, the configured camera FOV. */
   _orbitFov() {
     const base = this.simulation.config.camera.fov;
     return clampNumber(this.orbit.fov ?? base, ORBIT_FOV_MIN, ORBIT_FOV_MAX);
   }
 
-  // 从当前机位反推球面角，避免进入 ORBIT 的瞬间视角跳变
+  // Derive the spherical angles from the current camera so entering ORBIT does not jump.
   _seedOrbitFromCamera() {
     const fish = this.simulation.fish(this.selected);
     if (!fish) return;
@@ -372,8 +376,8 @@ export class ExperimentCameraController {
       ORBIT_DISTANCE_MIN,
       ORBIT_DISTANCE_MAX
     );
-    // 每次重新进入 ORBIT 都把焦距归位，否则上一条鱼留下的长焦会套在
-    // 下一条身上 —— 那一下会像镜头坏了。
+    // Reset focal length on every entry. Otherwise the long lens left over from the
+    // previous fish carries over to the next one, which looks like a broken camera.
     this.orbit.fov = null;
     this.orbit.yaw = Math.atan2(offset.x, offset.z);
     this.orbit.pitch = clampNumber(
@@ -503,8 +507,9 @@ export class ExperimentCameraController {
     }
 
     if (this.mode === CAMERA_MODE.ORBIT) {
-      // 关键区别：偏移量在【世界坐标系】里算，不用 frame.forward。
-      // 鱼转弯时机位不动，玩家看到的是鱼在转，而不是世界在转。
+      // The key difference: the offset is computed in world space, not from
+      // frame.forward. When the fish turns the camera stays put, so the viewer
+      // sees the fish turn rather than the world.
       const cos = Math.cos(this.orbit.pitch);
       const orbitPosition = frame.position
         .clone()

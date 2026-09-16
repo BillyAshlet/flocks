@@ -135,10 +135,11 @@ test('ecology helpers implement logistic food, size-scaled drain and terminal ou
   const config = createDefaultConfig();
   const smallRate = metabolicRate(config, config.schools[0]);
   const largeRate = metabolicRate(config, config.schools[2]);
-  // Direction is deliberate: larger fish burn more. Kleiber's law lowers
-  // energy use per unit mass, but absolute use still rises with size.
-  // Dividing by size would make large fish more starvation-resistant, which
-  // contradicts the trait model (larger body -> lower stamina).
+  // Direction deliberately flipped. Earlier this asserted largeRate < smallRate
+  // citing Kleiber, but Kleiber lowers energy use per unit mass while absolute
+  // use still rises. Dividing by size made large fish more starvation-resistant,
+  // refunding on the output side the stamina cost the trait model charges on the
+  // input side (larger body -> lower stamina). Multiplying keeps them consistent.
   assert.ok(largeRate > smallRate, 'larger body size means higher absolute metabolism');
   assert.deepEqual(ecologyOutcome([3, 0, 0]), {
     state: 'winner',

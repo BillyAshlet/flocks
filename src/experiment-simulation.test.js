@@ -499,6 +499,10 @@ test('low energy blocks burst sprint', () => {
   );
 });
 
+// No carrion-feeding test on purpose: carcasses are not food. Earlier they
+// were, but they float up, get pinned at walls and were almost never reached;
+// worse, dead fish feeding the living is positive feedback, so survivors of a
+// die-off did better, the opposite of schools dying out together.
 
 test('feeding recovery is amplified and shares 40 percent with living schoolmates', () => {
   const simulation = smallSimulation('steady', 20260725);
@@ -525,9 +529,9 @@ test('feeding recovery is amplified and shares 40 percent with living schoolmate
   const consumedBefore = simulation.planktonConsumed;
   simulation._updateEcology(0.25);
 
-  // Use the amount actually taken, not the requested amount: food particles
-  // are discrete, so a Holling-II request is not always fully met. The
-  // planktonConsumed delta is what this fish really ate.
+  // Use the amount actually taken. Earlier this assumed every Holling-II
+  // request was fully met, which stopped being true once food became discrete
+  // particles. The planktonConsumed delta is what this fish really ate.
   const intake = simulation.planktonConsumed - consumedBefore;
   assert.ok(intake > 0, 'the fish should actually have eaten something');
   const intakeFraction = intake / simulation.config.plankton.maxIntakePerFish;
@@ -556,9 +560,10 @@ test('depleted particles give no free food and regrow by time, not frames', () =
   simulation.energy[eater] = 0.1;
   simulation.rng.next = () => 0;
 
-  // With discrete use counts, a depleted particle simply has 0 uses. Two
-  // invariants: an empty particle cannot feed a fish, and regrowth depends on
-  // elapsed time, not frame count.
+  // Discrete use counts replaced the old seed-stock floor: a depleted particle
+  // has 0 uses and needs no floor. The invariants to guard are now that an
+  // empty particle cannot feed a fish, and that regrowth depends on elapsed
+  // time, not frame count.
   const field = simulation.food;
   field.uses.fill(0);
   field.spentAt.fill(0);

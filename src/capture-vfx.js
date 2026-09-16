@@ -97,8 +97,9 @@ export class CaptureVfx {
     this.scene = scene;
     this.params = params;
     this.starvationParams = starvationParams || DEFAULT_STARVATION_VFX;
-    // Tank half-extents. Clamping only y lets remains with initial velocity drift
-    // out through the side walls. null = unbounded (test path).
+    // Tank half-extents. Remains used to be clamped only in y (floorY) with x/z left
+    // free, so anything with initial velocity drifted straight out through the side
+    // walls; now all three axes are clamped. null = unbounded (test path).
     this.bounds = null;
     this.particles = [];
     this.glows = [];
@@ -126,9 +127,10 @@ export class CaptureVfx {
 
     this.glowGeometry = new THREE.SphereGeometry(1, 20, 14);
     // Color comes from params.biteGlowColor. The glow is a normally blended translucent
-    // sphere that reads by being brighter than the background, so white works on dark
-    // water but is invisible on a near-white background (#eef1f0). There it should be
-    // dark, reading as a dark pulse; it is the main accent of the bite moment.
+    // sphere that reads by being brighter than the background. White works on dark water,
+    // but on a near-white background (#eef1f0) a white glow was invisible, and it is the
+    // main accent of the bite moment. On a light background use a dark color so it reads
+    // as a dark pulse instead of a bright one.
     this.glowMaterial = new THREE.MeshBasicMaterial({
       color: '#ffffff',
       transparent: true,

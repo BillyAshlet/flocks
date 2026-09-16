@@ -173,10 +173,13 @@ export function metabolicRate(config, school, bursting = false) {
   );
   // Multiply, not divide. Kleiber's law says energy use per unit body mass falls
   // with size, but absolute energy use rises: a large animal eats more per day.
-  // Dividing would make large fish burn less per second and so starve more slowly,
-  // the opposite of "larger body, lower endurance". The cost is that large fish do
-  // starve sooner: at size 2.25 basal cost is 1.84x baseline (it would be 0.54x
-  // with division).
+  // This used to divide, which claimed large fish burn less per second and made them
+  // more starvation-resistant, the opposite of the trait model (larger body -> lower
+  // endurance): the trait coupling charged size an endurance cost on the input side
+  // and metabolism refunded it on the output side. Multiplying makes "larger body,
+  // lower endurance" hold physically rather than only in bookkeeping. The cost is that
+  // large fish do starve sooner: at size 2.25 basal cost is 1.84x baseline instead of
+  // the old 0.54x, a 3.4x swing in the expected direction.
   const basal = ecology.basalRate * sizeScale * multiplier;
   if (!bursting) return basal;
   const burstScale = ecology.burstSizeScaled === false ? 1 : sizeScale;

@@ -10,16 +10,14 @@ const TANK_VISUAL_PARAMS = {
   gridDivisions: 4,
 };
 
-// Presentation: canonical landscape → viewport. The CSS rotation comes
-// from input.js (R = −(hold + framebuffer), see the frame model there);
-// this module just applies whatever R says and owns the geometry:
-// dimension swap, camera framing, and viewport→canonical coordinates.
+// Presentation: canonical landscape → viewport. The CSS rotation R comes
+// from getRotation (no rotation by default); this module just applies
+// whatever R says and owns the geometry: dimension swap, camera framing,
+// and viewport→canonical coordinates.
 //
-// Camera policy (revised M1): "fixed camera, world tilts" is a MOBILE
-// GAME rule — camera motion must never fight tilt gravity. Desktop is
-// the world, and you can walk around a world: OrbitControls (drag
-// orbit / right-drag pan / wheel zoom), 0 = home, 1/3/7 = front/side/
-// top view snaps. Mobile keeps the fixed auto-framing camera untouched.
+// Camera policy: touch devices keep the fixed auto-framing camera. Desktop
+// is a world you can walk around: OrbitControls (drag orbit / right-drag
+// pan / wheel zoom), 0 = home, 1/3/7 = front/side/top view snaps.
 export function createScene(wrapper, getRotation = () => 0) {
   const isDesktop = navigator.maxTouchPoints === 0;
 
@@ -377,8 +375,8 @@ export function createScene(wrapper, getRotation = () => 0) {
   });
 
   // CSS transforms rotate pixels, not coordinates: touch positions
-  // arrive in viewport space. ALL canvas-space touch math (M3 touch
-  // zones, raycasts) must pass through here — never use clientX/Y raw.
+  // arrive in viewport space. All canvas-space touch math (raycasts,
+  // hit zones) must pass through here — never use clientX/Y raw.
   function viewportToCanonical(sx, sy) {
     const vw = window.innerWidth;
     const vh = window.innerHeight;
