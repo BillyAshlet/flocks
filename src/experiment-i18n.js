@@ -271,7 +271,7 @@ const DICT = {
   隔间: ['chamber', '隔间'],
   小群数量: ['pod count', '小群数量'],
   '小群内间距 ×': ['in-pod spacing ×', '小群内间距 ×'],
-  '尸体觅食 ×': ['carrion foraging ×', '尸体觅食 ×'],
+  '浮游滤食 ×': ['plankton grazing ×', '浮游滤食 ×'],
   出生朝向散布: ['initial heading spread', '出生朝向散布'],
   初始散射速度: ['initial scatter speed', '初始散射速度'],
   '初始能量抖动 ±': ['initial energy jitter ±', '初始能量抖动 ±'],

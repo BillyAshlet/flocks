@@ -1517,7 +1517,9 @@ function schoolEntries(config) {
         max: gamePlayer ? 25 : 5,
         step: 0.01,
       }),
-      entry(`${p}.grazeRate`, group, '尸体觅食 ×', 'live', {
+      // Once labelled "carrion foraging", left over from when carcasses were
+      // food. It scales how often a fish grazes plankton.
+      entry(`${p}.grazeRate`, group, '浮游滤食 ×', 'live', {
         min: 0,
         max: 4,
         step: 0.01,
