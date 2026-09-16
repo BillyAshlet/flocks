@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   DistanceField3D,
+  castRay,
   obstacleSignedDistance,
   sceneClearance,
 } from './distance-field.js';
@@ -72,4 +73,30 @@ test('analytic ring SDF keeps the hole open while marking the panel solid', () =
       0
   );
   assert.ok(obstacleSignedDistance([ring.width, 0, 0], ring) > 0);
+});
+
+test('look-ahead ray hits tank walls and obstacles alike', () => {
+  const config = createDefaultConfig();
+  config.obstacles.enabled = true;
+  for (const [key, obstacle] of Object.entries(config.obstacles)) {
+    if (key !== 'enabled') obstacle.enabled = key === 'blockA';
+  }
+  Object.assign(config.obstacles.blockA, {
+    x: 0, y: 0, z: 0, rotationX: 0, rotationY: 0, rotationZ: 0,
+    width: 0.4, height: 0.4, depth: 0.4,
+  });
+  const field = new DistanceField3D(config);
+  const clearanceAt = (point) => field.clearance(point);
+  const wallX = config.tank.width / 2;
+
+  // Toward the box face at x = -0.2, from 0.5 m away.
+  const toBox = castRay(clearanceAt, [-0.7, 0, 0], [1, 0, 0], 1);
+  assert.ok(Math.abs(toBox - 0.5) < 0.01);
+  // Same distance, but only 0.3 m of look-ahead: clear.
+  assert.equal(castRay(clearanceAt, [-0.7, 0, 0], [1, 0, 0], 0.3), Infinity);
+  // Toward the +x wall, stopping at the wall margin.
+  const toWall = castRay(clearanceAt, [wallX - 0.2, 1, 0], [1, 0, 0], 1, 0.05);
+  assert.ok(Math.abs(toWall - 0.15) < 0.01);
+  // Swimming away from the wall.
+  assert.equal(castRay(clearanceAt, [wallX - 0.2, 1, 0], [-1, 0, 0], 0.5, 0.05), Infinity);
 });

@@ -5,7 +5,6 @@ import { deriveExperiment } from './experiment-model.js';
 import {
   SchoolVisualizer,
   emptyVisualLayers,
-  wallSteering,
 } from './school-visualizer.js';
 import { tierPanelScope } from './tiers.js';
 
@@ -105,16 +104,26 @@ test('blind cone appears only with a real field of view', () => {
   assert.ok(Math.abs(visualizer.overlays[0].blindAngle - Math.PI / 6) < 1e-9);
 });
 
-test('wall steering is silent mid-tank and points inward near a wall', () => {
+test('avoidance ray is grey and full length when clear, amber and cut at a hit', () => {
   const config = createDefaultConfig();
   const simulation = fakeSimulation(config);
-  assert.equal(wallSteering(simulation, config, 0), null);
+  simulation.avoidanceHits = new Float32Array(4).fill(Infinity);
+  const visualizer = new SchoolVisualizer(fakeScene());
+  const layers = [{ walls: true }, {}];
+  const length = config.locomotion.avoidanceLookAhead;
 
-  simulation.positions[0] = config.tank.width / 2 - 0.02;
-  const steering = wallSteering(simulation, config, 0);
-  assert.ok(steering);
-  assert.ok(steering.direction.x < 0);
-  assert.ok(steering.urgency > 0.8);
+  visualizer.update(simulation, config, layers);
+  const overlay = visualizer.overlays[0];
+  const end = () => overlay.ray.geometry.attributes.position.getX(1);
+  assert.equal(overlay.ray.visible, true);
+  assert.ok(Math.abs(end() - length) < 1e-6);
+  assert.equal(overlay.wallArrow.visible, false);
+
+  simulation.avoidanceHits[0] = 0.1;
+  simulation.avoidanceDirections[1] = 1;
+  visualizer.update(simulation, config, layers);
+  assert.ok(Math.abs(end() - 0.1) < 1e-6);
+  assert.equal(overlay.wallArrow.visible, true);
 });
 
 test('tiers offer visualization layers together with their rules', () => {

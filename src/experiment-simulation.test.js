@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { sceneClearance } from './distance-field.js';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { createDefaultConfig } from './experiment-config.js';
@@ -22,6 +23,7 @@ function smallSimulation(mode = 'steady', seed = 1001, withScene = false) {
   if (mode === 'ecology') config.traits.enabled = true;
   const neutralField = {
     query: () => ({ clearance: 1, gradient: [0, 0, 0] }),
+    clearance: () => 1,
   };
   return new ExperimentSimulation({
     scene: withScene ? new THREE.Scene() : null,
@@ -205,7 +207,6 @@ test('predation uses broad prey cohesion before the smaller burst layer', () => 
 
 test('predators outside local hunt radius remain ordinary boids', () => {
   const simulation = smallSimulation();
-  simulation.config.locomotion.boundaryWeight = 0;
   simulation.config.locomotion.avoidanceWeight = 0;
   simulation.config.locomotion.wanderWeight = 0;
   // Keep school-sense from reaching across the staged gap; this test isolates
@@ -669,4 +670,30 @@ test('with predation switched off a predator touching its prey eats nothing', ()
   simulation.pursuitTargets[predator] = prey;
   simulation._capture(1 / 60);
   assert.equal(simulation.alive[prey], 1);
+});
+
+test('a fish heading at a wall within look-ahead turns away; far from it, nothing', () => {
+  const simulation = smallSimulation();
+  const config = simulation.config;
+  const clearanceAt = (point) => sceneClearance(point, config);
+  simulation.distanceField = { clearance: clearanceAt };
+  const wallX = config.tank.width / 2 - config.tank.wallMargin;
+  const length = config.locomotion.avoidanceLookAhead;
+
+  // 0.1 m from the wall, swimming straight at it.
+  const near = [wallX - 0.1, 0, 0];
+  const urgency = simulation._lookAhead(0, near, 0.23, 0, 0);
+  assert.ok(Math.abs(urgency - (1 - 0.1 / length)) < 0.01);
+  // First clear yaw direction points back from the wall, level.
+  assert.ok(simulation.avoidanceDirections[0] < 1);
+  assert.equal(simulation.avoidanceDirections[1], 0);
+  assert.ok(Math.abs(simulation.avoidanceHits[0] - 0.1) < 0.01);
+
+  // 1 m from the wall: nothing within look-ahead.
+  assert.equal(simulation._lookAhead(0, [wallX - 1, 0, 0], 0.23, 0, 0), 0);
+  assert.equal(simulation.avoidanceHits[0], Infinity);
+  assert.equal(simulation.avoidanceDirections[0], 0);
+
+  // Parallel to the wall, close to it: the way ahead is clear.
+  assert.equal(simulation._lookAhead(0, [wallX - 0.05, 0, 0], 0, 0, 0.23), 0);
 });

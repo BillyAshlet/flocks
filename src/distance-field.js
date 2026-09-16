@@ -142,6 +142,33 @@ function insideRingAabb(point, obstacle, margin) {
   );
 }
 
+const RAY_POINT = [0, 0, 0];
+const RAY_MAX_STEPS = 64;
+const RAY_HIT_EPSILON = 1e-3;
+
+/**
+ * Distance along a ray to the first point whose clearance drops to `margin`,
+ * found by sphere tracing: step forward by the current clearance, which can
+ * never overshoot a surface. Works for the tank walls and for any obstacle in
+ * the distance field alike.
+ *
+ * Returns Infinity when nothing is hit within `maxDistance`.
+ */
+export function castRay(clearanceAt, origin, direction, maxDistance, margin = 0) {
+  let travelled = 0;
+  for (let step = 0; step < RAY_MAX_STEPS; step += 1) {
+    RAY_POINT[0] = origin[0] + direction[0] * travelled;
+    RAY_POINT[1] = origin[1] + direction[1] * travelled;
+    RAY_POINT[2] = origin[2] + direction[2] * travelled;
+    const gap = clearanceAt(RAY_POINT) - margin;
+    if (gap <= RAY_HIT_EPSILON) return travelled;
+    travelled += gap;
+    if (travelled > maxDistance) return Infinity;
+  }
+  // Grazing a surface in tiny steps without touching it counts as clear.
+  return Infinity;
+}
+
 export class DistanceField3D {
   constructor(config) {
     this.rebuild(config);
@@ -219,6 +246,25 @@ export class DistanceField3D {
     const c01 = lerp(c001, c101, tx);
     const c11 = lerp(c011, c111, tx);
     return lerp(lerp(c00, c10, ty), lerp(c01, c11, ty), tz);
+  }
+
+  // Clearance only, no gradient: the grid value, refined analytically near
+  // surfaces exactly as query() does.
+  clearance(point) {
+    if (!this.config.distanceField.enabled) {
+      return sceneClearance(point, this.config);
+    }
+    const clearance = this.sample(point);
+    const refineDistance = this.config.distanceField.analyticRefineDistance;
+    if (
+      Math.abs(clearance) < refineDistance ||
+      enabledObstacleSpecs(this.config).some((obstacle) =>
+        insideRingAabb(point, obstacle, refineDistance)
+      )
+    ) {
+      return sceneClearance(point, this.config);
+    }
+    return clearance;
   }
 
   query(point) {

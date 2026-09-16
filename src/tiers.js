@@ -50,8 +50,7 @@ const BASICS = [
   'runtime.seed',
   'runtime.randomizeSeed',
   'runtime.spawnMode',
-  'locomotion.avoidanceWeight',
-  'locomotion.boundaryWeight',
+  'locomotion.avoidance*',
 ];
 const PREDATION = [
   'relations.k',

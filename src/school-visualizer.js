@@ -8,8 +8,8 @@
  *
  * Layers draw what the engine actually uses:
  *   reynolds    separation / alignment / cohesion radii
- *   walls       where wall steering starts (tank inset by edgeSoftness) and
- *               the anchor fish's current wall-steering direction
+ *   walls       the look-ahead ray along the heading (amber up to the hit
+ *               when it hits something) and the direction the fish turns to
  *   fieldOfView the blind cone behind the fish; pairs inside it are ignored
  *   hunting     far sense (steer to prey centroid), near lock (pick one
  *               target), and a line to the current target
@@ -17,7 +17,6 @@
  *               the escape heading on)
  */
 import * as THREE from 'three';
-import { sceneClearance } from './distance-field.js';
 
 export const VISUAL_LAYERS = [
   'reynolds',
@@ -64,48 +63,6 @@ function heading(velocity) {
   return vector.lengthSq() > 1e-12 ? vector.normalize() : null;
 }
 
-// The two wall rules in the engine, summed: the box ramp (boundaryWeight)
-// and the distance-field push (avoidanceWeight, smoothed by inertia).
-// Returns direction and an urgency in 0..1, or null outside both bands.
-export function wallSteering(simulation, config, index) {
-  const offset = index * 3;
-  const point = [
-    simulation.positions[offset],
-    simulation.positions[offset + 1],
-    simulation.positions[offset + 2],
-  ];
-  const softness = config.tank.edgeSoftness;
-  const half = [config.tank.width / 2, config.tank.height / 2, config.tank.depth / 2];
-  const ramp = [0, 0, 0];
-  for (let axis = 0; axis < 3; axis += 1) {
-    const negative = point[axis] + half[axis];
-    const positive = half[axis] - point[axis];
-    if (negative < softness) ramp[axis] += 1 - negative / softness;
-    if (positive < softness) ramp[axis] -= 1 - positive / softness;
-  }
-  const total = new THREE.Vector3();
-  const rampLength = Math.hypot(ramp[0], ramp[1], ramp[2]);
-  const boundaryUrgency = Math.min(1, rampLength);
-  if (boundaryUrgency > 1e-6) {
-    total.set(ramp[0], ramp[1], ramp[2]).multiplyScalar(
-      (config.locomotion.boundaryWeight * boundaryUrgency * (1 + boundaryUrgency * 2)) /
-        rampLength
-    );
-  }
-  const clearance = sceneClearance(point, config);
-  const closeness =
-    clearance < softness ? 1 - Math.min(1, Math.max(0, clearance / softness)) : 0;
-  if (closeness > 0 && simulation.avoidanceDirections) {
-    const weight = config.locomotion.avoidanceWeight * closeness;
-    total.x += simulation.avoidanceDirections[offset] * weight;
-    total.y += simulation.avoidanceDirections[offset + 1] * weight;
-    total.z += simulation.avoidanceDirections[offset + 2] * weight;
-  }
-  const urgency = Math.max(boundaryUrgency, closeness);
-  if (urgency <= 1e-6 || total.lengthSq() < 1e-12) return null;
-  return { direction: total.normalize(), urgency };
-}
-
 class SchoolOverlay {
   constructor(parent) {
     this.group = new THREE.Group();
@@ -118,6 +75,11 @@ class SchoolOverlay {
     this.cohesion = wireSphere('#416f8f', 0.28);
     this.reynolds.add(this.separation, this.alignment, this.cohesion);
 
+    this.ray = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]),
+      new THREE.LineBasicMaterial({ color: '#8a8a94', transparent: true, opacity: 0.8 })
+    );
+    this.ray.frustumCulled = false;
     this.wallArrow = new THREE.ArrowHelper(UP, new THREE.Vector3(), 1, '#a8842a');
 
     this.blindAngle = -1;
@@ -147,7 +109,7 @@ class SchoolOverlay {
     this.signal = wireSphere('#b57aa6', 0.22);
     this.panic.add(this.threat, this.signal);
 
-    this.group.add(this.reynolds, this.wallArrow, this.blindCone, this.hunting, this.panic);
+    this.group.add(this.reynolds, this.ray, this.wallArrow, this.blindCone, this.hunting, this.panic);
     // The target line lives in world space, not relative to the anchor.
     parent.add(this.group, this.targetLine);
   }
@@ -183,6 +145,33 @@ class SchoolOverlay {
     return (this.anchor = -1);
   }
 
+  // The ray is grey when clear. On a hit it turns amber and stops at the hit
+  // point, and an arrow shows the direction the fish turns to.
+  updateAvoidance(simulation, config, index, forward, on) {
+    const length = config.locomotion.avoidanceLookAhead;
+    this.ray.visible = Boolean(on && forward && length > 0);
+    this.wallArrow.visible = false;
+    if (!this.ray.visible) return;
+    const hit = simulation.avoidanceHits?.[index] ?? Infinity;
+    const hitting = Number.isFinite(hit);
+    const reach = hitting ? Math.min(hit, length) : length;
+    const position = this.ray.geometry.attributes.position;
+    position.setXYZ(1, forward.x * reach, forward.y * reach, forward.z * reach);
+    position.needsUpdate = true;
+    this.ray.material.color.set(hitting ? '#d08a2a' : '#8a8a94');
+    if (!hitting) return;
+    const offset = index * 3;
+    const direction = new THREE.Vector3(
+      simulation.avoidanceDirections[offset],
+      simulation.avoidanceDirections[offset + 1],
+      simulation.avoidanceDirections[offset + 2]
+    );
+    if (direction.lengthSq() < 1e-12) return;
+    this.wallArrow.visible = true;
+    this.wallArrow.setDirection(direction);
+    this.wallArrow.setLength(length, length * 0.25, length * 0.12);
+  }
+
   update(simulation, config, schoolIndex, layers, selected) {
     const anyLayer = VISUAL_LAYERS.some((layer) => layers[layer]);
     const index = anyLayer ? this.pickAnchor(simulation, schoolIndex, selected) : -1;
@@ -203,15 +192,8 @@ class SchoolOverlay {
       this.cohesion.scale.setScalar(Math.max(derived.cohesionRadius, MIN_SCALE));
     }
 
-    const steering = layers.walls ? wallSteering(simulation, config, index) : null;
-    this.wallArrow.visible = Boolean(steering);
-    if (steering) {
-      const length = Math.max(derived.cohesionRadius, MIN_SCALE) * (0.3 + 0.7 * steering.urgency);
-      this.wallArrow.setDirection(steering.direction);
-      this.wallArrow.setLength(length, length * 0.25, length * 0.12);
-    }
-
     const forward = heading(fish.velocity);
+    this.updateAvoidance(simulation, config, index, forward, Boolean(layers.walls));
     const fov = config.perception.fovDegrees;
     this.blindCone.visible = Boolean(layers.fieldOfView && forward && fov < 360);
     if (this.blindCone.visible) {
@@ -264,21 +246,11 @@ export class SchoolVisualizer {
   constructor(scene) {
     this.scene = scene;
     this.overlays = [];
-    // Wall steering starts inside this box; shared by every school.
-    this.wallBand = new THREE.LineSegments(
-      new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)),
-      new THREE.LineBasicMaterial({ color: '#a8842a', transparent: true, opacity: 0.75 })
-    );
-    this.wallBand.visible = false;
-    this.scene.add(this.wallBand);
   }
 
   dispose() {
     for (const overlay of this.overlays) overlay.dispose();
     this.overlays = [];
-    this.wallBand.removeFromParent();
-    this.wallBand.geometry.dispose();
-    this.wallBand.material.dispose();
   }
 
   /**
@@ -291,21 +263,8 @@ export class SchoolVisualizer {
     while (this.overlays.length < schoolCount) {
       this.overlays.push(new SchoolOverlay(this.scene));
     }
-    let wallsOn = false;
     this.overlays.forEach((overlay, schoolIndex) => {
-      const layers = layersBySchool[schoolIndex] ?? {};
-      wallsOn ||= Boolean(layers.walls);
-      overlay.update(simulation, config, schoolIndex, layers, selected);
+      overlay.update(simulation, config, schoolIndex, layersBySchool[schoolIndex] ?? {}, selected);
     });
-
-    this.wallBand.visible = wallsOn && Boolean(config?.tank);
-    if (this.wallBand.visible) {
-      const inset = 2 * config.tank.edgeSoftness;
-      this.wallBand.scale.set(
-        Math.max(config.tank.width - inset, MIN_SCALE),
-        Math.max(config.tank.height - inset, MIN_SCALE),
-        Math.max(config.tank.depth - inset, MIN_SCALE)
-      );
-    }
   }
 }

@@ -105,7 +105,6 @@ export const DEFAULT_EXPERIMENT_CONFIG = Object.freeze({
     height: 3.6,
     depth: 2.4,
     wallMargin: 0.035,
-    edgeSoftness: 0.16,
   },
   perception: {
     minNeighborRadiusFactor: 3,
@@ -216,9 +215,12 @@ export const DEFAULT_EXPERIMENT_CONFIG = Object.freeze({
     burstForceBudget: 1.6,
     maxForce: 5.2,
     interceptLookAhead: 1.3,
-    boundaryWeight: 1.8,
-    avoidanceWeight: 2.2,
-    avoidanceInertia: 0.72,
+    // Wall and obstacle avoidance, from the original boids: a ray along the
+    // heading; when it hits within avoidanceLookAhead, turn in
+    // avoidanceAngleStep increments until the way is clear.
+    avoidanceWeight: 1.0,
+    avoidanceLookAhead: 0.23,
+    avoidanceAngleStep: 18,
     wanderWeight: 0.08,
     // 【觅食转向】。饿了才去找食物 —— 权重按「饿」加权，不按「近」加权：
     // 吃饱的鱼完全无视食物，饿的鱼才脱队。这样平时看着还是鱼群，
@@ -631,17 +633,6 @@ const scalarEntries = [
     }
   ),
   entry(
-    'tank.edgeSoftness',
-    'Advanced · Tank',
-    'edge softness · 软转向带',
-    'live',
-    {
-      min: 0.02,
-      max: 0.5,
-      step: 0.01,
-    }
-  ),
-  entry(
     'perception.minNeighborRadiusFactor',
     '感知',
     'min radius / body',
@@ -896,22 +887,24 @@ const scalarEntries = [
     'live',
     { min: 0, max: 5, step: 0.05 }
   ),
-  entry('locomotion.boundaryWeight', '运动', 'boundary weight', 'live', {
-    min: 0,
-    max: 6,
-    step: 0.05,
-  }),
   entry('locomotion.avoidanceWeight', '运动', 'avoidance weight', 'live', {
     min: 0,
     max: 8,
     step: 0.05,
   }),
   entry(
-    'locomotion.avoidanceInertia',
+    'locomotion.avoidanceLookAhead',
     '运动',
-    'avoidance inertia',
+    'avoidance look-ahead (m)',
     'live',
-    { min: 0, max: 0.99, step: 0.01 }
+    { min: 0, max: 1, step: 0.01 }
+  ),
+  entry(
+    'locomotion.avoidanceAngleStep',
+    '运动',
+    'avoidance angle step (°)',
+    'live',
+    { min: 1, max: 90, step: 1 }
   ),
   entry('locomotion.forageWeight', '运动', '觅食转向 weight', 'live', {
     min: 0,

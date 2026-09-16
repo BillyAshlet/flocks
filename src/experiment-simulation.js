@@ -16,7 +16,7 @@ import {
   sustainedSpeedScale,
   tankVolume,
 } from './experiment-model.js';
-import { sceneClearance } from './distance-field.js';
+import { castRay, sceneClearance } from './distance-field.js';
 import { CaptureVfx } from './capture-vfx.js';
 
 const EPSILON = 1e-8;
@@ -267,7 +267,11 @@ export class ExperimentSimulation {
     this.predationSums = new Float32Array(this.count * 3);
     this.alignmentSums = new Float32Array(this.count * 3);
     this.evadeForces = new Float32Array(this.count * 3);
+    // Per step, for steering and the visualizer: the direction a fish turns
+    // to when its look-ahead ray hits something (zero when clear), and the
+    // hit distance (Infinity when clear).
     this.avoidanceDirections = new Float32Array(this.count * 3);
+    this.avoidanceHits = new Float32Array(this.count).fill(Infinity);
     this.schoolIds = new Uint16Array(this.count);
     this.alive = new Uint8Array(this.count);
     this.panic = new Float32Array(this.count);
@@ -750,7 +754,6 @@ export class ExperimentSimulation {
       velocities: this.velocities.slice(),
       rollAngles: this.rollAngles.slice(),
       prevHeadings: this.prevHeadings.slice(),
-      avoidanceDirections: this.avoidanceDirections.slice(),
     };
     this.locomotionPreview = false;
     // Reset from the submitted config so relation hysteresis
@@ -762,7 +765,6 @@ export class ExperimentSimulation {
     this.velocities.set(visibleMotion.velocities);
     this.rollAngles.set(visibleMotion.rollAngles);
     this.prevHeadings.set(visibleMotion.prevHeadings);
-    this.avoidanceDirections.set(visibleMotion.avoidanceDirections);
     this.updateMesh();
   }
 
@@ -1279,27 +1281,92 @@ export class ExperimentSimulation {
     });
   }
 
-  _boundaryForce(index) {
+  /**
+   * Wall and obstacle avoidance, as in the original boids.
+   *
+   * Cast a ray along the heading. If a surface is closer than the look-ahead
+   * distance, turn the heading left and right (yaw) in angle steps until a
+   * ray is clear; failing that, try pitching up or down; failing that, head
+   * for the tank centre. Fish prefer turning to climbing.
+   *
+   * Leaves the chosen direction in avoidanceDirections and the hit distance
+   * in avoidanceHits. Returns urgency: 0 when the way ahead is clear, rising
+   * to 1 as the surface gets closer.
+   */
+  _lookAhead(index, point, vx, vy, vz) {
     const offset = index * 3;
-    const half = [
-      this.config.tank.width / 2,
-      this.config.tank.height / 2,
-      this.config.tank.depth / 2,
-    ];
-    const softness = this.config.tank.edgeSoftness;
-    const force = [0, 0, 0];
-    for (let axis = 0; axis < 3; axis += 1) {
-      const value = this.positions[offset + axis];
-      const negativeDistance = value + half[axis];
-      const positiveDistance = half[axis] - value;
-      if (negativeDistance < softness) {
-        force[axis] += 1 - negativeDistance / softness;
-      }
-      if (positiveDistance < softness) {
-        force[axis] -= 1 - positiveDistance / softness;
+    const locomotion = this.config.locomotion;
+    const length = locomotion.avoidanceLookAhead;
+    const margin = this.config.tank.wallMargin;
+    this.avoidanceDirections[offset] = 0;
+    this.avoidanceDirections[offset + 1] = 0;
+    this.avoidanceDirections[offset + 2] = 0;
+    this.avoidanceHits[index] = Infinity;
+    const speed = Math.hypot(vx, vy, vz);
+    if (length <= 0 || speed <= EPSILON) return 0;
+
+    const field = this.distanceField;
+    const clearanceAt = field?.clearance
+      ? (candidate) => field.clearance(candidate)
+      : (candidate) => sceneClearance(candidate, this.config);
+    const heading = [vx / speed, vy / speed, vz / speed];
+    const hit = castRay(clearanceAt, point, heading, length, margin);
+    if (hit === Infinity) return 0;
+    this.avoidanceHits[index] = hit;
+    const clear = (direction) =>
+      castRay(clearanceAt, point, direction, length, margin) === Infinity;
+
+    const candidate = [0, 0, 0];
+    let found = false;
+    // Yaw sweep around the vertical axis, alternating left and right.
+    const stepRadians = (locomotion.avoidanceAngleStep * Math.PI) / 180;
+    const tries = Math.ceil(Math.PI / stepRadians);
+    for (let k = 1; k <= tries && !found; k += 1) {
+      for (const side of [1, -1]) {
+        const angle = side * k * stepRadians;
+        const cos = Math.cos(angle);
+        const sin = Math.sin(angle);
+        candidate[0] = heading[0] * cos + heading[2] * sin;
+        candidate[1] = heading[1];
+        candidate[2] = -heading[0] * sin + heading[2] * cos;
+        if (clear(candidate)) {
+          found = true;
+          break;
+        }
       }
     }
-    return force;
+    // Pitch fallback, about the horizontal axis perpendicular to the heading
+    // (floor or ceiling ahead).
+    if (!found) {
+      const axisLength = Math.hypot(heading[2], heading[0]);
+      if (axisLength > EPSILON) {
+        const ax = heading[2] / axisLength;
+        const az = -heading[0] / axisLength;
+        for (const angle of [0.6, -0.6, 1.1, -1.1]) {
+          const cos = Math.cos(angle);
+          const sin = Math.sin(angle);
+          // Rodrigues' rotation; the axis is perpendicular to the heading.
+          candidate[0] = heading[0] * cos - az * heading[1] * sin;
+          candidate[1] = heading[1] * cos + (az * heading[0] - ax * heading[2]) * sin;
+          candidate[2] = heading[2] * cos + ax * heading[1] * sin;
+          if (clear(candidate)) {
+            found = true;
+            break;
+          }
+        }
+      }
+    }
+    if (!found) {
+      candidate[0] = -point[0];
+      candidate[1] = -point[1];
+      candidate[2] = -point[2];
+    }
+    const norm = Math.hypot(candidate[0], candidate[1], candidate[2]);
+    if (norm <= EPSILON) return 0;
+    this.avoidanceDirections[offset] = candidate[0] / norm;
+    this.avoidanceDirections[offset + 1] = candidate[1] / norm;
+    this.avoidanceDirections[offset + 2] = candidate[2] / norm;
+    return 1 - hit / length;
   }
 
   _energyRatio(index) {
@@ -1820,52 +1887,19 @@ export class ExperimentSimulation {
       }
     }
 
-    // 边界力的【量级】就是紧急度（软斜坡 0..1）。steerToward 会 normalize
-    // 方向，所以必须把斜坡量级作为权重带回来，否则一进边界区就吃满力、硬弹。
-    const boundary = this._boundaryForce(index);
-    const boundaryUrgency = Math.min(
-      1,
-      Math.hypot(boundary[0], boundary[1], boundary[2])
-    );
-    if (boundaryUrgency > EPSILON) {
-      applyRule(
-        boundary[0],
-        boundary[1],
-        boundary[2],
-        this.config.locomotion.boundaryWeight *
-          boundaryUrgency *
-          (1 + boundaryUrgency * 2)
-      );
-    }
-
     const point = [
       this.positions[offset],
       this.positions[offset + 1],
       this.positions[offset + 2],
     ];
-    const query = this.distanceField?.query(point);
-    if (query && query.clearance < this.config.tank.edgeSoftness) {
-      const closeness =
-        1 -
-        clamp(
-          query.clearance / Math.max(EPSILON, this.config.tank.edgeSoftness),
-          0,
-          1
-        );
-      const inertia = this.config.locomotion.avoidanceInertia;
-      this.avoidanceDirections[offset] =
-        this.avoidanceDirections[offset] * inertia +
-        query.gradient[0] * (1 - inertia);
-      this.avoidanceDirections[offset + 1] =
-        this.avoidanceDirections[offset + 1] * inertia +
-        query.gradient[1] * (1 - inertia);
-      this.avoidanceDirections[offset + 2] =
-        this.avoidanceDirections[offset + 2] * inertia +
-        query.gradient[2] * (1 - inertia);
-      const weight = this.config.locomotion.avoidanceWeight * closeness;
-      fx += this.avoidanceDirections[offset] * weight;
-      fy += this.avoidanceDirections[offset + 1] * weight;
-      fz += this.avoidanceDirections[offset + 2] * weight;
+    const avoidanceUrgency = this._lookAhead(index, point, vx, vy, vz);
+    if (avoidanceUrgency > 0) {
+      applyRule(
+        this.avoidanceDirections[offset],
+        this.avoidanceDirections[offset + 1],
+        this.avoidanceDirections[offset + 2],
+        this.config.locomotion.avoidanceWeight * (1 + avoidanceUrgency * 2)
+      );
     }
 
     this.wanderPhases[index] += dt * this.wanderRates[index];

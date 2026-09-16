@@ -15,7 +15,7 @@ import { VISUAL_LAYERS } from './school-visualizer.js';
 
 const VISUAL_LAYER_LABELS = {
   reynolds: 'Reynolds radii',
-  walls: 'wall steering',
+  walls: 'avoidance ray',
   fieldOfView: 'blind cone (field of view)',
   hunting: 'hunting radii + target',
   panic: 'threat + signal radii',
