@@ -18,6 +18,7 @@ import {
   visualsForField,
   visualsForPath,
 } from './school-visualizer.js';
+import { parameterCategory } from './parameter-categories.js';
 
 // The read-only "actual radius" rows switch the same spheres as their factors.
 const VISUAL_FOR_DERIVED_RADIUS = {
@@ -779,18 +780,24 @@ export function createExperimentDebug({
     return controller.panelScope?.showSchoolField(field) ?? true;
   }
 
-  function addGlobalParameters(root, registry) {
+  // Global parameters a reader can see here: not per-school, not already shown
+  // inside a school's section, allowed by the tier, and not obstacles (that
+  // tier is not in this build).
+  function visibleGlobalSpecs(registry) {
     const project = controller.stage.runtime.project;
+    return registry.filter(
+      (spec) =>
+        !spec.path.startsWith('schools.') &&
+        spec.path !== 'runtime.project' &&
+        !SCHOOL_EMBEDDED_GLOBAL_PATHS.has(spec.path) &&
+        globalVisible(project, spec) &&
+        parameterCategory(spec) !== 'obstacles'
+    );
+  }
+
+  function addGroupFolders(root, specs) {
     const folders = new Map();
-    for (const spec of registry) {
-      if (
-        spec.path.startsWith('schools.') ||
-        spec.path === 'runtime.project' ||
-        SCHOOL_EMBEDDED_GLOBAL_PATHS.has(spec.path) ||
-        !globalVisible(project, spec)
-      ) {
-        continue;
-      }
+    for (const spec of specs) {
       let folder = folders.get(spec.group);
       if (!folder) {
         folder = root.addFolder({
@@ -802,6 +809,32 @@ export function createExperimentDebug({
         folders.set(spec.group, folder);
       }
       bindSpec(folder, spec);
+    }
+  }
+
+  // Environment and fish are the model. Display and engine internals come
+  // last and folded, so a reader who came for the rules does not wade through
+  // camera damping and particle colors to find one.
+  function addCategorizedParameters(root, registry) {
+    const globals = visibleGlobalSpecs(registry);
+    // An unmapped group stays visible with the fish rather than disappearing;
+    // parameter-categories.test.js keeps that from happening silently.
+    const inCategory = (...names) =>
+      globals.filter((spec) => names.includes(parameterCategory(spec) ?? 'fish'));
+    addGroupFolders(root, inCategory('run'));
+    const environment = inCategory('environment');
+    if (environment.length > 0) {
+      addGroupFolders(root.addFolder({ title: t('环境'), expanded: true }), environment);
+    }
+    const fish = root.addFolder({ title: t('鱼'), expanded: true });
+    addSchoolEditor(fish, registry);
+    addGroupFolders(fish, inCategory('fish'));
+    const nonResearch = inCategory('display', 'internal');
+    if (nonResearch.length > 0) {
+      addGroupFolders(
+        root.addFolder({ title: t('非研究部分'), expanded: false }),
+        nonResearch
+      );
     }
   }
 
@@ -824,8 +857,7 @@ export function createExperimentDebug({
     addLanguageToggle(pane);
     addActionButtons(pane);
     const registry = createParameterRegistry(controller.stage);
-    addSchoolEditor(pane, registry);
-    addGlobalParameters(pane, registry);
+    addCategorizedParameters(pane, registry);
     addConfigButtons(pane);
   }
 

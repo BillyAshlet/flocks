@@ -2,8 +2,8 @@
 //
 // Why a lookup table instead of bilingual strings in the config:
 // group names in experiment-config.js double as lookup keys (groupVisible(),
-// MAP_GROUPS / ECOLOGY_GROUPS / CAPTURE_GROUPS, SCHOOL_SECTIONS.fields, and
-// the folders Map in addGlobalParameters). Turning the source strings into
+// MAP_GROUPS / ECOLOGY_GROUPS / CAPTURE_GROUPS, SCHOOL_SECTIONS.fields,
+// parameter-categories.js, and the folders Map in addGroupFolders). Turning the source strings into
 // { en, zh } objects would break every one of those lookups, so the source
 // strings stay unchanged and are translated only at addFolder / addBinding time.
 //
@@ -86,6 +86,11 @@ const DICT = {
   障碍: ['Obstacle', '障碍'],
   相机: ['Camera', '相机'],
   鱼群: ['School', '鱼群'],
+
+  // Panel categories (parameter-categories.js)
+  环境: ['Environment', '环境'],
+  鱼: ['Fish', '鱼'],
+  非研究部分: ['Non-research settings', '非研究部分'],
 
   // Groups: each side of ' · ' is looked up separately, so the fragments are listed here
   Advanced: ['Advanced', '高级'],
