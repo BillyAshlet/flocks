@@ -256,7 +256,7 @@ export const DEFAULT_EXPERIMENT_CONFIG = Object.freeze({
     forageWeight: 0.9,
   },
   traits: {
-    enabled: false,
+    enabled: true,
     sizeSpeedPenaltyExponent: 0.2,
     minSustainedSpeedFactor: 0.55,
     sizeTurnPenaltyExponent: 0.55,

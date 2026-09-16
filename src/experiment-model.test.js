@@ -12,6 +12,7 @@ import {
   planktonIntake,
   relationBetween,
   relationForRatio,
+  sustainedSpeedScale,
   visualLength,
 } from './experiment-model.js';
 import { createDefaultConfig } from './experiment-config.js';
@@ -103,13 +104,19 @@ test('main project derives predator and prey roles from live body size', () => {
 test('burst, panic speed and visual capture distance are derived', () => {
   const config = createDefaultConfig();
   const [small, medium] = config.schools;
+  // Trait coupling scales the sustained top speed by body size; burst and
+  // panic multiply that scaled speed.
   assert.equal(
     effectiveMaxSpeed(config, medium, 'pursuit'),
-    medium.maxSpeed * config.locomotion.burstFactor
+    medium.maxSpeed *
+      sustainedSpeedScale(config, medium) *
+      config.locomotion.burstFactor
   );
   assert.equal(
     effectiveMaxSpeed(config, small, 'evade'),
-    small.maxSpeed * config.locomotion.panicSpeedFactor
+    small.maxSpeed *
+      sustainedSpeedScale(config, small) *
+      config.locomotion.panicSpeedFactor
   );
   assert.equal(
     captureRadius(config, medium, small),
