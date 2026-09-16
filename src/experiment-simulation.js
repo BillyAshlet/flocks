@@ -298,7 +298,12 @@ export class ExperimentSimulation {
     this.wanderPhases = new Float32Array(this.count);
     this.wanderRates = new Float32Array(this.count);
     this.sameNeighbors = new Uint16Array(this.count);
-    this.cohesionCounts = new Uint16Array(this.count);
+    // Float, not an integer count: with inverse falloff each neighbor adds a
+    // fractional weight. As a Uint16Array the fractions were dropped, so the
+    // cohesion target (sum of weighted positions / sum of weights) was
+    // divided by too small a number and pushed away from the tank center;
+    // schools crept into the corners.
+    this.cohesionCounts = new Float32Array(this.count);
     this.predationCounts = new Uint16Array(this.count);
     this.alignmentCounts = new Uint16Array(this.count);
     this.threatCounts = new Uint16Array(this.count);

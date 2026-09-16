@@ -718,3 +718,38 @@ test('recentering waits after a hit, then acts for its duration, and a hit does 
   assert.ok(steps.slice(5, 14).every(Boolean));
   assert.ok(steps.slice(16).every((active) => !active));
 });
+
+test('cohesion targets the weighted center of neighbors, fractions included', () => {
+  const simulation = smallSimulation('steady', 20260917);
+  simulation.config.perception.fovDegrees = 360;
+  simulation.config.perception.cohesionFalloff = 'inverse';
+  const [a, b, c] = [0, 1, 2];
+  place(simulation, a, 0.9, 0.2, 0.1);
+  place(simulation, b, 1.0, 0.25, 0.1);
+  place(simulation, c, 1.08, 0.2, 0.18);
+  simulation._clearAccumulators();
+  const radius = simulation.derived.schools[0].cohesionRadius;
+  const soft2 = (radius * 0.15) ** 2;
+  let weightSum = 0;
+  const expected = [0, 0, 0];
+  for (const j of [b, c]) {
+    const d = [0, 1, 2].map(
+      (k) => simulation.positions[j * 3 + k] - simulation.positions[a * 3 + k]
+    );
+    const distance2 = d[0] ** 2 + d[1] ** 2 + d[2] ** 2;
+    assert.ok(distance2 < radius ** 2, 'test fish must be neighbors');
+    simulation._sameSchoolPair(a, j, ...d, distance2, false);
+    const weight = 1 / (distance2 + soft2);
+    weightSum += weight;
+    for (let k = 0; k < 3; k += 1) {
+      expected[k] += weight * simulation.positions[j * 3 + k];
+    }
+  }
+  for (let k = 0; k < 3; k += 1) {
+    const target = simulation.cohesionSums[a * 3 + k] / simulation.cohesionCounts[a];
+    assert.ok(
+      Math.abs(target - expected[k] / weightSum) < 1e-4,
+      `axis ${k}: ${target} vs ${expected[k] / weightSum}`
+    );
+  }
+});
