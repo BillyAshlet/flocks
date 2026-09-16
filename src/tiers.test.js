@@ -89,6 +89,7 @@ test('tier 5 introduces the food web and the core energy knobs; the rest wait fo
       'ecology.captureEnergyPerSize',
       'ecology.energyShareLocal',
       'ecology.energyShareSchool',
+      'ecology.planktonEnergy',
       'plankton.regrowSeconds',
       'relations.KMax',
     ]
@@ -96,8 +97,8 @@ test('tier 5 introduces the food web and the core energy knobs; the rest wait fo
   const scope = tierPanelScope(5);
   assert.equal(scope.isNewSchoolField('grazeRate'), true);
   assert.equal(scope.isNewSchoolField('metabolismMultiplier'), true);
-  assert.equal(scope.showGlobal({ path: 'ecology.planktonEnergy' }), false);
-  assert.equal(tierPanelScope(6).isDetailGlobal({ path: 'ecology.planktonEnergy' }), true);
+  assert.equal(scope.showGlobal({ path: 'ecology.grazeHungerRatio' }), false);
+  assert.equal(tierPanelScope(6).isDetailGlobal({ path: 'ecology.grazeHungerRatio' }), true);
 });
 
 test('tiers 1 to 5 mark everything they add; tier 6 marks its core and folds the rest', () => {

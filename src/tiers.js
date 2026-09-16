@@ -118,7 +118,8 @@ const ECOLOGY = ['ecology.*', 'plankton.*'];
 // smallest (a web) or only the middle one (a chain).
 const FOOD_WEB = ['relations.KMax'];
 // Energy and plankton knobs beyond tier 5's core: living cost, hunting cost,
-// what a catch is worth, how a meal is shared, and how fast plankton regrows.
+// what a catch and a plankton bite are worth, how a meal is shared, and how
+// fast plankton regrows.
 // The rest shape the numbers rather than the idea, so they wait for tier 6,
 // like PANIC_FINE. Display-only paths (carcasses, particles) are not listed;
 // they stay under Non-research settings.
@@ -133,7 +134,6 @@ const ECOLOGY_FINE = [
   'ecology.basalSizeExponent',
   'ecology.minBurstEnergyRatio',
   'ecology.burstSizeScaled',
-  'ecology.planktonEnergy',
   'ecology.grazeSizeExponent',
   'ecology.grazeHungerRatio',
   'plankton.enabled',
