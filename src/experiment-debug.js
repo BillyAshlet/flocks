@@ -402,10 +402,7 @@ export function createExperimentDebug({
       if (spec.applyMode !== 'live' && !event.last) return;
       try {
         controller.applyConfig(spec.applyMode, spec.path);
-        if (
-          spec.path === 'tank.preset' ||
-          spec.path === 'runtime.populationPreset'
-        ) {
+        if (spec.path === 'tank.preset') {
           setTimeout(rebuildPane, 0);
         } else if (
           spec.path.endsWith('.name') ||

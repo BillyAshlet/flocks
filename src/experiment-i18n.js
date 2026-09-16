@@ -151,8 +151,6 @@ const DICT = {
   '子实验 · 生态淘汰': ['Sub · ecological attrition', '子实验 · 生态淘汰'],
   'Predation · permanent death': ['Predation · permanent death', '捕食 · 永久死亡'],
   Ecology: ['Ecology', '生态'],
-  '完整 680': ['Full 680', '完整 680'],
-  '性能 320': ['Performance 320', '性能 320'],
   自定义: ['Custom', '自定义'],
   Custom: ['Custom', '自定义'],
   全缸随机: ['Whole tank, random', '全缸随机'],
@@ -172,7 +170,6 @@ const DICT = {
   // Parameter labels with English source strings
   project: ['project', '项目'],
   mode: ['mode', '模式'],
-  'population preset': ['population preset', '总量预设'],
   seed: ['seed', '随机种子'],
   'time scale': ['time scale', '时间倍率'],
   'fixed dt': ['fixed dt', '固定步长'],

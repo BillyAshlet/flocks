@@ -66,20 +66,6 @@ function restoreDefaultSchoolLayout(stage) {
   }
 }
 
-function applyPopulationPreset(stage) {
-  const presets = {
-    // The large school needs enough members, otherwise its cohesion radius
-    // never reaches the average spacing and it cannot find its own kind.
-    full: { gold: 400, blue: 200, red: 80 },
-    performance: { gold: 200, blue: 80, red: 40 },
-  };
-  const counts = presets[stage.runtime.populationPreset];
-  if (!counts) return;
-  for (const school of stage.schools) {
-    if (counts[school.id] !== undefined) school.count = counts[school.id];
-  }
-}
-
 function applyProjectPreset(stage) {
   if (stage.runtime.project === 'aquarium') {
     Object.assign(stage.tank, {
@@ -183,11 +169,6 @@ async function bootstrap() {
     applyConfig(mode = 'rebuildScene', sourcePath = '') {
       if (sourcePath === 'runtime.project') applyProjectPreset(stage);
       if (sourcePath === 'tank.preset') applyTankPreset(stage);
-      if (sourcePath === 'runtime.populationPreset') {
-        applyPopulationPreset(stage);
-      } else if (/^schools\.\d+\.count$/.test(sourcePath)) {
-        stage.runtime.populationPreset = 'custom';
-      }
       const result = validateConfig(stage);
       if (!result.valid) throw new Error(result.errors.join('\n'));
       current = deepClone(stage);
@@ -250,7 +231,6 @@ async function bootstrap() {
       template.targetNeighbors = Math.min(8, template.count - 1);
       template.spawnRegion.centerX = 0;
       stage.schools.push(template);
-      stage.runtime.populationPreset = 'custom';
       return this.applyConfig('rebuildScene');
     },
     removeSchool(index = stage.schools.length - 1) {
@@ -262,7 +242,6 @@ async function bootstrap() {
         Math.min(stage.schools.length - 1, index)
       );
       stage.schools.splice(safeIndex, 1);
-      stage.runtime.populationPreset = 'custom';
       return this.applyConfig('rebuildScene');
     },
   };

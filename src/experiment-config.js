@@ -61,7 +61,6 @@ export const DEFAULT_EXPERIMENT_CONFIG = Object.freeze({
   runtime: {
     project: 'aquarium',
     mode: 'steady',
-    populationPreset: 'full',
     seed: 1001,
     // Pick a new seed on every restart. Turn off for identical, reproducible runs.
     randomizeSeed: true,
@@ -95,6 +94,8 @@ export const DEFAULT_EXPERIMENT_CONFIG = Object.freeze({
       id: 'red',
       name: 'Red',
       color: '#c95252',
+      // The large school needs enough members. With too few, its cohesion radius
+      // never reaches the average spacing and it cannot find its own kind.
       count: 80,
       size: 2.25,
       targetNeighbors: 5,
@@ -603,19 +604,6 @@ const scalarEntries = [
       Ecology: 'ecology',
     },
   }),
-  entry(
-    'runtime.populationPreset',
-      '运行',
-      'population preset',
-      'rebuildScene',
-      {
-        options: {
-          '完整 680': 'full',
-          '性能 320': 'performance',
-          '自定义': 'custom',
-        },
-      }
-  ),
   entry('runtime.randomizeSeed', '运行', '每局随机种子', 'live'),
   entry('runtime.seed', '运行', 'seed', 'reset', {
     min: 1,
