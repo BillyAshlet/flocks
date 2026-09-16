@@ -740,8 +740,11 @@ const scalarEntries = [
     { min: 0.02, max: 0.5, step: 0.01 }
   ),
   entry('relations.enabled', '关系', 'predation enabled', 'live'),
+  // At or below k, KMax means "no upper edge" (relationForRatio), so a slider
+  // that crosses k turns hunting on, off, then on again. k tops out at 2, so a
+  // floor just above that keeps the window a window.
   entry('relations.KMax', '关系', '猎物体型窗口上界', 'live', {
-    min: 1.05,
+    min: 2.01,
     max: 6,
     step: 0.01,
   }),

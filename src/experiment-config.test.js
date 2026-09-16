@@ -119,3 +119,13 @@ test('invalid predation geometry warns without partially rejecting config', () =
   assert.equal(result.valid, true);
   assert.match(result.warnings.join(' '), /may never close the distance/);
 });
+
+test('the prey size window upper edge (KMax) can never be dragged to or below k', () => {
+  const registry = createParameterRegistry(createDefaultConfig());
+  const k = registry.find((spec) => spec.path === 'relations.k');
+  const kMax = registry.find((spec) => spec.path === 'relations.KMax');
+  assert.ok(
+    kMax.min > k.max,
+    `KMax min ${kMax.min} must stay above k max ${k.max}`
+  );
+});
