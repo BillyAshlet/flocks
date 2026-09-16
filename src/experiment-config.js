@@ -176,6 +176,10 @@ export const DEFAULT_EXPERIMENT_CONFIG = Object.freeze({
     // 否则二十条镇定的邻居会把唯一看见危险的那条稀释掉。
     signalRadiusFactor: 0.8,
     signalThreshold: 0.35,
+    // Detail switch (tier 6): the emergency heading channel together with its
+    // source and receiver gains. Off: panic still spreads, but neighbours do
+    // not copy the frightened fish's heading.
+    emergencyAlignment: true,
     emergencyAlignmentWeight: 4,
     alignmentSourceBoost: 10,
     // 接收方增益：自己越慌越会听邻居（原版 alignmentReceiverBoost/Max）
@@ -199,6 +203,9 @@ export const DEFAULT_EXPERIMENT_CONFIG = Object.freeze({
     // scatterExit 以下才回低段。否则在阈值附近会来回抖，看起来像抽搐。
     // 两个数拉得比较开，是为了让低段【真的能被看见】—— 否则一局下来
     // 玩家只见得到炸开，见不到那个更好看的整群急转。
+    // Detail switch (tier 6). Off: no high-panic segment, so cohesion only
+    // drops by cohesionDrop and emergency alignment is never suppressed.
+    scatterLatch: true,
     panicScatterEnter: 0.75,
     panicScatterExit: 0.45,
   },
@@ -302,6 +309,10 @@ export const DEFAULT_EXPERIMENT_CONFIG = Object.freeze({
     //    不是一种要经营的资源。
     // 计时结束仍没缓过来 → 力竭：速度 ×desperationExhaustedSpeed 直到恢复。
     minBurstEnergyRatio: 1 / 3,
+    // Detail switches (tier 6): the last-ditch sprint, and paying for part of
+    // it later as debt.
+    desperation: true,
+    desperationDebt: true,
     desperationEnterRatio: 0.22,
     desperationRecoverRatio: 0.6,
     desperationSeconds: 6,
@@ -799,6 +810,7 @@ const scalarEntries = [
     max: 2,
     step: 0.01,
   }),
+  entry('relations.emergencyAlignment', '关系', 'emergency alignment enabled', 'live'),
   entry('relations.emergencyAlignmentWeight', '关系', '应急对齐权重', 'live', {
     min: 0,
     max: 12,
@@ -839,6 +851,7 @@ const scalarEntries = [
     max: 0.5,
     step: 0.01,
   }),
+  entry('relations.scatterLatch', '关系', 'scatter latch enabled', 'live'),
   entry('relations.panicScatterEnter', '关系', '炸开·进入恐慌值', 'live', {
     min: 0,
     max: 1,
@@ -1060,6 +1073,8 @@ const scalarEntries = [
     step: 0.1,
   }),
   entry('ecology.burstSizeScaled', '生态能量', '冲刺代谢按体型缩放', 'live'),
+  entry('ecology.desperation', '生态能量', 'last-ditch sprint enabled', 'live'),
+  entry('ecology.desperationDebt', '生态能量', 'sprint debt enabled', 'live'),
   entry('ecology.desperationEnterRatio', '生态能量', '孤注一掷·进入能量比', 'live', { min: 0, max: 1, step: 0.01 }),
   entry('ecology.desperationRecoverRatio', '生态能量', '孤注一掷·解锁能量比', 'live', { min: 0, max: 1, step: 0.01 }),
   entry('ecology.desperationSeconds', '生态能量', '孤注一掷·时长 (s)', 'live', { min: 0.5, max: 60, step: 0.5 }),

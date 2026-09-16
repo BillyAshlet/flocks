@@ -14,8 +14,8 @@
  *   fieldOfView the blind cone behind the fish; pairs inside it are ignored
  *   hunting     far sense (steer to prey centroid), near lock (pick one
  *               target), and a line to the current target
- *   panic       threat radius (sees a predator) and signal radius (passes
- *               the escape heading on)
+ *   panic       threat radius (sees a predator) and, with emergency
+ *               alignment on, signal radius (passes the escape heading on)
  */
 import * as THREE from 'three';
 
@@ -254,6 +254,9 @@ class SchoolOverlay {
     }
 
     this.panic.visible = Boolean(layers.panic && relations.enabled !== false);
+    // The signal radius belongs to emergency alignment; without it only the
+    // threat radius means anything.
+    this.signal.visible = relations.emergencyAlignment !== false;
     if (this.panic.visible) {
       this.threat.scale.setScalar(Math.max(derived.panicRadius, MIN_SCALE));
       this.signal.scale.setScalar(

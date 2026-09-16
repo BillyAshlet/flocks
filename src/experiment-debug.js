@@ -474,6 +474,7 @@ export function createExperimentDebug({
     function attach() {
       binding.on('change', applyChange);
       decorate();
+      if (isNewSpec(spec)) markNew(binding.element);
     }
 
     function rebuildBinding() {
@@ -541,27 +542,29 @@ export function createExperimentDebug({
         });
     }
     if (controller.panelScope?.allowSchoolEditing ?? true) {
-      editor
-        .addButton({ title: t('+ 新增鱼群（复制当前）') })
-        .on('click', () => {
-          controller.addSchool(selectedSchoolIndex);
-          selectedSchoolIndex = controller.stage.schools.length - 1;
+      const addButton = editor.addButton({ title: t('+ 新增鱼群（复制当前）') });
+      addButton.on('click', () => {
+        controller.addSchool(selectedSchoolIndex);
+        selectedSchoolIndex = controller.stage.schools.length - 1;
+        rebuildPane();
+      });
+      const removeButton = editor.addButton({ title: t('− 删除当前鱼群') });
+      removeButton.on('click', () => {
+        try {
+          controller.removeSchool(selectedSchoolIndex);
+          selectedSchoolIndex = Math.min(
+            selectedSchoolIndex,
+            controller.stage.schools.length - 1
+          );
           rebuildPane();
-        });
-      editor
-        .addButton({ title: t('− 删除当前鱼群') })
-        .on('click', () => {
-          try {
-            controller.removeSchool(selectedSchoolIndex);
-            selectedSchoolIndex = Math.min(
-              selectedSchoolIndex,
-              controller.stage.schools.length - 1
-            );
-            rebuildPane();
-          } catch (error) {
-            window.alert(error.message);
-          }
-        });
+        } catch (error) {
+          window.alert(error.message);
+        }
+      });
+      if (controller.panelScope?.isNewSchoolEditing) {
+        markNew(addButton.element);
+        markNew(removeButton.element);
+      }
     }
 
     roleState = {
@@ -651,8 +654,29 @@ export function createExperimentDebug({
     if (offered.length === 0) return;
     const folder = editor.addFolder({ title: t('可视化'), expanded: true });
     for (const layer of offered) {
-      folder.addBinding(layers, layer, { label: t(VISUAL_LAYER_LABELS[layer]) });
+      const binding = folder.addBinding(layers, layer, {
+        label: t(VISUAL_LAYER_LABELS[layer]),
+      });
+      if (controller.panelScope?.isNewVisual?.(layer)) markNew(binding.element);
     }
+  }
+
+  // Highlight what this tier adds over the tier before it. The enclosing
+  // folders get a marker too, so a new parameter inside a collapsed folder
+  // is still visible.
+  function markNew(element) {
+    element.classList.add('is-new');
+    for (let node = element.parentElement; node; node = node.parentElement) {
+      if (node.classList.contains('tp-fldv')) node.classList.add('has-new');
+      if (node === holder) break;
+    }
+  }
+
+  function isNewSpec(spec) {
+    const scope = controller.panelScope;
+    if (!scope?.isNewGlobal) return false;
+    const match = /^schools\.\d+\.([^.]+)/.exec(spec.path);
+    return match ? scope.isNewSchoolField(match[1]) : scope.isNewGlobal(spec);
   }
 
   // A research tier can narrow the panel to the parameters it introduces.

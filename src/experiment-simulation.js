@@ -954,8 +954,9 @@ export class ExperimentSimulation {
     // --- 应急对齐：恐慌航向走独立通道 ---
     const signalRadius = derived.alignmentRadius * relations.signalRadiusFactor;
     const signalRadius2 = signalRadius * signalRadius;
+    const emergencyOn = relations.emergencyAlignment !== false;
     const emitEmergency = (receiver, sender, canSee) => {
-      if (!canSee || distance2 >= signalRadius2) return false;
+      if (!emergencyOn || !canSee || distance2 >= signalRadius2) return false;
       const urgency = this.panic[sender];
       if (urgency < relations.signalThreshold) return false;
       const distance = Math.sqrt(Math.max(distance2, EPSILON));
@@ -1622,7 +1623,7 @@ export class ExperimentSimulation {
     }
     // 【炸开门闩】。越过 enter 进高段，掉回 exit 以下才回低段 ——
     // 单一阈值会在边界来回抖。
-    if (interactionsEnabled) {
+    if (interactionsEnabled && relations.scatterLatch !== false) {
       const enter = relations.panicScatterEnter ?? 1;
       const exit = relations.panicScatterExit ?? 0;
       if (this.scattering[index]) {
@@ -1659,7 +1660,7 @@ export class ExperimentSimulation {
       socialScale *
       (hunger ? hunger.cohesion : 1);
     // 接收方增益：自己越慌，越会去听邻居 —— 波才能一层层推下去
-    const receiverBoost = interactionsEnabled
+    const receiverBoost = interactionsEnabled && relations.emergencyAlignment !== false
       ? Math.min(
           1 + relations.alignmentReceiverBoost * this.neighborPanic[index],
           relations.alignmentReceiverMax
@@ -2442,7 +2443,11 @@ export class ExperimentSimulation {
     }
 
     const eco = this.config.ecology;
-    const costShare = clamp(eco.desperationCostShare ?? 1, 0, 1);
+    // Detail switches (tier 6). Without desperation a starving fish never
+    // enters the sprint; without debt the sprint pays its whole cost at once.
+    const desperationOn = eco.desperation !== false;
+    const costShare =
+      eco.desperationDebt === false ? 1 : clamp(eco.desperationCostShare ?? 1, 0, 1);
     const settleSeconds = Math.max(0.01, eco.debtSettleSeconds ?? 10);
 
     const starved = [];
@@ -2469,6 +2474,7 @@ export class ExperimentSimulation {
           this.desperation[index] = 0;
         }
       } else if (
+        desperationOn &&
         this.desperationArmed[index] &&
         enterAt > EPSILON &&
         this.energy[index] < enterAt

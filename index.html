@@ -197,6 +197,15 @@
         --tp-monitor-background-color: #fbf8f2;
         --tp-monitor-foreground-color: #4d6477;
       }
+      /* Parameters this tier adds over the tier before it. */
+      #panel-holder .is-new {
+        background: rgba(229, 164, 65, 0.16);
+        box-shadow: inset 3px 0 0 #d69a3a;
+      }
+      #panel-holder .has-new > .tp-fldv_b .tp-fldv_t::after {
+        content: ' •';
+        color: #d69a3a;
+      }
       #project-switcher {
         margin-bottom: 8px;
         border: 1px solid #aec4d3;

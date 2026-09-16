@@ -5,10 +5,9 @@
  * a pure function from the default configuration to that tier's
  * configuration, plus the parameters the panel exposes at that tier.
  *
- * Provisional: a tier only switches off the systems it has not reached yet
- * (ecology, predation, panic). Every finer detail keeps the engine default
- * for now; which details belong to a tier's core and which only arrive in
- * the final tier is still to be decided.
+ * A tier switches off the systems it has not reached yet (ecology,
+ * predation, panic). The finer mechanisms in withoutDetails stay off until
+ * tier 6, where each has its own switch.
  */
 import { createDefaultConfig } from './experiment-config.js';
 
@@ -36,6 +35,16 @@ function withoutPanic(config) {
     directOn: 1,
     signalThreshold: 1,
   });
+}
+
+// Finer mechanisms that arrive only in the final tier, where each has its
+// own switch: emergency alignment (with its gains), the scatter latch, the
+// last-ditch sprint and its debt.
+function withoutDetails(config) {
+  config.relations.emergencyAlignment = false;
+  config.relations.scatterLatch = false;
+  config.ecology.desperation = false;
+  config.ecology.desperationDebt = false;
 }
 
 // 360 degrees = the fish see all around. The forward cone arrives in tier 4,
@@ -82,6 +91,17 @@ const PANIC = [
   'locomotion.panicSpeedFactor',
 ];
 const ECOLOGY = ['ecology.*', 'plankton.*'];
+// Parameters of withoutDetails' mechanisms; hidden until tier 6.
+const DETAILS = [
+  'relations.emergencyAlignment*',
+  'relations.alignmentSource*',
+  'relations.alignmentReceiver*',
+  'relations.signalRadiusFactor',
+  'relations.scatterLatch',
+  'relations.panicScatter*',
+  'ecology.desperation*',
+  'ecology.debtSettleSeconds',
+];
 
 const REYNOLDS_FIELDS = [
   'count',
@@ -149,8 +169,10 @@ export const TIERS = [
     configure(config) {
       keepSchools(config, ['gold', 'red']);
       withoutEcology(config);
+      withoutDetails(config);
     },
     globals: [...BASICS, ...PREDATION, ...PANIC],
+    hidden: DETAILS,
     schoolFields: [...REYNOLDS_FIELDS, ...SPECIES_FIELDS],
     visuals: PANIC_VISUALS,
   },
@@ -158,8 +180,11 @@ export const TIERS = [
     number: 5,
     title: 'Energy and plankton',
     summary: 'Placeholder: why this tier exists.',
-    configure() {},
+    configure(config) {
+      withoutDetails(config);
+    },
     globals: [...BASICS, ...PREDATION, ...PANIC, ...ECOLOGY],
+    hidden: DETAILS,
     schoolFields: [...REYNOLDS_FIELDS, ...SPECIES_FIELDS, ...ENERGY_FIELDS],
     visuals: PANIC_VISUALS,
   },
@@ -196,16 +221,39 @@ function matchesPath(patterns, path) {
   );
 }
 
+function visibility(tier) {
+  return {
+    global: (spec) =>
+      (tier.globals === null || matchesPath(tier.globals, spec.path)) &&
+      !matchesPath(tier.hidden ?? [], spec.path),
+    schoolField: (field) =>
+      tier.schoolFields === null || tier.schoolFields.includes(field),
+    visual: (layer) => tier.visuals === null || tier.visuals.includes(layer),
+  };
+}
+
 export function tierPanelScope(number) {
   const tier = tierByNumber(number);
   if (!tier) throw new Error(`Unknown tier: ${number}`);
+  const shown = visibility(tier);
+  // "New" = shown here but not in the tier before. Tier 1 has nothing to
+  // compare against, so nothing is marked there.
+  const previous = tierByNumber(number - 1);
+  const before = previous ? visibility(previous) : null;
+  const isNew = (kind) => (item) =>
+    before !== null && shown[kind](item) && !before[kind](item);
   return {
     eyebrow: `TIER ${tier.number}`,
     allowSchoolEditing: tier.allowSchoolEditing ?? false,
-    showGlobal: (spec) =>
-      tier.globals === null || matchesPath(tier.globals, spec.path),
-    showSchoolField: (field) =>
-      tier.schoolFields === null || tier.schoolFields.includes(field),
-    showVisual: (layer) => tier.visuals === null || tier.visuals.includes(layer),
+    isNewSchoolEditing:
+      before !== null &&
+      (tier.allowSchoolEditing ?? false) &&
+      !(previous.allowSchoolEditing ?? false),
+    showGlobal: shown.global,
+    showSchoolField: shown.schoolField,
+    showVisual: shown.visual,
+    isNewGlobal: isNew('global'),
+    isNewSchoolField: isNew('schoolField'),
+    isNewVisual: isNew('visual'),
   };
 }
