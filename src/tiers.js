@@ -185,7 +185,6 @@ export const TIERS = [
   {
     number: 1,
     title: 'Reynolds flocking',
-    summary: 'Placeholder: why this tier exists.',
     configure(config) {
       keepSchools(config, ['gold']);
       withoutFieldOfView(config);
@@ -198,7 +197,6 @@ export const TIERS = [
   {
     number: 2,
     title: 'Species',
-    summary: 'Placeholder: why this tier exists.',
     configure(config) {
       keepSchools(config, ['gold', 'red']);
       withoutFieldOfView(config);
@@ -213,7 +211,6 @@ export const TIERS = [
   {
     number: 3,
     title: 'Predation',
-    summary: 'Placeholder: why this tier exists.',
     configure(config) {
       keepSchools(config, ['gold', 'red']);
       withoutFieldOfView(config);
@@ -227,7 +224,6 @@ export const TIERS = [
   {
     number: 4,
     title: 'Panic',
-    summary: 'Placeholder: why this tier exists.',
     configure(config) {
       keepSchools(config, ['gold', 'red']);
       withoutEcology(config);
@@ -241,7 +237,6 @@ export const TIERS = [
   {
     number: 5,
     title: 'Energy and plankton',
-    summary: 'Placeholder: why this tier exists.',
     configure(config) {
       withoutDetails(config);
     },
@@ -253,7 +248,6 @@ export const TIERS = [
   {
     number: 6,
     title: 'Full ecosystem',
-    summary: 'Placeholder: why this tier exists.',
     configure() {},
     // null = no filter: every parameter, and schools can be added or removed.
     globals: null,
@@ -309,6 +303,9 @@ export function tierPanelScope(number) {
   const isNewSchoolField = isNew('schoolField');
   return {
     eyebrow: `TIER ${tier.number}`,
+    // Tier 1 has nothing before it, so nothing is "new"; its page introduces
+    // every mechanism it shows.
+    firstTier: before === null,
     allowSchoolEditing: tier.allowSchoolEditing ?? false,
     isNewSchoolEditing:
       before !== null &&

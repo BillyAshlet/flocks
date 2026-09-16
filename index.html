@@ -2,200 +2,709 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
-    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>flocks</title>
-            <style>
+    <style>
+      /* Warm neutrals: an ivory page, a slightly darker plate for the tank, and
+         near-black ink. The only saturated colors on screen are the three
+         species and the mechanism colors (mechanisms.js). */
       :root {
         color-scheme: light;
-        --lab-bg: #f4efe6;
-        --lab-panel: #f7f2ea;
-        --lab-ink: #4d6477;
-        --lab-muted: #6d8497;
-        --lab-line: #c8d8e6;
-        --lab-alert: #9d514b;
-        font-family:
-          "SFMono-Regular", "Cascadia Code", "Roboto Mono", ui-monospace,
-          monospace;
+        --paper: #faf9f5;
+        --plate: #efede6;
+        --panel: #f4f3ee;
+        --ink: #141413;
+        --ink-soft: #3d3d3a;
+        --muted: #6f6e69;
+        --line: #e3e1d8;
+        --line-strong: #cfccc1;
+        --run-grey: #e6e4db;
+        --alert: #a3483c;
+        --serif: "Source Serif 4 Variable", "Source Serif Pro", Georgia, serif;
+        --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+        --mono: "SFMono-Regular", ui-monospace, Menlo, "Roboto Mono", monospace;
       }
       html,
       body {
         margin: 0;
         height: 100%;
         overflow: hidden;
-        background: var(--lab-bg);
-        touch-action: none;
+        background: var(--paper);
+        color: var(--ink);
+        font-family: var(--sans);
       }
-      /* Everything lives inside #app so presentation rotation moves the
-         whole UI as one unit. scene.js owns its size and transform. */
+
+      /* Three columns: the paper on the left, the tank in the middle, the
+         parameters on the right. Nothing floats over the tank except its own
+         small readouts, so the text never covers a fish. */
       #app {
+        --paper-width: clamp(380px, 32vw, 520px);
+        --panel-width: 340px;
         position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        transform-origin: top left;
-      }
-      #app::after {
-        position: absolute;
         inset: 0;
-        border: 1px solid #c8d8e6;
-        content: "";
-        pointer-events: none;
+        display: grid;
+        grid-template-columns: var(--paper-width) minmax(0, 1fr) var(--panel-width);
+        grid-template-rows: auto minmax(0, 1fr);
+        grid-template-areas:
+          "top top top"
+          "paper stage panel";
       }
-      canvas {
-        display: block;
+      #app[data-panel-collapsed="1"] {
+        --panel-width: 40px;
       }
-      #lab-mark {
-        position: absolute;
-        top: max(14px, env(safe-area-inset-top));
-        left: max(16px, env(safe-area-inset-left));
-        z-index: 2;
-        color: var(--lab-ink);
-        background: var(--lab-bg);
-        padding: 8px 10px;
-        font-size: 11px;
-        font-weight: 650;
-        letter-spacing: 0.16em;
-        line-height: 1.55;
-        pointer-events: none;
+      #app:is([data-page="home"], [data-ui-hidden="1"]) {
+        --paper-width: 0px;
+        --panel-width: 0px;
+      }
+      #app:is([data-page="home"], [data-ui-hidden="1"])
+        :is(#topbar, #paper, #panel-column) {
+        display: none;
+      }
+      #app[data-page="home"] {
+        grid-template-rows: 0 minmax(0, 1fr);
+      }
+
+      /* Top bar: previous, the six tiers, next. Every tier looks equally
+         clickable; this is a table of contents, not a locked progression. */
+      #topbar {
+        grid-area: top;
+        display: flex;
+        height: 52px;
+        border-bottom: 1px solid var(--line);
+        background: var(--paper);
+      }
+      #topbar .brand {
+        display: flex;
+        align-items: center;
+        padding: 0 20px;
+        border-right: 1px solid var(--line);
+        color: var(--ink);
+        font: 600 21px/1 var(--serif);
+        text-decoration: none;
+      }
+      #tier-nav {
+        flex: 1;
+        display: flex;
+        min-width: 0;
+      }
+      #tier-nav .edge {
+        flex: none;
+        padding: 0 16px;
+        border: 0;
+        background: transparent;
+        color: var(--ink-soft);
+        font: 500 13px var(--sans);
+        cursor: pointer;
+      }
+      #tier-nav .edge:hover:not(:disabled) {
+        background: var(--plate);
+      }
+      #tier-nav .edge:disabled {
+        color: var(--line-strong);
+        cursor: default;
+      }
+      #tier-steps {
+        flex: 1;
+        display: grid;
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        margin: 0;
+        padding: 0;
+        border-inline: 1px solid var(--line);
+        list-style: none;
+      }
+      #tier-steps li + li {
+        border-left: 1px solid var(--line);
+      }
+      #tier-steps a {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 3px;
+        height: 100%;
+        padding: 0 12px;
+        box-sizing: border-box;
+        color: var(--ink-soft);
+        font: 13px/1.2 var(--sans);
+        text-decoration: none;
+        overflow: hidden;
+      }
+      #tier-steps a span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      #tier-steps a .step-number {
+        color: var(--muted);
+        font: 11px/1 var(--mono);
+      }
+      #tier-steps a:hover {
+        background: var(--plate);
+      }
+      #tier-steps a[aria-current="page"] {
+        background: var(--ink);
+        color: var(--paper);
+      }
+      #tier-steps a[aria-current="page"] .step-number {
+        color: var(--line-strong);
+      }
+
+      /* The paper: what was added, why, what to watch, and the model. */
+      #paper {
+        grid-area: paper;
+        min-height: 0;
+        overflow-y: auto;
+        box-sizing: border-box;
+        padding: 34px 36px 96px;
+        border-right: 1px solid var(--line);
+        color: var(--ink);
+        font: 16.5px/1.65 var(--serif);
+      }
+      #paper .eyebrow {
+        margin: 0;
+        color: var(--muted);
+        font: 600 11px/1.4 var(--mono);
+        letter-spacing: 0.12em;
         text-transform: uppercase;
       }
-      #lab-mark b,
-      #lab-mark span {
-        display: block;
+      #paper h1 {
+        margin: 6px 0 20px;
+        font: 600 32px/1.15 var(--serif);
       }
-      #lab-mark b {
-        font-size: 11px;
-        font-weight: 650;
-      }
-      #lab-mark span {
-        color: #6d8497;
-        font-size: 9px;
-        font-weight: 500;
-        letter-spacing: 0.12em;
-      }
-      #lab-mark {
-        margin: 0;
-      }
-      /* Reset button, placed under lab-mark. Shown only in developer mode:
-         the visitor shell should not expose a button that clears the scene. */
-      #lab-reset {
-        position: absolute;
-        top: calc(max(14px, env(safe-area-inset-top)) + 46px);
-        left: max(16px, env(safe-area-inset-left));
-        z-index: 3;
-        padding: 6px 10px;
-        border: 1px solid #b9cbd8;
-        background: var(--lab-bg);
-        color: #4d6477;
-        font: inherit;
-        font-size: 10px;
-        font-weight: 600;
+      #paper h2 {
+        margin: 36px 0 10px;
+        color: var(--muted);
+        font: 650 11.5px/1.4 var(--sans);
         letter-spacing: 0.14em;
         text-transform: uppercase;
+      }
+      #paper h3 {
+        margin: 26px 0 6px;
+        font: 600 17px/1.4 var(--serif);
+      }
+      #paper p {
+        margin: 0 0 14px;
+      }
+      #paper .added {
+        font-size: 19px;
+        line-height: 1.45;
+      }
+      #paper .watch {
+        margin: 0;
+        padding-left: 14px;
+        border-left: 2px solid var(--ink);
+      }
+      #paper .placeholder {
+        color: var(--muted);
+        font-style: italic;
+      }
+      #paper .draft-note {
+        margin: 0 0 16px;
+        padding: 7px 10px;
+        border-left: 2px solid #b58a4a;
+        background: #f3ecdf;
+        color: #6b5230;
+        font: 12.5px/1.5 var(--sans);
+      }
+      #paper .note {
+        color: var(--muted);
+        font: 13px/1.5 var(--sans);
+      }
+      #paper ul {
+        margin: 0 0 14px;
+        padding-left: 20px;
+      }
+      #paper li + li {
+        margin-top: 6px;
+      }
+      #paper .formula {
+        margin: 10px 0 16px;
+        padding: 2px 0;
+        overflow-x: auto;
+        overflow-y: hidden;
+      }
+      #paper .katex {
+        font-size: 1em;
+      }
+      #paper .variables {
+        width: 100%;
+        margin: 8px 0 18px;
+        border-collapse: collapse;
+        font: 13.5px/1.45 var(--sans);
+      }
+      #paper .variables th {
+        padding: 0 8px 6px 0;
+        color: var(--muted);
+        font: 600 11px var(--sans);
+        letter-spacing: 0.06em;
+        text-align: left;
+        text-transform: uppercase;
+      }
+      #paper .variables td {
+        padding: 6px 8px 6px 0;
+        border-top: 1px solid var(--line);
+        vertical-align: top;
+      }
+      #paper .variables td.value {
+        font: 12.5px var(--mono);
+        white-space: nowrap;
+      }
+      /* Symbols linked to a slider. Clicking one opens the slider's folder. */
+      #paper [data-param] {
+        border-radius: 2px;
+        cursor: pointer;
+      }
+      #paper [data-param]:hover {
+        background: rgba(20, 20, 19, 0.07);
+      }
+
+      /* The tank. */
+      #stage {
+        grid-area: stage;
+        position: relative;
+        min-width: 0;
+        min-height: 0;
+        overflow: hidden;
+        background: var(--plate);
+      }
+      #stage > canvas {
+        position: absolute;
+        top: 0;
+        left: 0;
+        display: block;
+      }
+      #lab-reset {
+        position: absolute;
+        top: 12px;
+        left: 12px;
+        z-index: 3;
+        padding: 6px 11px;
+        border: 1px solid var(--line-strong);
+        background: var(--paper);
+        color: var(--ink-soft);
+        font: 500 12px var(--sans);
         cursor: pointer;
       }
       #lab-reset:hover {
-        border-color: #71889a;
-        color: #22323f;
+        border-color: var(--muted);
+        color: var(--ink);
       }
       #lab-reset[hidden] {
         display: none;
       }
-
-      #info-rail {
+      #time-shortcut-hud {
         position: absolute;
-        right: max(10px, env(safe-area-inset-right));
-        bottom: max(10px, env(safe-area-inset-bottom));
-        z-index: 4;
+        top: 12px;
+        left: 50%;
+        z-index: 3;
         display: flex;
-        flex-direction: column;
-        gap: 8px;
-        width: min(220px, calc(100% - 20px));
+        gap: 12px;
+        transform: translateX(-50%);
+        padding: 5px 10px;
+        border: 1px solid var(--line);
+        background: rgba(250, 249, 245, 0.9);
+        color: var(--muted);
+        font: 11px var(--mono);
+        letter-spacing: 0.04em;
+        white-space: nowrap;
         pointer-events: none;
       }
-      .info-card {
-        color: #4d6477;
-        background: rgba(247, 242, 234, 0.94);
-        border: 1px solid #c8d8e6;
-        padding: 8px 10px;
-        font-family: inherit;
-        font-size: 10px;
-        line-height: 1.55;
-        letter-spacing: 0.04em;
-        white-space: pre;
+      #startup-status {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        z-index: 20;
+        transform: translate(-50%, -50%);
+        padding: 12px 18px;
+        border: 1px solid var(--line-strong);
+        background: var(--paper);
+        color: var(--ink-soft);
+        font: 13px var(--sans);
+        pointer-events: none;
       }
-      .info-card .hud-title {
-        display: block;
-        color: #6d8497;
-        letter-spacing: 0.12em;
-        text-transform: uppercase;
-        margin-bottom: 4px;
+      #startup-status[data-state="error"] {
+        border-color: var(--alert);
+        color: var(--alert);
       }
-      .info-card .hud-row {
+      #experiment-dashboard {
+        position: absolute;
+        left: 12px;
+        bottom: 12px;
+        z-index: 4;
+        width: min(360px, calc(100% - 24px));
+        border: 1px solid var(--line);
+        background: rgba(250, 249, 245, 0.92);
+        color: var(--ink-soft);
+        pointer-events: none;
+        transition:
+          opacity 180ms ease,
+          transform 220ms ease;
+      }
+      #experiment-dashboard header {
         display: flex;
         justify-content: space-between;
-        gap: 12px;
-        white-space: nowrap;
+        padding: 7px 9px 3px;
+        font: 10px var(--mono);
+        letter-spacing: 0.1em;
       }
-      .info-card .hud-label {
-        color: #6d8497;
+      #experiment-dashboard header strong {
+        color: var(--alert);
       }
-      .info-card .hud-value {
-        color: #4d6477;
-        font-variant-numeric: tabular-nums;
+      #experiment-metrics {
+        margin: 0;
+        padding: 4px 9px 9px;
+        max-height: 160px;
+        overflow: hidden;
+        font: 10px/1.45 var(--mono);
+        white-space: pre-wrap;
+      }
+      #app[data-selected-fish] #experiment-dashboard {
+        opacity: 0;
+        transform: translateY(calc(100% + 18px));
+      }
+      #fish-inspector {
+        position: absolute;
+        left: 12px;
+        bottom: 12px;
+        z-index: 8;
+        width: min(330px, calc(100% - 24px));
+        border: 1px solid var(--line-strong);
+        background: transparent;
+        color: var(--ink-soft);
+        font: 11px/1.4 var(--sans);
+        box-shadow: 0 14px 38px rgba(20, 20, 19, 0.12);
+        transition:
+          opacity 180ms ease,
+          transform 220ms ease;
+      }
+      #fish-inspector[hidden] {
+        display: none;
+      }
+      #fish-inspector header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        height: 30px;
+        padding: 0 9px 0 11px;
+        border-bottom: 1px solid var(--line);
+        background: var(--paper);
+      }
+      #fish-inspector .fish-inspector-index {
+        color: var(--muted);
+        font: 9px var(--mono);
+        letter-spacing: 0.12em;
+      }
+      #fish-inspector-close {
+        width: 25px;
+        height: 25px;
+        border: 0;
+        background: transparent;
+        color: var(--muted);
+        font: 17px/1 var(--sans);
+        cursor: pointer;
+      }
+      #fish-preview-viewport {
+        position: relative;
+        height: 154px;
+        border-bottom: 1px solid var(--line);
+        background: transparent;
+        pointer-events: none;
+        overflow: hidden;
+      }
+      #fish-preview-viewport > span {
+        position: absolute;
+        top: 8px;
+        right: 9px;
+        z-index: 1;
+        padding: 3px 5px;
+        background: rgba(20, 20, 19, 0.6);
+        color: var(--paper);
+        font: 8px var(--mono);
+        letter-spacing: 0.1em;
+      }
+      .fish-inspector-copy {
+        display: grid;
+        gap: 2px;
+        padding: 9px 11px 7px;
+        background: var(--paper);
+      }
+      .fish-inspector-copy strong {
+        color: var(--ink);
+        font-size: 13px;
+      }
+      .fish-inspector-copy span {
+        color: var(--muted);
+        font-size: 10px;
+      }
+      .fish-inspector-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1px;
+        border-top: 1px solid var(--line);
+        background: var(--line);
+      }
+      .fish-inspector-actions button {
+        min-height: 38px;
+        padding: 7px;
+        border: 0;
+        background: var(--panel);
+        color: var(--ink-soft);
+        font: 11px/1.35 var(--sans);
+        cursor: pointer;
+      }
+      .fish-inspector-actions button:first-child {
+        background: var(--run-grey);
+        color: var(--ink);
+        font-weight: 600;
+      }
+      .fish-inspector-actions button:hover {
+        background: var(--paper);
+      }
+      #fish-view-hud {
+        position: absolute;
+        top: 12px;
+        left: 12px;
+        z-index: 9;
+        display: grid;
+        gap: 2px;
+        min-width: 180px;
+        padding: 8px 10px;
+        border-left: 3px solid var(--ink);
+        background: rgba(250, 249, 245, 0.9);
+        color: var(--ink-soft);
+        pointer-events: none;
+      }
+      #fish-view-hud[hidden] {
+        display: none;
+      }
+      #fish-view-hud span {
+        color: var(--muted);
+        font: 9px var(--mono);
+        letter-spacing: 0.12em;
+      }
+      #fish-view-hud strong {
+        font-size: 13px;
+      }
+      #fish-view-hud kbd {
+        margin-top: 3px;
+        color: var(--alert);
+        font: 9px/1.4 var(--mono);
+      }
+      #app:is([data-camera-mode="closeup"], [data-camera-mode="follow"])
+        :is(#experiment-dashboard, #fish-inspector, #lab-reset) {
+        opacity: 0;
+        pointer-events: none;
+      }
+      #home {
+        position: absolute;
+        top: 50%;
+        left: 40px;
+        z-index: 10;
+        max-width: 380px;
+        padding: 26px 28px;
+        transform: translateY(-50%);
+        border: 1px solid var(--line);
+        background: rgba(250, 249, 245, 0.94);
+        color: var(--ink);
+      }
+      #home[hidden] {
+        display: none;
+      }
+      #home h1 {
+        margin: 0 0 10px;
+        font: 600 30px/1.1 var(--serif);
+      }
+      #home p {
+        margin: 0 0 18px;
+        color: var(--ink-soft);
+        font: 16px/1.55 var(--serif);
+      }
+      #home a {
+        display: inline-block;
+        padding: 8px 14px;
+        border: 1px solid var(--ink);
+        color: var(--ink);
+        font: 600 13px var(--sans);
+        text-decoration: none;
+      }
+      #home a:hover {
+        background: var(--ink);
+        color: var(--paper);
+      }
+
+      /* Parameters. */
+      #panel-column {
+        grid-area: panel;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        border-left: 1px solid var(--line);
+        background: var(--panel);
+      }
+      #panel-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        height: 36px;
+        padding: 0 8px 0 12px;
+        border-bottom: 1px solid var(--line);
+        color: var(--muted);
+        font: 650 11px var(--sans);
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+      #panel-toggle {
+        padding: 3px 8px;
+        border: 1px solid var(--line-strong);
+        background: var(--paper);
+        color: var(--ink-soft);
+        font: 500 12px var(--sans);
+        cursor: pointer;
+      }
+      #panel-note {
+        margin: 0;
+        padding: 9px 12px;
+        border-bottom: 1px solid var(--line);
+        color: var(--ink-soft);
+        font: 12.5px/1.5 var(--sans);
+      }
+      #panel-note b {
+        color: var(--ink);
+      }
+      #app[data-panel-collapsed="1"] #panel-bar {
+        justify-content: center;
+        padding: 0;
+      }
+      #app[data-panel-collapsed="1"] :is(#panel-bar-title, #panel-note, #panel-holder) {
+        display: none;
       }
       #panel-holder {
-        position: absolute;
-        top: max(10px, env(safe-area-inset-top));
-        right: max(10px, env(safe-area-inset-right));
-        width: min(330px, calc(100% - 20px));
-        z-index: 5;
-        /* Panel grew past the viewport: native scroll on the holder.
-           touch-action must override the body's `none` or mobile
-           touch-scroll dies; pan-y still lets sliders capture drags. */
-        max-height: calc(100% - 20px);
-        padding-bottom: 210px;
+        flex: 1;
+        min-height: 0;
+        padding-bottom: 160px;
         overflow-y: auto;
         overscroll-behavior: contain;
-        touch-action: pan-y;
-        -webkit-overflow-scrolling: touch;
         scrollbar-width: thin;
       }
-      #panel-holder > .tp-dfwv,
       #panel-holder > .tp-rotv {
         position: relative;
-        top: auto;
-        right: auto;
         width: 100%;
-        --tp-base-background-color: #f7f2ea;
+        font-size: 12px;
+        --tp-base-background-color: var(--panel);
         --tp-base-border-radius: 0;
-        --tp-base-font-family:
-          "SFMono-Regular", "Cascadia Code", "Roboto Mono", ui-monospace,
-          monospace;
+        --tp-base-font-family: var(--mono);
         --tp-base-shadow-color: transparent;
-        --tp-button-background-color: #e7f1f8;
-        --tp-button-background-color-active: #d3e4f1;
-        --tp-button-background-color-focus: #dceaf4;
-        --tp-button-background-color-hover: #e1edf6;
-        --tp-button-foreground-color: #4d6477;
-        --tp-container-background-color: #efe8dc;
-        --tp-container-background-color-active: #e4dccf;
-        --tp-container-background-color-focus: #e9e1d4;
-        --tp-container-background-color-hover: #ebe3d7;
-        --tp-container-foreground-color: #4d6477;
-        --tp-groove-foreground-color: #c8d8e6;
-        --tp-input-background-color: #fbf8f2;
-        --tp-input-background-color-active: #e7f1f8;
-        --tp-input-background-color-focus: #edf5fa;
-        --tp-input-background-color-hover: #f3f8fc;
-        --tp-input-foreground-color: #4d6477;
-        --tp-label-foreground-color: #5d7588;
-        --tp-monitor-background-color: #fbf8f2;
-        --tp-monitor-foreground-color: #4d6477;
+        --tp-blade-border-radius: 2px;
+        --tp-container-unit-size: 22px;
+        --tp-blade-value-width: 150px;
+        --tp-button-background-color: #e8e6dc;
+        --tp-button-background-color-active: #d6d3c8;
+        --tp-button-background-color-focus: #dfddd3;
+        --tp-button-background-color-hover: #dfddd3;
+        --tp-button-foreground-color: var(--ink);
+        --tp-container-background-color: #ebe9e1;
+        --tp-container-background-color-active: #dcd9ce;
+        --tp-container-background-color-focus: #e2e0d6;
+        --tp-container-background-color-hover: #e4e2d9;
+        --tp-container-foreground-color: var(--ink-soft);
+        --tp-groove-foreground-color: #d6d3c8;
+        --tp-input-background-color: var(--paper);
+        --tp-input-background-color-active: #efede6;
+        --tp-input-background-color-focus: #f3f2ec;
+        --tp-input-background-color-hover: #f6f5f0;
+        --tp-input-foreground-color: var(--ink);
+        --tp-label-foreground-color: #5c5b56;
+        --tp-monitor-background-color: var(--paper);
+        --tp-monitor-foreground-color: var(--ink-soft);
+      }
+      /* The root pane is only a container here; its own title bar is the
+         column's header. */
+      #panel-holder > .tp-rotv > .tp-rotv_b {
+        display: none;
+      }
+      /* Run controls are not part of the model: always open, set in grey. */
+      #panel-holder .tp-fldv.is-run > .tp-fldv_b {
+        background: #dcd9ce;
+        pointer-events: none;
+      }
+      #panel-holder .tp-fldv.is-run > .tp-fldv_b .tp-fldv_m {
+        display: none;
+      }
+      #panel-holder .tp-fldv.is-run > .tp-fldv_c {
+        background: var(--run-grey);
+      }
+      /* The school editor takes the school's own color. */
+      #panel-holder .tp-fldv.school-editor > .tp-fldv_b {
+        box-shadow: inset 0 -2px 0 var(--school-color);
+        background: color-mix(in srgb, var(--school-color) 22%, #ebe9e1);
+      }
+      #panel-holder .tp-fldv.school-editor > .tp-fldv_c {
+        background: color-mix(in srgb, var(--school-color) 9%, var(--panel));
+      }
+            /* A folder holding what this tier adds takes its mechanism's color. */
+      #panel-holder .tp-fldv.has-mech > .tp-fldv_b {
+        box-shadow: inset 3px 0 0 var(--mech-color);
+      }
+      #panel-holder .tp-fldv.has-mech > .tp-fldv_b .tp-fldv_t {
+        color: var(--mech-color);
+        font-weight: 650;
+      }
+      /* Parameters this tier adds: bold and a size up. A folder holding one is
+         bold too, so it still shows when collapsed. */
+      #panel-holder .is-new .tp-lblv_l,
+      #panel-holder .is-new.tp-btnv .tp-btnv_t,
+      #panel-holder .has-new > .tp-fldv_b .tp-fldv_t {
+        font-weight: 700;
+      }
+      #panel-holder .is-new .tp-lblv_l,
+      #panel-holder .is-new.tp-btnv .tp-btnv_t {
+        color: var(--ink);
+        font-size: 1.1em;
+      }
+      /* Pin: a pinned folder stays open while another one opens. */
+      #panel-holder .tp-fldv.has-pin {
+        position: relative;
+      }
+      #panel-holder .fold-pin {
+        position: absolute;
+        top: 0;
+        right: 24px;
+        z-index: 1;
+        display: grid;
+        place-items: center;
+        width: 22px;
+        height: var(--tp-container-unit-size, 22px);
+        padding: 0;
+        border: 0;
+        background: transparent;
+        color: var(--muted);
+        cursor: pointer;
+        opacity: 0;
+      }
+      #panel-holder .tp-fldv.has-pin > .tp-fldv_b:hover ~ .fold-pin,
+      #panel-holder .fold-pin:hover,
+      #panel-holder .fold-pin:focus-visible,
+      #panel-holder .tp-fldv.is-pinned > .fold-pin {
+        opacity: 1;
+      }
+      #panel-holder .tp-fldv.is-pinned > .fold-pin {
+        color: var(--ink);
+      }
+      #panel-holder .fold-pin svg {
+        width: 12px;
+        height: 12px;
+      }
+      #panel-holder .tp-fldv.is-pinned > .fold-pin svg path {
+        fill: currentColor;
+      }
+      /* The row a formula symbol points at. */
+      #panel-holder .is-target {
+        background: rgba(20, 20, 19, 0.05);
+        box-shadow: inset 3px 0 0 var(--mech-color, var(--ink));
+      }
+      #panel-holder .is-target .tp-lblv_l {
+        color: var(--mech-color, var(--ink));
+        font-weight: 700;
       }
       /* Rows that draw something in the tank: a hollow dot in the visual's
          color; click the name to show it, and the row takes the color. */
@@ -220,353 +729,28 @@
       #panel-holder .vis-row.vis-on .tp-lblv_l::before {
         background: var(--vis-color);
       }
-      /* Core parameters this tier adds over the tier before it: set in bold
-         and a size up rather than highlighted. A folder holding one is bold
-         too, so it still shows when collapsed. */
-      #panel-holder .is-new .tp-lblv_l,
-      #panel-holder .is-new.tp-btnv .tp-btnv_t,
-      #panel-holder .has-new > .tp-fldv_b .tp-fldv_t {
-        color: var(--lab-ink);
-        font-weight: 700;
-      }
-      #panel-holder .is-new .tp-lblv_l,
-      #panel-holder .is-new.tp-btnv .tp-btnv_t {
-        font-size: 1.15em;
-      }
-      #project-switcher {
-        margin-bottom: 8px;
-        border: 1px solid #aec4d3;
-        background:
-          linear-gradient(135deg, rgba(231, 241, 248, 0.96), rgba(247, 242, 234, 0.98));
-        color: var(--lab-ink);
-      }
-      #project-switcher header {
-        display: flex;
-        align-items: baseline;
-        justify-content: space-between;
-        gap: 12px;
-        padding: 10px 10px 7px;
-        border-bottom: 1px solid rgba(174, 196, 211, 0.7);
-      }
-      #project-switcher header span {
-        color: var(--lab-muted);
-        font-size: 8px;
-        letter-spacing: 0.13em;
-      }
-      #project-switcher header strong {
-        font-size: 12px;
-        letter-spacing: 0.04em;
-      }
-      .project-tabs {
-        display: grid;
-        grid-template-columns: repeat(2, 1fr);
-        gap: 1px;
-        background: #c8d8e6;
-      }
-      .project-tabs button {
-        min-height: 39px;
-        border: 0;
-        background: #f7f2ea;
-        color: #6d8497;
-        padding: 5px 4px;
-        font: 9px/1.3 inherit;
-        cursor: pointer;
-      }
-      .project-tabs button[aria-selected="true"] {
-        background: #dfeef7;
-        color: #334f63;
-        box-shadow: inset 0 -2px #527e9b;
-      }
-      #project-switcher p {
-        margin: 0;
-        padding: 8px 10px 10px;
-        color: #637b8d;
-        font-size: 9px;
-        line-height: 1.55;
-      }
       .param-btn {
         appearance: none;
-        border: 0;
+        margin-left: 5px;
         padding: 0;
-        color: inherit;
+        border: 0;
         background: transparent;
+        color: inherit;
         font: inherit;
         line-height: 1;
         cursor: pointer;
-        opacity: 0.62;
-        margin-left: 5px;
+        opacity: 0.55;
         user-select: none;
       }
       .param-btn:hover,
       .param-btn:focus-visible {
         opacity: 1;
       }
-      #enable-tilt {
-        position: absolute;
-        left: 50%;
-        bottom: 18%;
-        transform: translateX(-50%);
-        padding: 14px 28px;
-        font-family: inherit;
-        font-size: 12px;
-        line-height: 1;
-        letter-spacing: 0.12em;
-        color: #4d6477;
-        background: #f4efe6;
-        border: 1px solid #c8d8e6;
-        border-radius: 0;
-        -webkit-tap-highlight-color: transparent;
-      }
-      #startup-status {
-        position: absolute;
-        left: 50%;
-        top: 50%;
-        z-index: 20;
-        transform: translate(-50%, -50%);
-        border: 1px solid #aec2d1;
-        background: rgba(247, 242, 234, 0.96);
-        color: #4d6477;
-        padding: 12px 18px;
-        font-size: 11px;
-        letter-spacing: 0.08em;
-        pointer-events: none;
-      }
-      #startup-status[data-state="error"] {
-        color: #a13c37;
-        border-color: #d49a94;
-      }
-      #experiment-dashboard {
-        position: absolute;
-        left: max(12px, env(safe-area-inset-left));
-        bottom: max(12px, env(safe-area-inset-bottom));
-        z-index: 4;
-        width: min(360px, calc(100% - 24px));
-        color: #4d6477;
-        background: rgba(247, 242, 234, 0.94);
-        border: 1px solid #c8d8e6;
-        pointer-events: none;
-      }
-      #experiment-dashboard header {
-        display: flex;
-        justify-content: space-between;
-        padding: 7px 9px 3px;
-        font-size: 9px;
-        letter-spacing: 0.12em;
-      }
-      #experiment-dashboard header strong {
-        color: #9d514b;
-      }
-      #experiment-dashboard[data-project="ecology"] {
-        border-color: #a8bb82;
-        box-shadow: inset 3px 0 #91b957;
-      }
-      #experiment-dashboard[data-project="ecology"] header strong {
-        color: #627d31;
-      }
-      #experiment-dashboard canvas {
-        width: 100%;
-        height: 120px;
-      }
-      #experiment-dashboard canvas[hidden] {
-        display: none;
-      }
-      #experiment-metrics {
-        margin: 0;
-        padding: 4px 9px 9px;
-        max-height: 160px;
-        overflow: hidden;
-        font: 9px/1.45 inherit;
-        white-space: pre-wrap;
-      }
-      #fish-inspector {
-        position: absolute;
-        left: max(12px, env(safe-area-inset-left));
-        bottom: max(12px, env(safe-area-inset-bottom));
-        z-index: 8;
-        width: min(330px, calc(100% - 24px));
-        border: 1px solid #9eb8ca;
-        background: transparent;
-        color: #4d6477;
-        font-size: 10px;
-        line-height: 1.4;
-        box-shadow:
-          0 14px 38px rgba(59, 78, 91, 0.16),
-          inset 3px 0 #7197ad;
-        transition:
-          opacity 180ms ease,
-          transform 220ms ease;
-      }
-      #fish-inspector[hidden] {
-        display: none;
-      }
-      #fish-inspector header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        height: 30px;
-        padding: 0 9px 0 11px;
-        border-bottom: 1px solid #afc4d1;
-        background:
-          repeating-linear-gradient(
-            135deg,
-            rgba(113, 151, 173, 0.08) 0,
-            rgba(113, 151, 173, 0.08) 1px,
-            transparent 1px,
-            transparent 5px
-          ),
-          #f7f2ea;
-      }
-      #fish-inspector .fish-inspector-index {
-        color: #7890a2;
-        font-size: 8px;
-        letter-spacing: 0.14em;
-      }
-      #fish-inspector-close {
-        width: 25px;
-        height: 25px;
-        border: 0;
-        background: transparent;
-        color: #6d8497;
-        font: 17px/1 inherit;
-        cursor: pointer;
-      }
-      #fish-preview-viewport {
-        position: relative;
-        height: 154px;
-        border-bottom: 1px solid #afc4d1;
-        background: transparent;
-        pointer-events: none;
-        overflow: hidden;
-      }
-      #fish-preview-viewport::after {
-        position: absolute;
-        inset: 8px;
-        border:
-          1px solid rgba(247, 242, 234, 0.65);
-        content: "";
-        box-shadow:
-          12px 0 0 -11px rgba(77, 100, 119, 0.55),
-          -12px 0 0 -11px rgba(77, 100, 119, 0.55);
-      }
-      #fish-preview-viewport > span {
-        position: absolute;
-        right: 9px;
-        top: 8px;
-        z-index: 1;
-        padding: 3px 5px;
-        color: #f7f2ea;
-        background: rgba(51, 79, 99, 0.66);
-        font-size: 7px;
-        letter-spacing: 0.12em;
-      }
-      .fish-inspector-copy {
-        display: grid;
-        gap: 2px;
-        padding: 9px 11px 7px;
-        background: rgba(247, 242, 234, 0.96);
-      }
-      .fish-inspector-copy strong {
-        color: #334f63;
-        font-size: 12px;
-        letter-spacing: 0.03em;
-      }
-      .fish-inspector-copy span {
-        color: #71889a;
-        font-size: 9px;
-      }
-      .fish-inspector-actions {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 1px;
-        border-top: 1px solid #afc4d1;
-        background: #afc4d1;
-      }
-      .fish-inspector-actions button {
-        min-height: 40px;
-        border: 0;
-        background: #e7f1f8;
-        color: #4d6477;
-        padding: 7px;
-        font: 9px/1.35 inherit;
-        cursor: pointer;
-      }
-      .fish-inspector-actions button:first-child {
-        background: #d9ebf6;
-        color: #334f63;
-        font-weight: 650;
-      }
-      .fish-inspector-actions button:hover {
-        background: #edf5fa;
-      }
-      #fish-view-hud {
-        position: absolute;
-        left: max(14px, env(safe-area-inset-left));
-        top: max(14px, env(safe-area-inset-top));
-        z-index: 9;
-        display: grid;
-        gap: 2px;
-        min-width: 180px;
-        border-left: 3px solid #7197ad;
-        padding: 8px 10px;
-        color: #4d6477;
-        background: rgba(247, 242, 234, 0.86);
-        pointer-events: none;
-      }
-      #fish-view-hud[hidden] {
-        display: none;
-      }
-      #fish-view-hud span {
-        color: #7890a2;
-        font-size: 8px;
-        letter-spacing: 0.13em;
-      }
-      #fish-view-hud strong {
-        font-size: 12px;
-      }
-      #fish-view-hud kbd {
-        margin-top: 3px;
-        color: #9d514b;
-        font: 8px/1.4 inherit;
-        letter-spacing: 0.1em;
-      }
-      #time-shortcut-hud {
-        position: absolute;
-        left: 50%;
-        top: max(12px, env(safe-area-inset-top));
-        z-index: 7;
-        display: flex;
-        align-items: center;
-        gap: 9px;
-        transform: translateX(-50%);
-        border: 1px solid rgba(174, 196, 211, 0.9);
-        padding: 5px 8px;
-        color: #71889a;
-        background: rgba(247, 242, 234, 0.9);
-        font-size: 7px;
-        letter-spacing: 0.08em;
-        pointer-events: none;
-      }
-      #app[data-selected-fish] #experiment-dashboard {
-        opacity: 0;
-        transform: translateY(calc(100% + 18px));
-      }
-      #experiment-dashboard {
-        transition:
-          opacity 180ms ease,
-          transform 220ms ease;
-      }
-      #app:is(
-          [data-camera-mode="closeup"],
-          [data-camera-mode="follow"]
-        )
-        :is(#panel-holder, #lab-mark, #experiment-dashboard, #fish-inspector) {
-        opacity: 0;
-        pointer-events: none;
-      }
       button:focus-visible,
+      a:focus-visible,
       input:focus-visible,
       select:focus-visible {
-        outline: 2px solid #537f9d;
+        outline: 2px solid var(--ink-soft);
         outline-offset: 2px;
       }
       @media (prefers-reduced-motion: reduce) {
@@ -579,176 +763,36 @@
           animation-iteration-count: 1 !important;
         }
       }
-      @media (max-width: 680px) {
-        #lab-mark {
-          display: none;
-        }
-        /* Keep it in developer mode: it is the only way out, and hiding it on
-           narrow windows leaves reloading the page as the only exit. */
-        #app[data-developer="1"] #lab-mark {
-          display: block;
-        }
-        #panel-holder {
-          width: min(272px, calc(100% - 16px));
-          top: 8px;
-          right: 8px;
-          max-height: calc(100% - 16px);
-          padding-bottom: 230px;
-        }
-        #experiment-dashboard {
-          width: min(300px, calc(100% - 16px));
-        }
-        #experiment-dashboard canvas {
-          height: 90px;
-        }
-        #fish-inspector {
-          width: min(300px, calc(100% - 16px));
-          left: 8px;
-          bottom: 8px;
-        }
-        #fish-preview-viewport {
-          height: 126px;
-        }
-        #time-shortcut-hud {
-          display: none;
-        }
-      }
     </style>
   </head>
   <body>
-    <style>
-      /* Developer controls exist only while #app is in developer mode,
-         which main.js turns on for the tier pages and off for home. */
-      #app:not([data-developer="1"])
-        :is(#panel-holder, #lab-mark, #experiment-dashboard) {
-        display: none !important;
-      }
-
-      /* Press 1 to hide every overlay — for demos, screenshots and recordings. */
-      #app[data-ui-hidden="1"] #panel-holder,
-      #app[data-ui-hidden="1"] #lab-mark,
-      #app[data-ui-hidden="1"] #lab-reset,
-      #app[data-ui-hidden="1"] #tier-nav,
-      #app[data-ui-hidden="1"] #tier-summary,
-      #app[data-ui-hidden="1"] #startup-status,
-      #app[data-ui-hidden="1"] #experiment-dashboard,
-      #app[data-ui-hidden="1"] #fish-inspector,
-      #app[data-ui-hidden="1"] #fish-view-hud {
-        display: none !important;
-      }
-
-      #app:not([data-page="tier"]) :is(#time-shortcut-hud, #tier-summary) {
-        display: none !important;
-      }
-
-      #tier-nav {
-        position: absolute;
-        top: calc(max(14px, env(safe-area-inset-top)) + 80px);
-        left: max(16px, env(safe-area-inset-left));
-        z-index: 3;
-        display: flex;
-        gap: 6px;
-      }
-      #tier-nav[hidden] {
-        display: none;
-      }
-      #tier-nav :is(a, button) {
-        padding: 6px 10px;
-        border: 1px solid #b9cbd8;
-        background: var(--lab-bg);
-        color: #4d6477;
-        font: inherit;
-        font-size: 10px;
-        font-weight: 600;
-        letter-spacing: 0.14em;
-        text-decoration: none;
-        text-transform: uppercase;
-        cursor: pointer;
-      }
-      #tier-nav :is(a, button):hover:not(:disabled) {
-        border-color: #71889a;
-        color: #22323f;
-      }
-      #tier-nav button:disabled {
-        opacity: 0.4;
-        cursor: default;
-      }
-
-      #tier-summary {
-        position: absolute;
-        top: calc(max(14px, env(safe-area-inset-top)) + 118px);
-        left: max(16px, env(safe-area-inset-left));
-        z-index: 2;
-        max-width: 300px;
-        margin: 0;
-        padding: 8px 10px;
-        background: var(--lab-bg);
-        color: var(--lab-muted);
-        font-size: 11px;
-        line-height: 1.5;
-      }
-
-      #home {
-        position: absolute;
-        top: 50%;
-        left: max(32px, env(safe-area-inset-left));
-        z-index: 10;
-        max-width: 360px;
-        padding: 24px 26px;
-        transform: translateY(-50%);
-        border: 1px solid var(--lab-line);
-        background: rgba(247, 242, 234, 0.92);
-        color: var(--lab-ink);
-      }
-      #home[hidden] {
-        display: none;
-      }
-      #home h1 {
-        margin: 0 0 10px;
-        font-size: 22px;
-        font-weight: 650;
-        letter-spacing: 0.08em;
-      }
-      #home p {
-        margin: 0 0 18px;
-        color: var(--lab-muted);
-        font-size: 12px;
-        line-height: 1.6;
-      }
-      #home a {
-        display: inline-block;
-        padding: 8px 14px;
-        border: 1px solid #71889a;
-        color: #22323f;
-        font-size: 11px;
-        font-weight: 650;
-        letter-spacing: 0.16em;
-        text-decoration: none;
-        text-transform: uppercase;
-      }
-      #home a:hover {
-        background: #e7f1f8;
-      }
-    </style>
     <div id="app">
-      <h1 id="lab-mark">
-        <b id="lab-title">flocks</b>
-        <span id="lab-subtitle"></span>
-      </h1>
-      <button id="lab-reset" type="button" hidden>Reset</button>
-      <nav id="tier-nav" aria-label="Tiers" hidden>
-        <a href="/" data-route>Home</a>
-        <button id="tier-prev" type="button">← Previous</button>
-        <button id="tier-next" type="button">Next →</button>
-      </nav>
-      <p id="tier-summary"></p>
-      <aside id="panel-holder" aria-label="Simulation parameters"></aside>
-      <section id="home" hidden>
-        <h1>flocks</h1>
-        <p>Placeholder: one or two sentences about the project.</p>
-        <a href="/tier/1" data-route>Enter</a>
-      </section>
-      <div id="startup-status" role="status" aria-live="polite">Starting simulation…</div>
+      <header id="topbar">
+        <a class="brand" href="/" data-route>flocks</a>
+        <nav id="tier-nav" aria-label="Tiers">
+          <button id="tier-prev" class="edge" type="button">← Previous</button>
+          <ol id="tier-steps"></ol>
+          <button id="tier-next" class="edge" type="button">Next →</button>
+        </nav>
+      </header>
+      <article id="paper" aria-label="About this tier"></article>
+      <main id="stage">
+        <button id="lab-reset" type="button" hidden>Reset fish</button>
+        <section id="home" hidden>
+          <h1>flocks</h1>
+          <p>Placeholder: one or two sentences about the project.</p>
+          <a href="/tier/1" data-route>Enter</a>
+        </section>
+        <div id="startup-status" role="status" aria-live="polite">Starting simulation…</div>
+      </main>
+      <aside id="panel-column" aria-label="Simulation parameters">
+        <div id="panel-bar">
+          <span id="panel-bar-title">Parameters</span>
+          <button id="panel-toggle" type="button" aria-expanded="true">Hide ›</button>
+        </div>
+        <p id="panel-note"></p>
+        <div id="panel-holder"></div>
+      </aside>
     </div>
     <script type="module" src="/src/main.js"></script>
   </body>

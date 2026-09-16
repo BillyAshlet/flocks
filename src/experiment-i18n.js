@@ -45,7 +45,9 @@ export function toggleLanguage() {
 const DICT = {
   // Groups: top level
   项目: ['Project', '项目'],
-  运行: ['Runtime', '运行'],
+  运行: ['Run', '运行'],
+  重置鱼群: ['Reset fish', '重置鱼群'],
+  恢复默认参数: ['Restore default parameters', '恢复默认参数'],
   缸体: ['Tank', '缸体'],
   感知: ['Perception', '感知'],
   跨鱼群作用: ['Cross-school', '跨鱼群作用'],

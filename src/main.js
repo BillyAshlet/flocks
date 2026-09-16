@@ -7,8 +7,9 @@
  * `/tier/1` … `/tier/6` are the research tiers.
  */
 import * as THREE from 'three';
+import '@fontsource-variable/source-serif-4';
 import { World, TANK, notifyTankChange } from './world.js';
-import { createScene } from './scene.js';
+import { createScene, SCENE_BACKGROUND } from './scene.js';
 import {
   createDefaultConfig,
   deepClone,
@@ -22,12 +23,12 @@ import { ExperimentCameraController } from './experiment-camera.js';
 import { createExperimentDebug } from './experiment-debug.js';
 import { TimeShortcutController } from './time-shortcuts.js';
 import { SchoolVisualizer } from './school-visualizer.js';
-import { TIER_COUNT, tierByNumber, tierConfig, tierPanelScope } from './tiers.js';
+import { TIER_COUNT, TIERS, tierByNumber, tierConfig, tierPanelScope } from './tiers.js';
+import { renderPaper } from './paper.js';
 
 const startup = document.getElementById('startup-status');
 const app = document.getElementById('app');
-
-const SCENE_BACKGROUND = '#f4efe6';
+const stageElement = document.getElementById('stage');
 
 function parseRoute(pathname) {
   const match = pathname.match(/^\/tier\/(\d+)\/?$/);
@@ -111,7 +112,7 @@ async function bootstrap() {
   let stage = deepClone(current);
   syncTank(current);
 
-  const presentation = createScene(app);
+  const presentation = createScene(stageElement);
   const { renderer, scene, camera } = presentation;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.shadowMap.enabled = false;
@@ -202,8 +203,10 @@ async function bootstrap() {
       cameraController.exitView(true);
       return simulation.metrics();
     },
+    // The defaults of the tier on screen. Using the full default config here
+    // once turned tier 1 into the whole ecosystem.
     restoreDefaults() {
-      stage = createDefaultConfig();
+      stage = tierConfig(route.page === 'tier' ? route.number : TIER_COUNT);
       return this.applyConfig('rebuildScene');
     },
     exportConfig() {
@@ -248,6 +251,7 @@ async function bootstrap() {
 
   const schoolVisualizer = new SchoolVisualizer(scene);
   timeShortcuts = new TimeShortcutController({
+    root: stageElement,
     setTimeScale(value) {
       stage.runtime.timeScale = value;
       controller.applyConfig('live', 'runtime.timeScale');
@@ -262,29 +266,67 @@ async function bootstrap() {
   debug = createExperimentDebug({ controller, simulation });
 
   const labReset = document.getElementById('lab-reset');
-  const tierTitle = document.getElementById('lab-title');
-  const tierSubtitle = document.getElementById('lab-subtitle');
-  const tierSummary = document.getElementById('tier-summary');
-  const tierNav = document.getElementById('tier-nav');
+  const tierSteps = document.getElementById('tier-steps');
   const tierPrev = document.getElementById('tier-prev');
   const tierNext = document.getElementById('tier-next');
+  const paper = document.getElementById('paper');
+  const panelToggle = document.getElementById('panel-toggle');
   const home = document.getElementById('home');
+
+  // One link per tier, all alike; the current one is marked, not the rest.
+  for (const tier of TIERS) {
+    const item = document.createElement('li');
+    const link = document.createElement('a');
+    link.href = `/tier/${tier.number}`;
+    link.dataset.tier = String(tier.number);
+    link.innerHTML = '<span class="step-number"></span><span class="step-title"></span>';
+    link.querySelector('.step-number').textContent = String(tier.number);
+    link.querySelector('.step-title').textContent = tier.title;
+    link.title = tier.title;
+    link.addEventListener('click', (event) => {
+      event.preventDefault();
+      goToTier(tier.number);
+    });
+    item.appendChild(link);
+    tierSteps.appendChild(item);
+  }
+
+  function setPanelCollapsed(collapsed) {
+    app.dataset.panelCollapsed = collapsed ? '1' : '';
+    panelToggle.textContent = collapsed ? '‹' : 'Hide ›';
+    panelToggle.title = collapsed ? 'Show parameters' : 'Hide parameters';
+    panelToggle.setAttribute('aria-expanded', String(!collapsed));
+  }
+  panelToggle.addEventListener('click', () => {
+    setPanelCollapsed(app.dataset.panelCollapsed !== '1');
+  });
+  setPanelCollapsed(false);
+
+  // A formula symbol opens its slider, bringing the panel back if folded.
+  function openParameter(path) {
+    if (app.dataset.panelCollapsed === '1') setPanelCollapsed(false);
+    debug.revealParameter(path);
+  }
 
   function renderChrome() {
     const onTier = route.page === 'tier';
     home.hidden = onTier;
     labReset.hidden = !onTier;
-    tierNav.hidden = !onTier;
     if (!onTier) {
       document.title = 'flocks';
       return;
     }
     const tier = tierByNumber(route.number);
-    tierTitle.textContent = `${tier.number} · ${tier.title}`;
-    tierSubtitle.textContent = `Tier ${tier.number} of ${TIER_COUNT}`;
-    tierSummary.textContent = tier.summary;
+    for (const link of tierSteps.querySelectorAll('a')) {
+      if (Number(link.dataset.tier) === tier.number) {
+        link.setAttribute('aria-current', 'page');
+      } else {
+        link.removeAttribute('aria-current');
+      }
+    }
     tierPrev.disabled = tier.number === 1;
     tierNext.disabled = tier.number === TIER_COUNT;
+    renderPaper(paper, tier, TIER_COUNT, { onParameter: openParameter });
     document.title = `flocks · ${tier.title}`;
   }
 

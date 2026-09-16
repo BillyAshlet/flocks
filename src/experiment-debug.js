@@ -19,6 +19,7 @@ import {
   visualsForPath,
 } from './school-visualizer.js';
 import { panelGroup, parameterCategory } from './parameter-categories.js';
+import { mechanismFor, MECHANISMS } from './mechanisms.js';
 
 // The read-only "actual radius" rows switch the same spheres as their factors.
 const VISUAL_FOR_DERIVED_RADIUS = {
@@ -84,47 +85,41 @@ const PROJECTS = {
   },
 };
 
+// Every section starts closed; see the folder rules in createExperimentDebug.
 export const SCHOOL_SECTIONS = [
   {
     title: '身份与形态',
-    expanded: true,
     fields: ['id', 'name', 'color', 'count', 'size'],
   },
   {
     title: '运动',
-    expanded: true,
     fields: ['cruiseSpeed', 'maxSpeed', 'turnSpeed'],
   },
   {
     title: '生态角色',
-    expanded: false,
     // metabolismMultiplier had a schema entry but no section, so it never
     // reached the panel.
     fields: ['grazeRate', 'metabolismMultiplier'],
   },
   {
     title: '分离 · Separation',
-    expanded: false,
     fields: ['separationWeight'],
     derivedRadius: 'separationRadius',
     globalPaths: ['perception.separationRadiusFactor'],
   },
   {
     title: '对齐 · Alignment',
-    expanded: false,
     fields: ['alignmentWeight'],
     derivedRadius: 'alignmentRadius',
     globalPaths: ['perception.alignmentRadiusFactor'],
   },
   {
     title: '凝聚 · Cohesion',
-    expanded: false,
     fields: ['targetNeighbors', 'cohesionWeight'],
     derivedRadius: 'cohesionRadius',
   },
   {
     title: '出生布局',
-    expanded: false,
     fields: ['spawnRegion', 'initialHeading'],
   },
 ];
@@ -211,6 +206,20 @@ export function createExperimentDebug({
   const rangeWindows = new Map();
   const defaultConfig = createDefaultConfig();
   const holder = document.getElementById('panel-holder');
+  const panelNote = document.getElementById('panel-note');
+
+  // Folder rules. Every folder starts closed and only one opens at a time:
+  // opening a folder closes the one open before, unless that one is pinned.
+  // Run controls are the exception, always open. Pins and the open folder are
+  // remembered by key, so switching school or language keeps them.
+  const pinnedKeys = new Set();
+  let openKey = null;
+  let leafFolders = [];
+  const folderApis = new WeakMap();
+  // Parameter path -> its row, for opening a slider from a formula symbol.
+  let rowsByPath = new Map();
+  let targetRow = null;
+  let adjustingFolds = false;
   const dashboard = document.createElement('section');
   dashboard.id = 'experiment-dashboard';
   dashboard.setAttribute('aria-label', 'Live school relations and metrics');
@@ -221,7 +230,7 @@ export function createExperimentDebug({
     </header>
     <pre id="experiment-metrics">…</pre>
   `;
-  document.getElementById('app').appendChild(dashboard);
+  (document.getElementById('stage') ?? document.getElementById('app')).appendChild(dashboard);
   const dashboardKind = dashboard.querySelector('#dashboard-kind');
   const stateLabel = dashboard.querySelector('#probe-state');
   const metricsText = dashboard.querySelector('#experiment-metrics');
@@ -289,31 +298,26 @@ export function createExperimentDebug({
     });
   }
 
-  function addActionButtons(root) {
-    const project = controller.stage.runtime.project;
-    const run = root.addFolder({
-      title: t(
-        project === 'aquarium'
-          ? '主项目操作'
-          : project === 'ecology'
-            ? '生态实验操作'
-            : '子实验操作'
-      ),
-      expanded: true,
-    });
-    run.addButton({ title: t('reset current project') }).on('click', () => {
+  // Resetting the fish and restoring the parameters are separate: a reader
+  // who tuned something may want to rerun it without losing the tuning.
+  function addRunFolder(root) {
+    const run = root.addFolder({ title: t('运行'), expanded: true });
+    run.element.classList.add('is-run');
+    run.addButton({ title: t('重置鱼群') }).on('click', () => {
       controller.reset();
     });
-  }
-
-  function addConfigButtons(root) {
-    const actions = root.addFolder({ title: t('配置文件'), expanded: false });
-    actions.addButton({ title: t('恢复默认值') }).on('click', () => {
+    run.addButton({ title: t('恢复默认参数') }).on('click', () => {
       controller.restoreDefaults();
       rangeWindows.clear();
       selectedSchoolIndex = 0;
       rebuildPane();
     });
+    return run;
+  }
+
+  function addConfigButtons(root) {
+    const actions = root.addFolder({ title: t('配置文件'), expanded: false });
+    registerLeaf(actions, 'config');
     actions.addButton({ title: t('导出 JSON') }).on('click', () => {
       downloadText(
         `experiment-${controller.stage.runtime.seed}.json`,
@@ -483,6 +487,8 @@ export function createExperimentDebug({
       binding.on('change', applyChange);
       decorate();
       if (isNewSpec(spec)) markNew(binding.element);
+      if (isIntroducedSpec(spec)) colorFolder(folder, spec);
+      rowsByPath.set(spec.path, binding.element);
       wireVisualRow(binding.element, visualKeysForSpec(spec));
     }
 
@@ -534,6 +540,9 @@ export function createExperimentDebug({
       title: `${t('鱼群')} ${selectedSchoolIndex + 1}/${schools.length} · ${school.name}`,
       expanded: true,
     });
+    // The school's own tone, so it is clear whose numbers these are.
+    editor.element.classList.add('school-editor');
+    editor.element.style.setProperty('--school-color', school.color);
     if (schools.length > 1) {
       editor
         .addButton({ title: t('← 上一个鱼群') })
@@ -623,10 +632,8 @@ export function createExperimentDebug({
       ) {
         continue;
       }
-      const folder = editor.addFolder({
-        title: t(section.title),
-        expanded: section.expanded,
-      });
+      const folder = editor.addFolder({ title: t(section.title) });
+      registerLeaf(folder, `school:${section.title}`);
       if (section.derivedRadius) {
         const radiusBinding = folder.addBinding(boidState, section.derivedRadius, {
           label: t('actual radius'),
@@ -750,6 +757,116 @@ export function createExperimentDebug({
     subtree: true,
   });
 
+  function registerLeaf(api, key) {
+    folderApis.set(api.element, api);
+    leafFolders.push({ key, api });
+    api.expanded = pinnedKeys.has(key) || key === openKey;
+    const pin = document.createElement('button');
+    pin.type = 'button';
+    pin.className = 'fold-pin';
+    pin.innerHTML =
+      '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10.5 1.5 14.5 5.5 12.3 6.2 9.6 8.9 10 12.4 8.6 13.8 5.9 11.1 2.5 14.5 1.5 13.5 4.9 10.1 2.2 7.4 3.6 6 7.1 6.4 9.8 3.7Z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>';
+    const syncPin = () => {
+      const pinned = pinnedKeys.has(key);
+      api.element.classList.toggle('is-pinned', pinned);
+      const label = inChinese()
+        ? pinned ? '取消固定' : '固定展开'
+        : pinned ? 'Unpin' : 'Pin open';
+      pin.title = label;
+      pin.setAttribute('aria-label', label);
+      pin.setAttribute('aria-pressed', String(pinned));
+    };
+    pin.addEventListener('click', (event) => {
+      event.stopPropagation();
+      if (pinnedKeys.has(key)) {
+        pinnedKeys.delete(key);
+        // Back to an ordinary open folder, which may only be the one.
+        if (api.expanded && openKey !== null && openKey !== key) {
+          setExpanded(api, false);
+        } else if (api.expanded) {
+          openKey = key;
+        }
+      } else {
+        pinnedKeys.add(key);
+        if (openKey === key) openKey = null;
+        setExpanded(api, true);
+      }
+      syncPin();
+    });
+    api.element.classList.add('has-pin');
+    api.element.appendChild(pin);
+    syncPin();
+    api.on('fold', (event) => {
+      if (adjustingFolds) return;
+      if (event.expanded) {
+        if (!pinnedKeys.has(key)) openKey = key;
+        for (const other of leafFolders) {
+          if (other.api === api || pinnedKeys.has(other.key)) continue;
+          if (other.api.expanded) setExpanded(other.api, false);
+        }
+      } else {
+        // Closing a pinned folder unpins it.
+        if (pinnedKeys.delete(key)) syncPin();
+        if (openKey === key) openKey = null;
+      }
+      if (targetRow && !rowOnScreen(targetRow)) clearTarget();
+    });
+  }
+
+  function setExpanded(api, expanded) {
+    adjustingFolds = true;
+    api.expanded = expanded;
+    adjustingFolds = false;
+  }
+
+  function clearTarget() {
+    targetRow?.classList.remove('is-target');
+    targetRow = null;
+  }
+
+  // Opens the folder holding a parameter and scrolls it into view. A school
+  // field (`schools.*.x`) means the school being edited. Returns false when
+  // this tier's panel does not show the parameter.
+  function revealParameter(path) {
+    const concrete = path.replace(/^schools\.\*\./, `schools.${selectedSchoolIndex}.`);
+    const row = rowsByPath.get(concrete);
+    if (!row?.isConnected) return false;
+    const chain = [];
+    for (let node = row.parentElement; node && node !== holder; node = node.parentElement) {
+      const api = folderApis.get(node);
+      if (api) chain.unshift(api);
+    }
+    // Outer folders first, so the leaf's own fold event closes the others.
+    for (const api of chain) api.expanded = true;
+    clearTarget();
+    targetRow = row;
+    const mechanism = mechanismFor(path);
+    if (mechanism) row.style.setProperty('--mech-color', MECHANISMS[mechanism].color);
+    row.classList.add('is-target');
+    // Wait for the folder's opening animation before measuring.
+    setTimeout(() => {
+      row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }, 240);
+    return true;
+  }
+
+  // Tier 1 introduces every mechanism it shows; later tiers only their new
+  // core parameters. Display and engine settings are never a tier's subject.
+  function isIntroducedSpec(spec) {
+    const scope = controller.panelScope;
+    if (!scope) return false;
+    if (['display', 'internal', 'run'].includes(parameterCategory(spec))) return false;
+    return scope.firstTier || isNewSpec(spec);
+  }
+
+  // A folder holding an introduced parameter takes its mechanism's color.
+  function colorFolder(folder, spec) {
+    const mechanism = mechanismFor(spec.path);
+    if (!mechanism || folder.element.classList.contains('has-mech')) return;
+    folder.element.classList.add('has-mech');
+    folder.element.style.setProperty('--mech-color', MECHANISMS[mechanism].color);
+  }
+
   // Highlight what this tier adds over the tier before it. The enclosing
   // folders get a marker too, so a new parameter inside a collapsed folder
   // is still visible.
@@ -804,21 +921,25 @@ export function createExperimentDebug({
       const group = panelGroup(spec);
       let folder = folders.get(group);
       if (!folder) {
-        folder = root.addFolder({
-          title: t(group),
-          expanded:
-            !group.startsWith('Advanced') && ['运行', '关系'].includes(group),
-        });
+        folder = root.addFolder({ title: t(group) });
+        registerLeaf(folder, `group:${group}`);
         folders.set(group, folder);
       }
       bindSpec(folder, spec);
     }
   }
 
+  // Environment, Fish, More and Non-research only group the folders inside.
+  function addContainer(root, title, expanded) {
+    const folder = root.addFolder({ title, expanded });
+    folderApis.set(folder.element, folder);
+    return folder;
+  }
+
   // Environment and fish are the model. Display and engine internals come
   // last and folded, so a reader who came for the rules does not wade through
   // camera damping and particle colors to find one.
-  function addCategorizedParameters(root, registry) {
+  function addCategorizedParameters(root, registry, runFolder) {
     const globals = visibleGlobalSpecs(registry);
     // An unmapped group stays visible with the fish rather than disappearing;
     // parameter-categories.test.js keeps that from happening silently.
@@ -826,25 +947,22 @@ export function createExperimentDebug({
       globals.filter((spec) => names.includes(parameterCategory(spec) ?? 'fish'));
     const isDetail = (spec) => controller.panelScope?.isDetailGlobal(spec) ?? false;
     const research = (...names) => inCategory(...names).filter((spec) => !isDetail(spec));
-    addGroupFolders(root, research('run'));
+    for (const spec of research('run')) bindSpec(runFolder, spec);
     const environment = research('environment');
     if (environment.length > 0) {
-      addGroupFolders(root.addFolder({ title: t('环境'), expanded: true }), environment);
+      addGroupFolders(addContainer(root, t('环境'), true), environment);
     }
-    const fish = root.addFolder({ title: t('鱼'), expanded: true });
+    const fish = addContainer(root, t('鱼'), true);
     addSchoolEditor(fish, registry);
     addGroupFolders(fish, research('fish'));
     // A tier's details: research parameters, just not the ones to start with.
     const details = inCategory('run', 'environment', 'fish').filter(isDetail);
     if (details.length > 0) {
-      addGroupFolders(root.addFolder({ title: t('更多参数'), expanded: false }), details);
+      addGroupFolders(addContainer(root, t('更多参数'), false), details);
     }
     const nonResearch = inCategory('display', 'internal');
     if (nonResearch.length > 0) {
-      addGroupFolders(
-        root.addFolder({ title: t('非研究部分'), expanded: false }),
-        nonResearch
-      );
+      addGroupFolders(addContainer(root, t('非研究部分'), false), nonResearch);
     }
   }
 
@@ -857,6 +975,9 @@ export function createExperimentDebug({
     visualRows = [];
     visualsOff.clear();
     shownVisuals = allVisualLayers(false);
+    leafFolders = [];
+    rowsByPath = new Map();
+    targetRow = null;
     const scope = controller.panelScope;
     if (!scope) addProjectSwitcher();
     const meta = projectMeta();
@@ -864,11 +985,20 @@ export function createExperimentDebug({
       title: `${scope?.eyebrow ?? meta.eyebrow} · ${t('参数')}`,
       container: holder,
     });
+    renderPanelNote();
     addLanguageToggle(pane);
-    addActionButtons(pane);
+    const runFolder = addRunFolder(pane);
     const registry = createParameterRegistry(controller.stage);
-    addCategorizedParameters(pane, registry);
+    addCategorizedParameters(pane, registry, runFolder);
     addConfigButtons(pane);
+  }
+
+  function renderPanelNote() {
+    if (!panelNote) return;
+    const first = controller.panelScope?.firstTier;
+    panelNote.innerHTML = inChinese()
+      ? `${first ? '<b>有颜色的文件夹</b>是这一级的机制' : '<b>粗体</b>是这一级新加的参数，所在的文件夹有颜色'}。一次只展开一个文件夹，点 📌 可以固定。点公式里的字母，会打开对应的滑块。`
+      : `${first ? '<b>Colored folders</b> hold this tier’s mechanisms' : '<b>Bold</b> parameters are new at this tier; their folders are colored'}. One folder opens at a time; pin (📌) to keep one open. Click a symbol in a formula to open its slider.`;
   }
 
   function updateSelectedSchool(metrics) {
@@ -902,11 +1032,6 @@ export function createExperimentDebug({
     const meta = PROJECTS[metrics.project] ?? PROJECTS.aquarium;
     dashboard.dataset.project = metrics.project;
     dashboardKind.textContent = meta.dashboard;
-    if (!controller.panelScope) {
-      document.getElementById('lab-title').textContent = meta.title;
-      document.getElementById('lab-subtitle').textContent =
-        `${meta.eyebrow} · Three.js`;
-    }
     let stateText = 'running';
     if (metrics.project === 'aquarium') {
       stateText = 'LIVE · SIZE ROLES';
@@ -974,6 +1099,7 @@ outcome=${metrics.ecology.state}${metrics.ecology.winnerName ? ` winner=${metric
   return {
     update,
     rebuildPane,
+    revealParameter,
     // What the tank should draw: visuals for the school being edited only.
     visualLayersBySchool(schoolCount) {
       return Array.from({ length: schoolCount }, (_, index) =>

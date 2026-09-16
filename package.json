@@ -11,6 +11,8 @@
     "fingerprint": "node tools/fingerprint.mjs"
   },
   "dependencies": {
+    "@fontsource-variable/source-serif-4": "^5.3.0",
+    "katex": "^0.16.47",
     "three": "0.178.0",
     "tweakpane": "4.0.5"
   },

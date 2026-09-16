@@ -3,22 +3,24 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TANK, onTankChange } from './world.js';
 
 const TANK_VISUAL_PARAMS = {
-  // Soft interior grid lines only help depth and camera orientation.
-  // They never affect boid / predator physics.
+  // Soft grid lines only help depth and camera orientation; they never affect
+  // the simulation. Only the floor carries them: a lattice on every face was
+  // tiring to look at for long and competed with the fish.
   gridEnabled: true,
-  gridOpacity: 0.28,
-  gridDivisions: 4,
+  gridOpacity: 0.55,
+  gridDivisions: 6,
 };
 
-// Presentation: canonical landscape → viewport. The CSS rotation R comes
-// from getRotation (no rotation by default); this module just applies
-// whatever R says and owns the geometry: dimension swap, camera framing,
-// and viewport→canonical coordinates.
+export const SCENE_BACKGROUND = '#efede6';
+
+// Presentation: the canvas fills `wrapper` (the page's middle column) and
+// follows its size. flocks is a desktop page, so the old screen-rotation
+// support for phones is gone.
 //
 // Camera policy: touch devices keep the fixed auto-framing camera. Desktop
 // is a world you can walk around: OrbitControls (drag orbit / right-drag
 // pan / wheel zoom), 0 = home, 1/3/7 = front/side/top view snaps.
-export function createScene(wrapper, getRotation = () => 0) {
+export function createScene(wrapper) {
   const isDesktop = navigator.maxTouchPoints === 0;
 
   const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -26,7 +28,7 @@ export function createScene(wrapper, getRotation = () => 0) {
   wrapper.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color('#f4efe6');
+  scene.background = new THREE.Color(SCENE_BACKGROUND);
 
   const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 50);
   // Mutable on purpose: the lab panel and console both operate this same
@@ -39,7 +41,7 @@ export function createScene(wrapper, getRotation = () => 0) {
     damping: 0.08,
   };
 
-  // Tank shell: a soft open laboratory volume in pale beige space.
+  // Tank shell: a soft open volume on a warm grey plate.
   // BackSide draws the far interior faces while leaving the near wall open,
   // so the fish, predator and capture cubes remain readable. A light face
   // grid is layered on top so orbiting still reads as a 3D aquarium rather
@@ -58,31 +60,18 @@ export function createScene(wrapper, getRotation = () => 0) {
       positions.push(ax, ay, az, bx, by, bz);
     };
 
-    // Each face gets a u/v lattice. Shared box edges are drawn twice; that is
-    // intentional and cheap, and keeps the helper independent of EdgesGeometry.
-    for (let i = 0; i <= div; i++) {
-      const t = i / div;
-      const x = -hw + width * t;
-      const y = -hh + height * t;
-      const z = -hd + depth * t;
-
-      // ±Z faces (front / back)
-      pushLine(x, -hh, -hd, x, hh, -hd);
-      pushLine(-hw, y, -hd, hw, y, -hd);
-      pushLine(x, -hh, hd, x, hh, hd);
-      pushLine(-hw, y, hd, hw, y, hd);
-
-      // ±X faces (left / right)
-      pushLine(-hw, y, -hd, -hw, y, hd);
-      pushLine(-hw, -hh, z, -hw, hh, z);
-      pushLine(hw, y, -hd, hw, y, hd);
-      pushLine(hw, -hh, z, hw, hh, z);
-
-      // ±Y faces (floor / ceiling)
+    // Floor lattice only, with square-ish cells: `divisions` along the
+    // longer side. The box edges already outline the other faces.
+    const cell = Math.max(width, depth) / div;
+    const across = Math.max(1, Math.round(width / cell));
+    const along = Math.max(1, Math.round(depth / cell));
+    for (let i = 1; i < across; i++) {
+      const x = -hw + (width * i) / across;
       pushLine(x, -hh, -hd, x, -hh, hd);
+    }
+    for (let i = 1; i < along; i++) {
+      const z = -hd + (depth * i) / along;
       pushLine(-hw, -hh, z, hw, -hh, z);
-      pushLine(x, hh, -hd, x, hh, hd);
-      pushLine(-hw, hh, z, hw, hh, z);
     }
 
     const geometry = new THREE.BufferGeometry();
@@ -147,7 +136,7 @@ export function createScene(wrapper, getRotation = () => 0) {
     const edges = new THREE.LineSegments(
       edgesGeo,
       new THREE.LineBasicMaterial({
-        color: '#7f9bb2',
+        color: '#9b988e',
         // Perspective aquarium: silhouette edges must keep a uniform weight
         // even when a far pane would otherwise depth-occlude them.
         depthTest: false,
@@ -160,7 +149,7 @@ export function createScene(wrapper, getRotation = () => 0) {
     const panes = new THREE.Mesh(
       box,
       new THREE.MeshBasicMaterial({
-        color: '#e8f1f7',
+        color: '#f7f6f1',
         side: THREE.BackSide, // far walls only; the front stays clear glass
       })
     );
@@ -173,7 +162,7 @@ export function createScene(wrapper, getRotation = () => 0) {
     const grid = new THREE.LineSegments(
       gridGeo,
       new THREE.LineBasicMaterial({
-        color: '#9eb8cf',
+        color: '#d3cfc3',
         transparent: true,
         opacity: TANK_VISUAL_PARAMS.gridOpacity,
         depthWrite: false,
@@ -188,7 +177,7 @@ export function createScene(wrapper, getRotation = () => 0) {
   // Distance that fits a (halfW × halfH) face plus margin, then backed
   // off by the tank's half-extent along the viewing axis.
   function fitDistance(halfW, halfH, halfAlong) {
-    const margin = 1.25;
+    const margin = 1.1;
     const halfFov = THREE.MathUtils.degToRad(camera.fov) / 2;
     const dH = (halfH * margin) / Math.tan(halfFov);
     const dW = (halfW * margin) / (Math.tan(halfFov) * camera.aspect);
@@ -306,47 +295,18 @@ export function createScene(wrapper, getRotation = () => 0) {
     });
   }
 
-  let rotationDeg = 0;
   let appliedKey = '';
 
-  function computeRotation() {
-    if (isDesktop) return 0; // desktop never rotates
-    return getRotation();
-  }
-
-  // Cheap enough to call every frame: bails unless rotation state or
-  // viewport actually changed.
+  // Cheap enough to call every frame: bails unless the column's size changed.
   function apply() {
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    // Hidden tabs and mid-rotation iOS can report a 0×0 viewport; a 0
-    // aspect would NaN the camera. Skip — the settle timer / next
-    // resize retries once the viewport is real.
-    if (vw === 0 || vh === 0) return;
-    rotationDeg = computeRotation();
-    const key = `${rotationDeg}:${vw}x${vh}`;
+    const w = wrapper.clientWidth;
+    const h = wrapper.clientHeight;
+    // A hidden column reports 0×0, and a 0 aspect would NaN the camera. Skip;
+    // the next resize retries once it has a size.
+    if (w === 0 || h === 0) return;
+    const key = `${w}x${h}`;
     if (key === appliedKey) return;
     appliedKey = key;
-
-    const swap = rotationDeg === 90 || rotationDeg === 270;
-    const w = swap ? vh : vw;
-    const h = swap ? vw : vh;
-
-    // transform-origin is top-left (index.html); transforms compose
-    // right-to-left, so the translate positions the box, the rotation
-    // lands it exactly on the viewport — fullscreen, no letterbox.
-    wrapper.style.width = `${w}px`;
-    wrapper.style.height = `${h}px`;
-    if (rotationDeg === 90) {
-      wrapper.style.transform = 'rotate(90deg) translateY(-100%)';
-    } else if (rotationDeg === 270) {
-      wrapper.style.transform = 'rotate(-90deg) translateX(-100%)';
-    } else if (rotationDeg === 180) {
-      wrapper.style.transform = 'rotate(180deg) translate(-100%, -100%)';
-    } else {
-      wrapper.style.transform = 'none';
-    }
-
     renderer.setSize(w, h);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
@@ -355,16 +315,8 @@ export function createScene(wrapper, getRotation = () => 0) {
     if (!userMoved) home();
   }
 
-  // iOS reports stale innerWidth/Height mid-rotation; re-measure after
-  // things settle.
-  let settleTimer = 0;
-  function onResize() {
-    apply();
-    clearTimeout(settleTimer);
-    settleTimer = setTimeout(apply, 300);
-  }
-  window.addEventListener('resize', onResize);
-  window.addEventListener('orientationchange', onResize);
+  // The column changes size without a window resize when the panel folds.
+  new ResizeObserver(apply).observe(wrapper);
   apply();
 
   // Tank dims changed: new shell, and the old camera pose is framing a
@@ -374,24 +326,6 @@ export function createScene(wrapper, getRotation = () => 0) {
     home();
   });
 
-  // CSS transforms rotate pixels, not coordinates: touch positions
-  // arrive in viewport space. All canvas-space touch math (raycasts,
-  // hit zones) must pass through here — never use clientX/Y raw.
-  function viewportToCanonical(sx, sy) {
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    switch (rotationDeg) {
-      case 90:
-        return { x: sy, y: vw - sx };
-      case 270:
-        return { x: vh - sy, y: sx };
-      case 180:
-        return { x: vw - sx, y: vh - sy };
-      default:
-        return { x: sx, y: sy };
-    }
-  }
-
   let lastGridDivisions = Math.round(TANK_VISUAL_PARAMS.gridDivisions);
 
   return {
@@ -399,8 +333,6 @@ export function createScene(wrapper, getRotation = () => 0) {
     renderer,
     scene,
     camera,
-    viewportToCanonical,
-    rotationDeg: () => rotationDeg,
     updateOrientation: apply,
     cameraSettings,
     tankVisual: TANK_VISUAL_PARAMS,

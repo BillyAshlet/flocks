@@ -115,7 +115,7 @@ export class ExperimentCameraController {
         <button type="button" id="fish-enter-orbit">Orbit · fullscreen</button>
       </div>
     `;
-    document.getElementById('app').appendChild(inspector);
+    (document.getElementById('stage') ?? document.getElementById('app')).appendChild(inspector);
     inspector
       .querySelector('#fish-inspector-close')
       .addEventListener('click', () => this.clearSelection());
@@ -140,7 +140,7 @@ export class ExperimentCameraController {
       <strong id="fish-view-name">—</strong>
       <kbd>ESC to exit</kbd>
     `;
-    document.getElementById('app').appendChild(hud);
+    (document.getElementById('stage') ?? document.getElementById('app')).appendChild(hud);
     return hud;
   }
 
@@ -591,7 +591,7 @@ export class ExperimentCameraController {
     this.renderer.setViewport(x, y, width, height);
     this.renderer.setScissor(x, y, width, height);
     this.renderer.setScissorTest(true);
-    this.renderer.setClearColor('#dce9ef', 1);
+    this.renderer.setClearColor('#e6e4db', 1);
     this.renderer.clear(true, true, true);
     this.renderer.render(this.simulation.scene, this.previewCamera);
     this.renderer.setClearColor(oldColor, oldAlpha);
