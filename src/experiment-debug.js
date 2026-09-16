@@ -1030,11 +1030,16 @@ export function createExperimentDebug({
     lastUpdate = nowMs;
     const metrics = simulation.metrics();
     const meta = PROJECTS[metrics.project] ?? PROJECTS.aquarium;
+    const ecologyOn = controller.current.ecology.enabled !== false;
+    const predationOn = controller.current.relations.enabled !== false;
+    // Only what this tier has: no food web before hunting exists, no energy
+    // before tier 5. It sits over the tank, so every extra line costs view.
+    const foodWeb = predationOn && metrics.population.length > 1;
     dashboard.dataset.project = metrics.project;
-    dashboardKind.textContent = meta.dashboard;
+    dashboardKind.textContent = foodWeb ? meta.dashboard : 'LIVE SCHOOLS';
     let stateText = 'running';
     if (metrics.project === 'aquarium') {
-      stateText = 'LIVE · SIZE ROLES';
+      stateText = foodWeb ? 'LIVE · SIZE ROLES' : 'LIVE';
     } else if (metrics.project === 'ecology') {
       stateText =
         metrics.ecology.state === 'winner'
@@ -1053,8 +1058,6 @@ export function createExperimentDebug({
             .join('  ')}`
       )
       .join('\n');
-    const ecologyOn = controller.current.ecology.enabled !== false;
-    const predationOn = controller.current.relations.enabled !== false;
     const population = metrics.population
       .map((item) => {
         const ecology = ecologyOn
@@ -1077,8 +1080,9 @@ export function createExperimentDebug({
       ? '体型派生关系（行作用于列）'
       : 'Relations by size (row acts on column) · P hunts · E flees · = peer';
     metricsText.textContent =
-      `${population}\n\n${relationsTitle}\n${matrix}` +
-      `${capture ? `\n${capture}` : ''}` +
+      population +
+      (foodWeb ? `\n\n${relationsTitle}\n${matrix}` : '') +
+      `${foodWeb && capture ? `\n${capture}` : ''}` +
       `${
         ecologyOn
           ? `
@@ -1091,7 +1095,9 @@ outcome=${metrics.ecology.state}${metrics.ecology.winnerName ? ` winner=${metric
           : ''
       }` +
       `\npairs=${metrics.pairCount} sim=${metrics.simulationMs.toFixed(1)}ms render=${metrics.renderFps.toFixed(0)}fps` +
-      `\ncaptures=${metrics.captures} fx=${metrics.captureParticles} deaths=permanent` +
+      (predationOn
+        ? `\ncaptures=${metrics.captures} fx=${metrics.captureParticles} deaths=permanent`
+        : '') +
       `${metrics.warnings.length ? `\nwarning: ${metrics.warnings.join(' · ')}` : ''}`;
   }
 
