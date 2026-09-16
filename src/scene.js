@@ -4,14 +4,16 @@ import { TANK, onTankChange } from './world.js';
 
 const TANK_VISUAL_PARAMS = {
   // Soft grid lines only help depth and camera orientation; they never affect
-  // the simulation. Only the floor carries them: a lattice on every face was
-  // tiring to look at for long and competed with the fish.
+  // the simulation. A full-strength lattice on every face was tiring to look
+  // at for long and competed with the fish, so each face's grid fades with
+  // how squarely it faces the camera: the back wall shows it, walls seen
+  // edge-on barely do, and walls between the camera and the fish not at all.
   gridEnabled: true,
-  gridOpacity: 0.55,
+  gridOpacity: 0.5,
   gridDivisions: 6,
 };
 
-export const SCENE_BACKGROUND = '#efede6';
+export const SCENE_BACKGROUND = '#eee9df';
 
 // Presentation: the canvas fills `wrapper` (the page's middle column) and
 // follows its size. flocks is a desktop page, so the old screen-rotation
@@ -49,52 +51,72 @@ export function createScene(wrapper) {
   let shell = null;
   let shells = [];
 
-  function buildFaceGridGeometry(width, height, depth, divisions) {
-    const div = Math.max(1, Math.round(divisions));
-    const positions = [];
+  // One grid per face, with square-ish cells: `divisions` along the tank's
+  // longest side. Each keeps its outward normal and center for the fading.
+  function buildFaceGrids(width, height, depth, divisions) {
+    const cell = Math.max(width, height, depth) / Math.max(1, Math.round(divisions));
     const hw = width / 2;
     const hh = height / 2;
     const hd = depth / 2;
-
-    const pushLine = (ax, ay, az, bx, by, bz) => {
-      positions.push(ax, ay, az, bx, by, bz);
-    };
-
-    // Floor lattice only, with square-ish cells: `divisions` along the
-    // longer side. The box edges already outline the other faces.
-    const cell = Math.max(width, depth) / div;
-    const across = Math.max(1, Math.round(width / cell));
-    const along = Math.max(1, Math.round(depth / cell));
-    for (let i = 1; i < across; i++) {
-      const x = -hw + (width * i) / across;
-      pushLine(x, -hh, -hd, x, -hh, hd);
-    }
-    for (let i = 1; i < along; i++) {
-      const z = -hd + (depth * i) / along;
-      pushLine(-hw, -hh, z, hw, -hh, z);
-    }
-
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute(
-      'position',
-      new THREE.Float32BufferAttribute(positions, 3)
-    );
-    return geometry;
+    const X = [1, 0, 0];
+    const Y = [0, 1, 0];
+    const Z = [0, 0, 1];
+    const faces = [
+      { normal: [0, 0, -1], center: [0, 0, -hd], u: X, v: Y, uLen: width, vLen: height },
+      { normal: [0, 0, 1], center: [0, 0, hd], u: X, v: Y, uLen: width, vLen: height },
+      { normal: [-1, 0, 0], center: [-hw, 0, 0], u: Z, v: Y, uLen: depth, vLen: height },
+      { normal: [1, 0, 0], center: [hw, 0, 0], u: Z, v: Y, uLen: depth, vLen: height },
+      { normal: [0, -1, 0], center: [0, -hh, 0], u: X, v: Z, uLen: width, vLen: depth },
+      { normal: [0, 1, 0], center: [0, hh, 0], u: X, v: Z, uLen: width, vLen: depth },
+    ];
+    return faces.map((face) => {
+      const positions = [];
+      const point = (a, b) =>
+        [0, 1, 2].map((k) => face.center[k] + face.u[k] * a + face.v[k] * b);
+      const nu = Math.max(1, Math.round(face.uLen / cell));
+      const nv = Math.max(1, Math.round(face.vLen / cell));
+      for (let i = 1; i < nu; i++) {
+        const a = -face.uLen / 2 + (face.uLen * i) / nu;
+        positions.push(...point(a, -face.vLen / 2), ...point(a, face.vLen / 2));
+      }
+      for (let i = 1; i < nv; i++) {
+        const b = -face.vLen / 2 + (face.vLen * i) / nv;
+        positions.push(...point(-face.uLen / 2, b), ...point(face.uLen / 2, b));
+      }
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      const lines = new THREE.LineSegments(
+        geometry,
+        new THREE.LineBasicMaterial({
+          color: '#c3b9a5',
+          transparent: true,
+          opacity: 0,
+          depthWrite: false,
+        })
+      );
+      lines.userData.normal = new THREE.Vector3(...face.normal);
+      lines.userData.center = new THREE.Vector3(...face.center);
+      return lines;
+    });
   }
 
+  const toCamera = new THREE.Vector3();
   function syncTankGrid() {
-    if (!shell?.grid) return;
     const enabled = Boolean(TANK_VISUAL_PARAMS.gridEnabled);
-    const opacity = Math.min(
-      1,
-      Math.max(0, Number(TANK_VISUAL_PARAMS.gridOpacity) || 0)
-    );
+    const base = Math.min(1, Math.max(0, Number(TANK_VISUAL_PARAMS.gridOpacity) || 0));
     for (const item of shells) {
-      item.grid.visible = enabled && opacity > 0;
-      item.grid.material.opacity = opacity;
-      item.grid.material.transparent = opacity < 1;
-      item.grid.material.depthWrite = opacity >= 1;
-      item.grid.material.needsUpdate = true;
+      for (const grid of item.grids) {
+        toCamera
+          .copy(camera.position)
+          .sub(grid.userData.center)
+          .sub(grid.position)
+          .normalize();
+        // Positive for a far face: the camera is on its inner side.
+        const facing = Math.max(0, -toCamera.dot(grid.userData.normal));
+        const opacity = base * facing ** 1.5;
+        grid.visible = enabled && opacity > 0.01;
+        grid.material.opacity = opacity;
+      }
     }
   }
 
@@ -115,13 +137,15 @@ export function createScene(wrapper) {
 
   function buildShell() {
     for (const item of shells) {
-      scene.remove(item.edges, item.panes, item.grid);
+      scene.remove(item.edges, item.panes, ...item.grids);
       item.box.dispose();
       item.edgesGeo.dispose();
       item.edges.material.dispose();
       item.panes.material.dispose();
-      item.gridGeo.dispose();
-      item.grid.material.dispose();
+      for (const grid of item.grids) {
+        grid.geometry.dispose();
+        grid.material.dispose();
+      }
     }
     shells = [];
     const boxes = chamberBoxes ?? [{ centerY: 0, height: TANK.height }];
@@ -136,7 +160,7 @@ export function createScene(wrapper) {
     const edges = new THREE.LineSegments(
       edgesGeo,
       new THREE.LineBasicMaterial({
-        color: '#9b988e',
+        color: '#9a9384',
         // Perspective aquarium: silhouette edges must keep a uniform weight
         // even when a far pane would otherwise depth-occlude them.
         depthTest: false,
@@ -149,28 +173,19 @@ export function createScene(wrapper) {
     const panes = new THREE.Mesh(
       box,
       new THREE.MeshBasicMaterial({
-        color: '#f7f6f1',
+        color: '#f6f2ea',
         side: THREE.BackSide, // far walls only; the front stays clear glass
       })
     );
-    const gridGeo = buildFaceGridGeometry(
+    const grids = buildFaceGrids(
       TANK.width,
       height,
       TANK.depth,
       TANK_VISUAL_PARAMS.gridDivisions
     );
-    const grid = new THREE.LineSegments(
-      gridGeo,
-      new THREE.LineBasicMaterial({
-        color: '#d3cfc3',
-        transparent: true,
-        opacity: TANK_VISUAL_PARAMS.gridOpacity,
-        depthWrite: false,
-      })
-    );
-    for (const node of [panes, edges, grid]) node.position.y = centerY;
-    scene.add(panes, edges, grid);
-    return { box, edgesGeo, edges, panes, gridGeo, grid };
+    for (const node of [panes, edges, ...grids]) node.position.y = centerY;
+    scene.add(panes, edges, ...grids);
+    return { box, edgesGeo, edges, panes, grids };
   }
   buildShell();
 

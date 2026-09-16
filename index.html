@@ -5,20 +5,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>flocks</title>
     <style>
-      /* Warm neutrals: an ivory page, a slightly darker plate for the tank, and
-         near-black ink. The only saturated colors on screen are the three
+      /* Warm neutrals: a light beige page, a slightly darker plate for the tank,
+         and near-black ink. The only saturated colors on screen are the three
          species and the mechanism colors (mechanisms.js). */
       :root {
         color-scheme: light;
-        --paper: #faf9f5;
-        --plate: #efede6;
-        --panel: #f4f3ee;
+        --paper: #f8f5ee;
+        --plate: #eee9df;
+        --panel: #f3efe6;
         --ink: #141413;
-        --ink-soft: #3d3d3a;
-        --muted: #6f6e69;
-        --line: #e3e1d8;
-        --line-strong: #cfccc1;
-        --run-grey: #e6e4db;
+        --ink-soft: #3d3a35;
+        --muted: #716c62;
+        --line: #e2dccf;
+        --line-strong: #cbc3b3;
+        --run-grey: #e6e0d3;
         --alert: #a3483c;
         --serif: "Source Serif 4 Variable", "Source Serif Pro", Georgia, serif;
         --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -38,7 +38,8 @@
          parameters on the right. Nothing floats over the tank except its own
          small readouts, so the text never covers a fish. */
       #app {
-        --paper-width: clamp(380px, 32vw, 520px);
+        /* --paper-custom is set by dragging the paper's edge (main.js). */
+        --paper-width: var(--paper-custom, clamp(380px, 32vw, 520px));
         --panel-width: 340px;
         position: fixed;
         inset: 0;
@@ -57,7 +58,7 @@
         --panel-width: 0px;
       }
       #app:is([data-page="home"], [data-ui-hidden="1"])
-        :is(#topbar, #paper, #panel-column) {
+        :is(#topbar, #paper, #panel-column, #paper-resizer) {
         display: none;
       }
       #app[data-page="home"] {
@@ -117,9 +118,8 @@
       }
       #tier-steps a {
         display: flex;
-        flex-direction: column;
-        justify-content: center;
-        gap: 3px;
+        align-items: center;
+        gap: 8px;
         height: 100%;
         padding: 0 12px;
         box-sizing: border-box;
@@ -128,12 +128,13 @@
         text-decoration: none;
         overflow: hidden;
       }
-      #tier-steps a span {
+      #tier-steps a .step-title {
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
       }
       #tier-steps a .step-number {
+        flex: none;
         color: var(--muted);
         font: 11px/1 var(--mono);
       }
@@ -149,6 +150,36 @@
       }
 
       /* The paper: what was added, why, what to watch, and the model. */
+      /* Drag the paper's right edge to widen it for long formulas;
+         double-click to reset. */
+      #paper-resizer {
+        position: absolute;
+        top: 52px;
+        bottom: 0;
+        left: calc(var(--paper-width) - 4px);
+        z-index: 6;
+        width: 8px;
+        cursor: col-resize;
+        touch-action: none;
+      }
+      #paper-resizer::after {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: 3px;
+        width: 2px;
+        background: transparent;
+        content: "";
+        transition: background 120ms ease;
+      }
+      #paper-resizer:hover::after,
+      #app[data-resizing="1"] #paper-resizer::after {
+        background: var(--line-strong);
+      }
+      #app[data-resizing="1"] {
+        cursor: col-resize;
+        user-select: none;
+      }
       #paper {
         grid-area: paper;
         min-height: 0;
@@ -301,7 +332,7 @@
         transform: translateX(-50%);
         padding: 5px 10px;
         border: 1px solid var(--line);
-        background: rgba(250, 249, 245, 0.9);
+        background: rgba(248, 245, 238, 0.9);
         color: var(--muted);
         font: 11px var(--mono);
         letter-spacing: 0.04em;
@@ -332,7 +363,7 @@
         z-index: 4;
         width: min(360px, calc(100% - 24px));
         border: 1px solid var(--line);
-        background: rgba(250, 249, 245, 0.92);
+        background: rgba(248, 245, 238, 0.92);
         color: var(--ink-soft);
         pointer-events: none;
         transition:
@@ -469,7 +500,7 @@
         min-width: 180px;
         padding: 8px 10px;
         border-left: 3px solid var(--ink);
-        background: rgba(250, 249, 245, 0.9);
+        background: rgba(248, 245, 238, 0.9);
         color: var(--ink-soft);
         pointer-events: none;
       }
@@ -503,7 +534,7 @@
         padding: 26px 28px;
         transform: translateY(-50%);
         border: 1px solid var(--line);
-        background: rgba(250, 249, 245, 0.94);
+        background: rgba(248, 245, 238, 0.94);
         color: var(--ink);
       }
       #home[hidden] {
@@ -597,23 +628,23 @@
         --tp-blade-border-radius: 2px;
         --tp-container-unit-size: 22px;
         --tp-blade-value-width: 150px;
-        --tp-button-background-color: #e8e6dc;
-        --tp-button-background-color-active: #d6d3c8;
-        --tp-button-background-color-focus: #dfddd3;
-        --tp-button-background-color-hover: #dfddd3;
+        --tp-button-background-color: #e6e0d3;
+        --tp-button-background-color-active: #d6cfbf;
+        --tp-button-background-color-focus: #ded8ca;
+        --tp-button-background-color-hover: #ded8ca;
         --tp-button-foreground-color: var(--ink);
-        --tp-container-background-color: #ebe9e1;
-        --tp-container-background-color-active: #dcd9ce;
-        --tp-container-background-color-focus: #e2e0d6;
-        --tp-container-background-color-hover: #e4e2d9;
+        --tp-container-background-color: #e9e4d8;
+        --tp-container-background-color-active: #dbd4c5;
+        --tp-container-background-color-focus: #e1dbce;
+        --tp-container-background-color-hover: #e3ddd0;
         --tp-container-foreground-color: var(--ink-soft);
-        --tp-groove-foreground-color: #d6d3c8;
+        --tp-groove-foreground-color: #d4ccbb;
         --tp-input-background-color: var(--paper);
-        --tp-input-background-color-active: #efede6;
-        --tp-input-background-color-focus: #f3f2ec;
-        --tp-input-background-color-hover: #f6f5f0;
+        --tp-input-background-color-active: #eee9df;
+        --tp-input-background-color-focus: #f1ede4;
+        --tp-input-background-color-hover: #f4f0e8;
         --tp-input-foreground-color: var(--ink);
-        --tp-label-foreground-color: #5c5b56;
+        --tp-label-foreground-color: #5e5a52;
         --tp-monitor-background-color: var(--paper);
         --tp-monitor-foreground-color: var(--ink-soft);
       }
@@ -624,7 +655,7 @@
       }
       /* Run controls are not part of the model: always open, set in grey. */
       #panel-holder .tp-fldv.is-run > .tp-fldv_b {
-        background: #dcd9ce;
+        background: #dcd5c6;
         pointer-events: none;
       }
       #panel-holder .tp-fldv.is-run > .tp-fldv_b .tp-fldv_m {
@@ -636,7 +667,7 @@
       /* The school editor takes the school's own color. */
       #panel-holder .tp-fldv.school-editor > .tp-fldv_b {
         box-shadow: inset 0 -2px 0 var(--school-color);
-        background: color-mix(in srgb, var(--school-color) 22%, #ebe9e1);
+        background: color-mix(in srgb, var(--school-color) 22%, #e9e4d8);
       }
       #panel-holder .tp-fldv.school-editor > .tp-fldv_c {
         background: color-mix(in srgb, var(--school-color) 9%, var(--panel));
@@ -776,6 +807,7 @@
         </nav>
       </header>
       <article id="paper" aria-label="About this tier"></article>
+      <div id="paper-resizer" role="separator" aria-orientation="vertical" aria-label="Resize the text column" title="Drag to resize · double-click to reset"></div>
       <main id="stage">
         <button id="lab-reset" type="button" hidden>Reset fish</button>
         <section id="home" hidden>

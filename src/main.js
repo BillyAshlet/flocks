@@ -291,6 +291,48 @@ async function bootstrap() {
     tierSteps.appendChild(item);
   }
 
+  // Dragging the paper's edge widens it, for formulas that do not fit.
+  // Remembered per browser; storage can be missing (private mode), which only
+  // means the width is not remembered.
+  const PAPER_WIDTH_KEY = 'flocks.paperWidth';
+  const resizer = document.getElementById('paper-resizer');
+  function setPaperWidth(px) {
+    if (px === null) {
+      app.style.removeProperty('--paper-custom');
+      return;
+    }
+    const panel = document.getElementById('panel-column').offsetWidth;
+    const max = Math.max(320, window.innerWidth - panel - 320);
+    app.style.setProperty('--paper-custom', `${Math.round(Math.min(max, Math.max(320, px)))}px`);
+  }
+  try {
+    const saved = Number(localStorage.getItem(PAPER_WIDTH_KEY));
+    if (saved > 0) setPaperWidth(saved);
+  } catch {}
+  resizer.addEventListener('pointerdown', (event) => {
+    event.preventDefault();
+    resizer.setPointerCapture(event.pointerId);
+    app.dataset.resizing = '1';
+  });
+  resizer.addEventListener('pointermove', (event) => {
+    if (app.dataset.resizing === '1') setPaperWidth(event.clientX);
+  });
+  const endResize = () => {
+    if (app.dataset.resizing !== '1') return;
+    app.dataset.resizing = '';
+    try {
+      localStorage.setItem(PAPER_WIDTH_KEY, String(paper.offsetWidth));
+    } catch {}
+  };
+  resizer.addEventListener('pointerup', endResize);
+  resizer.addEventListener('pointercancel', endResize);
+  resizer.addEventListener('dblclick', () => {
+    setPaperWidth(null);
+    try {
+      localStorage.removeItem(PAPER_WIDTH_KEY);
+    } catch {}
+  });
+
   function setPanelCollapsed(collapsed) {
     app.dataset.panelCollapsed = collapsed ? '1' : '';
     panelToggle.textContent = collapsed ? '‹' : 'Hide ›';

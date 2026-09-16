@@ -591,7 +591,7 @@ export class ExperimentCameraController {
     this.renderer.setViewport(x, y, width, height);
     this.renderer.setScissor(x, y, width, height);
     this.renderer.setScissorTest(true);
-    this.renderer.setClearColor('#e6e4db', 1);
+    this.renderer.setClearColor('#e6e0d3', 1);
     this.renderer.clear(true, true, true);
     this.renderer.render(this.simulation.scene, this.previewCamera);
     this.renderer.setClearColor(oldColor, oldAlpha);
