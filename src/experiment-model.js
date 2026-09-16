@@ -244,6 +244,8 @@ export function ecologyOutcome(aliveCounts) {
 export function relationForRatio(ratio, relations, previous = 'ignore') {
   const { k, hysteresis } = relations;
   if (!Number.isFinite(ratio) || ratio <= 0) return 'ignore';
+  // Predation switched off: sizes still differ, but nobody hunts anybody.
+  if (relations.enabled === false) return 'peer';
   // 猎物体型窗口上界。生态学依据：捕食者只吃特定体型带内的猎物
   // （鲸不追单只磷虾）。KMax<=0 或未设置 = 退回纯阈值。
   // k × KMax = 大鱼体型/小鱼体型 时，"能吃"与"会被吃"两个区间完全重合，

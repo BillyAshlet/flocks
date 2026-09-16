@@ -505,41 +505,45 @@ export function createExperimentDebug({
       title: `${t('鱼群')} ${selectedSchoolIndex + 1}/${schools.length} · ${school.name}`,
       expanded: true,
     });
-    editor
-      .addButton({ title: t('← 上一个鱼群') })
-      .on('click', () => {
-        selectedSchoolIndex =
-          (selectedSchoolIndex - 1 + schools.length) % schools.length;
-        rebuildPane();
-      });
-    editor
-      .addButton({ title: t('下一个鱼群 →') })
-      .on('click', () => {
-        selectedSchoolIndex =
-          (selectedSchoolIndex + 1) % schools.length;
-        rebuildPane();
-      });
-    editor
-      .addButton({ title: t('+ 新增鱼群（复制当前）') })
-      .on('click', () => {
-        controller.addSchool(selectedSchoolIndex);
-        selectedSchoolIndex = controller.stage.schools.length - 1;
-        rebuildPane();
-      });
-    editor
-      .addButton({ title: t('− 删除当前鱼群') })
-      .on('click', () => {
-        try {
-          controller.removeSchool(selectedSchoolIndex);
-          selectedSchoolIndex = Math.min(
-            selectedSchoolIndex,
-            controller.stage.schools.length - 1
-          );
+    if (schools.length > 1) {
+      editor
+        .addButton({ title: t('← 上一个鱼群') })
+        .on('click', () => {
+          selectedSchoolIndex =
+            (selectedSchoolIndex - 1 + schools.length) % schools.length;
           rebuildPane();
-        } catch (error) {
-          window.alert(error.message);
-        }
-      });
+        });
+      editor
+        .addButton({ title: t('下一个鱼群 →') })
+        .on('click', () => {
+          selectedSchoolIndex =
+            (selectedSchoolIndex + 1) % schools.length;
+          rebuildPane();
+        });
+    }
+    if (controller.panelScope?.allowSchoolEditing ?? true) {
+      editor
+        .addButton({ title: t('+ 新增鱼群（复制当前）') })
+        .on('click', () => {
+          controller.addSchool(selectedSchoolIndex);
+          selectedSchoolIndex = controller.stage.schools.length - 1;
+          rebuildPane();
+        });
+      editor
+        .addButton({ title: t('− 删除当前鱼群') })
+        .on('click', () => {
+          try {
+            controller.removeSchool(selectedSchoolIndex);
+            selectedSchoolIndex = Math.min(
+              selectedSchoolIndex,
+              controller.stage.schools.length - 1
+            );
+            rebuildPane();
+          } catch (error) {
+            window.alert(error.message);
+          }
+        });
+    }
 
     roleState = {
       role: t('计算中…'),
@@ -574,7 +578,8 @@ export function createExperimentDebug({
         const relative = spec.path.slice(prefix.length);
         return section.fields.some(
           (field) =>
-            relative === field || relative.startsWith(`${field}.`)
+            (relative === field || relative.startsWith(`${field}.`)) &&
+            schoolFieldVisible(field)
         );
       });
       if (
@@ -612,6 +617,17 @@ export function createExperimentDebug({
     }
   }
 
+  // A research tier can narrow the panel to the parameters it introduces.
+  // Without a scope the panel falls back to the per-project rules.
+  function globalVisible(project, spec) {
+    const scope = controller.panelScope;
+    return scope ? scope.showGlobal(spec) : groupVisible(project, spec.group);
+  }
+
+  function schoolFieldVisible(field) {
+    return controller.panelScope?.showSchoolField(field) ?? true;
+  }
+
   function addGlobalParameters(root, registry) {
     const project = controller.stage.runtime.project;
     const folders = new Map();
@@ -620,7 +636,7 @@ export function createExperimentDebug({
         spec.path.startsWith('schools.') ||
         spec.path === 'runtime.project' ||
         SCHOOL_EMBEDDED_GLOBAL_PATHS.has(spec.path) ||
-        !groupVisible(project, spec.group)
+        !globalVisible(project, spec)
       ) {
         continue;
       }
@@ -643,10 +659,11 @@ export function createExperimentDebug({
     // switcher and selected-school editor therefore cannot retain listeners.
     pane?.dispose();
     holder.replaceChildren();
-    addProjectSwitcher();
+    const scope = controller.panelScope;
+    if (!scope) addProjectSwitcher();
     const meta = projectMeta();
     pane = new Pane({
-      title: `${meta.eyebrow} · ${t('参数')}`,
+      title: `${scope?.eyebrow ?? meta.eyebrow} · ${t('参数')}`,
       container: holder,
     });
     addLanguageToggle(pane);
@@ -688,9 +705,11 @@ export function createExperimentDebug({
     const meta = PROJECTS[metrics.project] ?? PROJECTS.aquarium;
     dashboard.dataset.project = metrics.project;
     dashboardKind.textContent = meta.dashboard;
-    document.getElementById('lab-title').textContent = meta.title;
-    document.getElementById('lab-subtitle').textContent =
-      `${meta.eyebrow} · Three.js`;
+    if (!controller.panelScope) {
+      document.getElementById('lab-title').textContent = meta.title;
+      document.getElementById('lab-subtitle').textContent =
+        `${meta.eyebrow} · Three.js`;
+    }
     let stateText = 'running';
     if (metrics.project === 'aquarium') {
       stateText = 'LIVE · SIZE ROLES';

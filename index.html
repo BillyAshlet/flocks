@@ -595,8 +595,8 @@
   </head>
   <body>
     <style>
-      /* Developer controls exist only while #app is in developer mode.
-         The lab is always in that mode; the rule keeps the switch in one place. */
+      /* Developer controls exist only while #app is in developer mode,
+         which main.js turns on for the tier pages and off for home. */
       #app:not([data-developer="1"])
         :is(#panel-holder, #lab-mark, #experiment-dashboard) {
         display: none !important;
@@ -605,20 +605,127 @@
       /* Press 1 to hide every overlay — for demos, screenshots and recordings. */
       #app[data-ui-hidden="1"] #panel-holder,
       #app[data-ui-hidden="1"] #lab-mark,
+      #app[data-ui-hidden="1"] #lab-reset,
+      #app[data-ui-hidden="1"] #tier-nav,
+      #app[data-ui-hidden="1"] #tier-summary,
       #app[data-ui-hidden="1"] #startup-status,
       #app[data-ui-hidden="1"] #experiment-dashboard,
       #app[data-ui-hidden="1"] #fish-inspector,
       #app[data-ui-hidden="1"] #fish-view-hud {
         display: none !important;
       }
+
+      #app:not([data-page="tier"]) :is(#time-shortcut-hud, #tier-summary) {
+        display: none !important;
+      }
+
+      #tier-nav {
+        position: absolute;
+        top: calc(max(14px, env(safe-area-inset-top)) + 80px);
+        left: max(16px, env(safe-area-inset-left));
+        z-index: 3;
+        display: flex;
+        gap: 6px;
+      }
+      #tier-nav[hidden] {
+        display: none;
+      }
+      #tier-nav :is(a, button) {
+        padding: 6px 10px;
+        border: 1px solid #b9cbd8;
+        background: var(--lab-bg);
+        color: #4d6477;
+        font: inherit;
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 0.14em;
+        text-decoration: none;
+        text-transform: uppercase;
+        cursor: pointer;
+      }
+      #tier-nav :is(a, button):hover:not(:disabled) {
+        border-color: #71889a;
+        color: #22323f;
+      }
+      #tier-nav button:disabled {
+        opacity: 0.4;
+        cursor: default;
+      }
+
+      #tier-summary {
+        position: absolute;
+        top: calc(max(14px, env(safe-area-inset-top)) + 118px);
+        left: max(16px, env(safe-area-inset-left));
+        z-index: 2;
+        max-width: 300px;
+        margin: 0;
+        padding: 8px 10px;
+        background: var(--lab-bg);
+        color: var(--lab-muted);
+        font-size: 11px;
+        line-height: 1.5;
+      }
+
+      #home {
+        position: absolute;
+        top: 50%;
+        left: max(32px, env(safe-area-inset-left));
+        z-index: 10;
+        max-width: 360px;
+        padding: 24px 26px;
+        transform: translateY(-50%);
+        border: 1px solid var(--lab-line);
+        background: rgba(247, 242, 234, 0.92);
+        color: var(--lab-ink);
+      }
+      #home[hidden] {
+        display: none;
+      }
+      #home h1 {
+        margin: 0 0 10px;
+        font-size: 22px;
+        font-weight: 650;
+        letter-spacing: 0.08em;
+      }
+      #home p {
+        margin: 0 0 18px;
+        color: var(--lab-muted);
+        font-size: 12px;
+        line-height: 1.6;
+      }
+      #home a {
+        display: inline-block;
+        padding: 8px 14px;
+        border: 1px solid #71889a;
+        color: #22323f;
+        font-size: 11px;
+        font-weight: 650;
+        letter-spacing: 0.16em;
+        text-decoration: none;
+        text-transform: uppercase;
+      }
+      #home a:hover {
+        background: #e7f1f8;
+      }
     </style>
-    <div id="app" data-developer="1">
+    <div id="app">
       <h1 id="lab-mark">
-        <b id="lab-title">Aquarium</b>
-        <span id="lab-subtitle">MAIN PROJECT · Three.js</span>
+        <b id="lab-title">flocks</b>
+        <span id="lab-subtitle"></span>
       </h1>
       <button id="lab-reset" type="button" hidden>Reset</button>
+      <nav id="tier-nav" aria-label="Tiers" hidden>
+        <a href="/" data-route>Home</a>
+        <button id="tier-prev" type="button">← Previous</button>
+        <button id="tier-next" type="button">Next →</button>
+      </nav>
+      <p id="tier-summary"></p>
       <aside id="panel-holder" aria-label="Simulation parameters"></aside>
+      <section id="home" hidden>
+        <h1>flocks</h1>
+        <p>Placeholder: one or two sentences about the project.</p>
+        <a href="/tier/1" data-route>Enter</a>
+      </section>
       <div id="startup-status" role="status" aria-live="polite">Starting simulation…</div>
     </div>
     <script type="module" src="/src/main.js"></script>

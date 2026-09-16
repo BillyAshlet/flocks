@@ -49,6 +49,7 @@ const DICT = {
   感知: ['Perception', '感知'],
   跨鱼群作用: ['Cross-school', '跨鱼群作用'],
   关系: ['Relations', '关系'],
+  'predation enabled': ['predation enabled', '启用捕食'],
   运动: ['Motion', '运动'],
   生态能量: ['Ecology · energy', '生态能量'],
   'Trait Coupling': ['Trait Coupling', '三轴耦合'],

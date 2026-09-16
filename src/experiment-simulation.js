@@ -2480,6 +2480,7 @@ export class ExperimentSimulation {
   }
 
   _capture(dt) {
+    if (this.config.relations.enabled === false) return;
     const incidentalOn = this.config.capture.incidentalCapture !== false;
     for (let predator = 0; predator < this.count; predator += 1) {
       if (this._isFrozen(predator) || !this.alive[predator]) {

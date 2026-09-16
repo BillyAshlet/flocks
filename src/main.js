@@ -3,7 +3,8 @@
  *
  * Boots the aquarium lab: one Three.js scene, the fixed-step world clock,
  * the boid simulation, the camera controller and the parameter panel.
- * Research tiers and routing are layered on top of this in a later step.
+ * Routes: `/` is the home page (the full ecosystem, view only) and
+ * `/tier/1` … `/tier/6` are the research tiers.
  */
 import * as THREE from 'three';
 import { World, TANK, notifyTankChange } from './world.js';
@@ -21,11 +22,24 @@ import { ExperimentCameraController } from './experiment-camera.js';
 import { createExperimentDebug } from './experiment-debug.js';
 import { TimeShortcutController } from './time-shortcuts.js';
 import { RadiusVisualizer } from './radius-visualizer.js';
+import { TIER_COUNT, tierByNumber, tierConfig, tierPanelScope } from './tiers.js';
 
 const startup = document.getElementById('startup-status');
 const app = document.getElementById('app');
 
 const SCENE_BACKGROUND = '#f4efe6';
+
+function parseRoute(pathname) {
+  const match = pathname.match(/^\/tier\/(\d+)\/?$/);
+  if (match && tierByNumber(Number(match[1]))) {
+    return { page: 'tier', number: Number(match[1]) };
+  }
+  return { page: 'home' };
+}
+
+function routePath(route) {
+  return route.page === 'tier' ? `/tier/${route.number}` : '/';
+}
 
 function setStartup(message, state = 'loading') {
   startup.textContent = message;
@@ -106,7 +120,8 @@ function applyTankPreset(stage) {
 async function bootstrap() {
   setStartup('Starting simulation…');
   const world = new World();
-  let current = createDefaultConfig();
+  let route = parseRoute(window.location.pathname);
+  let current = tierConfig(route.page === 'tier' ? route.number : TIER_COUNT);
   let stage = deepClone(current);
   syncTank(current);
 
@@ -137,17 +152,23 @@ async function bootstrap() {
   let debug = null;
   let timeShortcuts = null;
 
+  // The home page is view only: no panel, no fish picking, no time keys.
   function syncPresentation() {
+    const onTier = route.page === 'tier';
+    app.dataset.page = route.page;
     app.dataset.project = current.runtime.project;
-    app.dataset.timeKeys = '1';
+    app.dataset.developer = onTier ? '1' : '';
+    app.dataset.timeKeys = onTier ? '1' : '';
     simulation.setLocomotionPreview(false);
     scene.background?.set?.(SCENE_BACKGROUND);
     presentation.setTankChambers(null);
-    cameraController.setInteractionEnabled(true);
-    timeShortcuts?.setEnabled(true);
+    cameraController.setInteractionEnabled(onTier);
+    timeShortcuts?.setEnabled(onTier);
   }
 
   const controller = {
+    // Set per route; narrows the parameter panel to one tier.
+    panelScope: null,
     get current() {
       return current;
     },
@@ -260,22 +281,73 @@ async function bootstrap() {
     },
   });
 
-  // The lab is always in developer mode: the parameter panel is the product.
-  app.dataset.developer = '1';
   debug = createExperimentDebug({ controller, simulation });
-  debug.rebuildPane();
-  syncPresentation();
+
+  const labReset = document.getElementById('lab-reset');
+  const tierTitle = document.getElementById('lab-title');
+  const tierSubtitle = document.getElementById('lab-subtitle');
+  const tierSummary = document.getElementById('tier-summary');
+  const tierNav = document.getElementById('tier-nav');
+  const tierPrev = document.getElementById('tier-prev');
+  const tierNext = document.getElementById('tier-next');
+  const home = document.getElementById('home');
+
+  function renderChrome() {
+    const onTier = route.page === 'tier';
+    home.hidden = onTier;
+    labReset.hidden = !onTier;
+    tierNav.hidden = !onTier;
+    if (!onTier) {
+      document.title = 'flocks';
+      return;
+    }
+    const tier = tierByNumber(route.number);
+    tierTitle.textContent = `${tier.number} · ${tier.title}`;
+    tierSubtitle.textContent = `Tier ${tier.number} of ${TIER_COUNT}`;
+    tierSummary.textContent = tier.summary;
+    tierPrev.disabled = tier.number === 1;
+    tierNext.disabled = tier.number === TIER_COUNT;
+    document.title = `flocks · ${tier.title}`;
+  }
+
+  // Every route change rebuilds the scene from that tier's configuration.
+  // Home runs the final tier so visitors first see the full ecosystem.
+  function showRoute(next, { push = false } = {}) {
+    route = next;
+    const number = route.page === 'tier' ? route.number : TIER_COUNT;
+    controller.panelScope = tierPanelScope(number);
+    stage = tierConfig(number);
+    controller.applyConfig('rebuildScene');
+    if (route.page === 'tier') debug.rebuildPane();
+    renderChrome();
+    if (push) history.pushState(null, '', routePath(route));
+    world.resetTiming(performance.now());
+  }
+
+  function goToTier(number) {
+    showRoute({ page: 'tier', number }, { push: true });
+  }
+
+  tierPrev.addEventListener('click', () => goToTier(route.number - 1));
+  tierNext.addEventListener('click', () => goToTier(route.number + 1));
+  for (const link of document.querySelectorAll('[data-route]')) {
+    link.addEventListener('click', (event) => {
+      event.preventDefault();
+      showRoute(parseRoute(link.getAttribute('href')), { push: true });
+    });
+  }
+  window.addEventListener('popstate', () => {
+    showRoute(parseRoute(window.location.pathname));
+  });
 
   // Same path as "reset current project" in the panel: rebuilds the
   // simulation only and never touches the staged parameters.
-  const labReset = document.getElementById('lab-reset');
-  if (labReset) {
-    labReset.hidden = false;
-    labReset.addEventListener('click', () => {
-      controller.reset();
-      world.resetTiming(performance.now());
-    });
-  }
+  labReset.addEventListener('click', () => {
+    controller.reset();
+    world.resetTiming(performance.now());
+  });
+
+  showRoute(route);
 
   const experimentApi = {
     stageConfig(next) {
@@ -299,12 +371,8 @@ async function bootstrap() {
     },
     reset: () => controller.reset(),
     metrics: () => simulation.metrics(),
-    setProject(project) {
-      stage.runtime.project = project;
-      const result = controller.applyConfig('rebuildScene', 'runtime.project');
-      debug?.rebuildPane();
-      return result;
-    },
+    goToTier,
+    goHome: () => showRoute({ page: 'home' }, { push: true }),
   };
   Object.defineProperties(experimentApi, {
     config: { enumerable: true, get: () => current },

@@ -134,6 +134,9 @@ export const DEFAULT_EXPERIMENT_CONFIG = Object.freeze({
     crossSeparationScale: 0.15,
   },
   relations: {
+    // Master switch for predation. When false, every pair of schools is
+    // treated as peers and no capture happens, whatever their sizes.
+    enabled: true,
     k: 1.35,
     // 【原依据已证伪】此处曾写「见 tools/ecosystem_search.py：搜索 216 种
     // 结构，稳定的前 8 名全部是 KMax=1.667」。该脚本把 Kleiber 写反了
@@ -698,6 +701,7 @@ const scalarEntries = [
     'live',
     { min: 0.02, max: 0.5, step: 0.01 }
   ),
+  entry('relations.enabled', '关系', 'predation enabled', 'live'),
   entry('relations.KMax', '关系', '猎物体型窗口上界', 'live', {
     min: 1.05,
     max: 6,

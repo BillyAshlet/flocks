@@ -5,6 +5,7 @@ import { createDefaultConfig } from './experiment-config.js';
 import {
 } from './experiment-model.js';
 import { ExperimentSimulation } from './experiment-simulation.js';
+import { relationForRatio } from './experiment-model.js';
 
 function smallSimulation(mode = 'steady', seed = 1001, withScene = false) {
   const config = createDefaultConfig();
@@ -646,4 +647,26 @@ test('chamber isolation makes two sub-tanks invisible to each other', () => {
     assert.ok(y >= bounds.center[1] - bounds.half[1] - 1e-6);
     assert.ok(y <= bounds.center[1] + bounds.half[1] + 1e-6);
   }
+});
+
+test('predation switch turns every size ratio into peers', () => {
+  const relations = { ...createDefaultConfig().relations, enabled: false };
+  for (const ratio of [0.4, 0.8, 1, 1.5, 2.25, 4]) {
+    assert.equal(relationForRatio(ratio, relations), 'peer');
+  }
+  assert.equal(
+    relationForRatio(1.5, { ...relations, enabled: true }),
+    'pursuit'
+  );
+});
+
+test('with predation switched off a predator touching its prey eats nothing', () => {
+  const simulation = smallSimulation('steady', 1001, true);
+  simulation.config.relations.enabled = false;
+  const prey = 0;
+  const predator = simulation.schoolRanges[1].start;
+  simulation.positions.fill(0);
+  simulation.pursuitTargets[predator] = prey;
+  simulation._capture(1 / 60);
+  assert.equal(simulation.alive[prey], 1);
 });
