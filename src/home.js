@@ -1,9 +1,9 @@
 /**
  * The home page, rendered into the paper column beside the running tank:
- * what flocks is, who made it, the chapters, and the earlier projects it
- * grew out of.
+ * what flocks is, who made it, the chapters, and the iteration path of
+ * projects it grew out of.
  */
-import { CHAPTERS } from './chapters.js';
+import { CHAPTERS, chapterHref } from './chapters.js';
 import { TIER_TEXT } from './tier-text.js';
 
 const AUTHOR = {
@@ -13,21 +13,27 @@ const AUTHOR = {
   website: 'https://www.billyashlet.com',
 };
 
-const EARLIER_WORK = [
+// The line of projects flocks grew out of, in the order they were made, all
+// built on the same fish engine.
+const ITERATION_PATH = [
   {
     title: 'The boid aquarium',
     href: 'https://boid.billyashlet.com',
-    note: 'July 2026. The aquarium the fish engine started in.',
+    note: 'July 2026. A desktop aquarium, where the fish engine started.',
   },
   {
     title: 'Downstream',
     href: 'https://advx.billyashlet.com',
-    note: 'AdventureX 2026, team project.',
+    note: 'Mid-July 2026, AdventureX, team project.',
   },
   {
     title: 'Echo Cartography',
     href: 'https://manycore.billyashlet.com',
-    note: 'Manycore workshop, August 2026, team project.',
+    note: 'August 2026, Manycore workshop, team project.',
+  },
+  {
+    title: 'flocks',
+    note: 'September 2026. This site.',
   },
 ];
 
@@ -78,20 +84,26 @@ export function renderHome(container, { onChapter } = {}) {
   for (const chapter of CHAPTERS) {
     const item = element('li');
     const link = element('a');
-    link.href = `/tier/${chapter.number}`;
+    link.href = chapterHref(chapter);
     link.append(
-      element('span', 'home-chapter-number', String(chapter.number)),
+      element('span', 'home-chapter-number', chapter.label ?? String(chapter.number)),
       element('span', 'home-chapter-title', chapter.title),
       element(
         'span',
         'home-chapter-summary',
-        TIER_TEXT[chapter.number]?.summary ?? TIER_TEXT[chapter.number]?.added ?? ''
+        chapter.summary ??
+          TIER_TEXT[chapter.number]?.summary ??
+          TIER_TEXT[chapter.number]?.added ??
+          ''
       )
     );
-    link.addEventListener('click', (event) => {
-      event.preventDefault();
-      onChapter?.(chapter.number);
-    });
+    // A chapter on another page (the bonus) is followed as a plain link.
+    if (!chapter.href) {
+      link.addEventListener('click', (event) => {
+        event.preventDefault();
+        onChapter?.(chapter.number);
+      });
+    }
     item.append(link);
     contents.append(item);
   }
@@ -106,15 +118,20 @@ export function renderHome(container, { onChapter } = {}) {
     )
   );
 
-  container.append(element('h2', '', 'Earlier work'));
-  const earlier = element('ul', 'home-earlier');
-  for (const work of EARLIER_WORK) {
+  container.append(element('h2', '', 'Iteration path'));
+  const earlier = element('ol', 'home-earlier');
+  for (const work of ITERATION_PATH) {
     const item = element('li');
-    const link = element('a', '', work.title);
-    link.href = work.href;
-    link.target = '_blank';
-    link.rel = 'noopener';
-    item.append(link, element('span', 'home-earlier-note', work.note));
+    let title;
+    if (work.href) {
+      title = element('a', '', work.title);
+      title.href = work.href;
+      title.target = '_blank';
+      title.rel = 'noopener';
+    } else {
+      title = element('strong', '', work.title);
+    }
+    item.append(title, element('span', 'home-earlier-note', work.note));
     earlier.append(item);
   }
   container.append(earlier);
