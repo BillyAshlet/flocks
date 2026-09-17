@@ -6,7 +6,12 @@
 import { CHAPTERS } from './chapters.js';
 import { TIER_TEXT } from './tier-text.js';
 
-const AUTHOR = { name: 'Billy Ashlet', nativeName: '岳昆林', email: 'billyashlet@outlook.com' };
+const AUTHOR = {
+  name: 'Billy Ashlet',
+  nativeName: '岳昆林',
+  email: 'billyashlet@outlook.com',
+  website: 'https://www.billyashlet.com',
+};
 
 const EARLIER_WORK = [
   {
@@ -53,8 +58,12 @@ export function renderHome(container, { onChapter } = {}) {
   );
   const mail = element('a', 'home-email', AUTHOR.email);
   mail.href = `mailto:${AUTHOR.email}`;
+  const site = element('a', 'home-website', 'billyashlet.com');
+  site.href = AUTHOR.website;
+  site.target = '_blank';
+  site.rel = 'noopener';
   const contact = element('p', 'home-contact');
-  contact.append(mail);
+  contact.append(mail, element('span', 'home-contact-separator', ' · '), site);
   const start = element('a', 'home-start', 'Start with the overview →');
   start.href = '/tier/0';
   start.addEventListener('click', (event) => {
