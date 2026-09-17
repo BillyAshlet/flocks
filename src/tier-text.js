@@ -123,6 +123,34 @@ const separationFalloff = (config) =>
 const inverseCohesion = (config) => config.perception.cohesionFalloff === 'inverse';
 
 export const TIER_TEXT = {
+  // Before the tiers: what the whole thing is, shown running, and how to read
+  // the pages that follow. `sections` replaces added / why / watch here.
+  0: {
+    summary: 'The whole ecosystem at once, and how the tiers build it.',
+    sections: [
+      {
+        heading: 'What you are looking at',
+        paragraphs: [
+          'flocks is a fish-school system grown out of Craig Reynolds’ boids, one rule at a time. The tank is running all of it at once: three species of different sizes, hunting, panic that spreads through a school, energy, plankton, and a few finer mechanisms.',
+          'No fish knows the shape of its school. Each one follows local rules and looks only at the fish around it; the pods, startles, chases and die-offs come from that.',
+        ],
+      },
+      {
+        heading: 'How it is built up',
+        paragraphs: [
+          'The next six tiers take it apart and build it back up, starting from plain boids. Each tier adds one kind of rule and says what was added, why I added it, and what to watch for. Below that is the model: the rule as it is in the code, with every symbol named.',
+        ],
+      },
+      {
+        heading: 'How to read a tier',
+        list: [
+          'Highlighted symbols in a formula can be changed. Click one to open its slider on the right.',
+          'Bold parameters in the panel are new at that tier; their folders take the color of their mechanism.',
+          'Hold Enter to speed time up, hold Space to slow it down. Drag to orbit the tank.',
+        ],
+      },
+    ],
+  },
   1: {
     added: 'Three rules per fish (separation, alignment, cohesion) and walls.',
     why: [
@@ -742,7 +770,7 @@ export const TIER_TEXT = {
         {
           title: 'Also open at this tier',
           list: [
-            'Tank size, the smallest neighbor radius, and how separation and cohesion fall off with distance.',
+            'The smallest neighbor radius, and how separation and cohesion fall off with distance.',
             'How strongly species push each other apart, the force cap, the pitch limit and the wander.',
             'The finer panic settings from tier 4: how a threat grips and lets go, how long panic holds, how fast the pulse fades, and how panic changes turning, speed and cohesion.',
             'The finer energy settings from tier 5: store size and its scaling, grazing thresholds and reach, and plankton particle settings.',
@@ -750,5 +778,27 @@ export const TIER_TEXT = {
         },
       ],
     },
+  },
+  // After the tiers: where this is going.
+  7: {
+    summary: 'What I plan to add next.',
+    sections: [
+      {
+        heading: 'Not finished',
+        paragraphs: [
+          'flocks is a work in progress, and I will keep updating it slowly. These are the next things I want to add.',
+        ],
+        list: [
+          'The tank itself: obstacles inside it and larger, differently shaped environments, so schools have to split around things and find each other again.',
+          'More of the ecosystem, with more ways for species to depend on each other.',
+        ],
+      },
+      {
+        heading: 'Get in touch',
+        paragraphs: [
+          'If you have questions or ideas, write to me at billyashlet@gmail.com.',
+        ],
+      },
+    ],
   },
 };

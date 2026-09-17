@@ -3,8 +3,9 @@
  *
  * Boots the aquarium lab: one Three.js scene, the fixed-step world clock,
  * the boid simulation, the camera controller and the parameter panel.
- * Routes: `/` is the home page (the full ecosystem, view only) and
- * `/tier/1` … `/tier/6` are the research tiers.
+ * Routes: `/` is the home page (the full ecosystem, view only),
+ * `/tier/1` … `/tier/6` are the research tiers, and `/tier/0` and `/tier/7`
+ * are the overview and the outlook around them (see chapters.js).
  */
 import * as THREE from 'three';
 import '@fontsource-variable/source-serif-4';
@@ -23,8 +24,10 @@ import { ExperimentCameraController } from './experiment-camera.js';
 import { createExperimentDebug } from './experiment-debug.js';
 import { TimeShortcutController } from './time-shortcuts.js';
 import { SchoolVisualizer } from './school-visualizer.js';
-import { TIER_COUNT, TIERS, tierByNumber, tierConfig, tierPanelScope } from './tiers.js';
+import { TIER_COUNT, tierConfig, tierPanelScope } from './tiers.js';
+import { CHAPTERS, FIRST_CHAPTER, LAST_CHAPTER, chapterByNumber } from './chapters.js';
 import { renderPaper } from './paper.js';
+import { renderHome } from './home.js';
 
 const startup = document.getElementById('startup-status');
 const app = document.getElementById('app');
@@ -32,7 +35,7 @@ const stageElement = document.getElementById('stage');
 
 function parseRoute(pathname) {
   const match = pathname.match(/^\/tier\/(\d+)\/?$/);
-  if (match && tierByNumber(Number(match[1]))) {
+  if (match && chapterByNumber(Number(match[1]))) {
     return { page: 'tier', number: Number(match[1]) };
   }
   return { page: 'home' };
@@ -108,7 +111,11 @@ async function bootstrap() {
   setStartup('Starting simulation…');
   const world = new World();
   let route = parseRoute(window.location.pathname);
-  let current = tierConfig(route.page === 'tier' ? route.number : TIER_COUNT);
+  // The tier whose configuration a route runs: the overview, outlook and home
+  // run the full ecosystem.
+  const runsFor = (next) =>
+    next.page === 'tier' ? chapterByNumber(next.number).runs : TIER_COUNT;
+  let current = tierConfig(runsFor(route));
   let stage = deepClone(current);
   syncTank(current);
 
@@ -142,6 +149,7 @@ async function bootstrap() {
   function syncPresentation() {
     const onTier = route.page === 'tier';
     app.dataset.page = route.page;
+    app.dataset.chapter = route.page === 'tier' ? chapterByNumber(route.number).kind : '';
     app.dataset.project = current.runtime.project;
     app.dataset.developer = onTier ? '1' : '';
     app.dataset.timeKeys = onTier ? '1' : '';
@@ -206,7 +214,7 @@ async function bootstrap() {
     // The defaults of the tier on screen. Using the full default config here
     // once turned tier 1 into the whole ecosystem.
     restoreDefaults() {
-      stage = tierConfig(route.page === 'tier' ? route.number : TIER_COUNT);
+      stage = tierConfig(runsFor(route));
       return this.applyConfig('rebuildScene');
     },
     exportConfig() {
@@ -271,10 +279,9 @@ async function bootstrap() {
   const tierNext = document.getElementById('tier-next');
   const paper = document.getElementById('paper');
   const panelToggle = document.getElementById('panel-toggle');
-  const home = document.getElementById('home');
 
-  // One link per tier, all alike; the current one is marked, not the rest.
-  for (const tier of TIERS) {
+  // One link per chapter, all alike; the current one is marked, not the rest.
+  for (const tier of CHAPTERS) {
     const item = document.createElement('li');
     const link = document.createElement('a');
     link.href = `/tier/${tier.number}`;
@@ -361,24 +368,26 @@ async function bootstrap() {
 
   function renderChrome() {
     const onTier = route.page === 'tier';
-    home.hidden = onTier;
     labReset.hidden = !onTier;
     paperView?.dispose();
-    if (!onTier) {
-      paperView = null;
-      document.title = 'flocks';
-      return;
-    }
-    const tier = tierByNumber(route.number);
+    const tier = onTier ? chapterByNumber(route.number) : null;
     for (const link of tierSteps.querySelectorAll('a')) {
-      if (Number(link.dataset.tier) === tier.number) {
+      if (tier && Number(link.dataset.tier) === tier.number) {
         link.setAttribute('aria-current', 'page');
       } else {
         link.removeAttribute('aria-current');
       }
     }
-    tierPrev.disabled = tier.number === 1;
-    tierNext.disabled = tier.number === TIER_COUNT;
+    if (!onTier) {
+      paperView = null;
+      tierPrev.disabled = true;
+      tierNext.disabled = false;
+      renderHome(paper, { onChapter: goToTier });
+      document.title = 'flocks';
+      return;
+    }
+    tierPrev.disabled = tier.number === FIRST_CHAPTER;
+    tierNext.disabled = tier.number === LAST_CHAPTER;
     paperView = renderPaper(paper, tier, TIER_COUNT, {
       onParameter: openParameter,
       getState: paperState,
@@ -390,7 +399,7 @@ async function bootstrap() {
   // Home runs the final tier so visitors first see the full ecosystem.
   function showRoute(next, { push = false } = {}) {
     route = next;
-    const number = route.page === 'tier' ? route.number : TIER_COUNT;
+    const number = runsFor(route);
     controller.panelScope = tierPanelScope(number);
     stage = tierConfig(number);
     controller.applyConfig('rebuildScene');
@@ -414,7 +423,9 @@ async function bootstrap() {
   }
 
   tierPrev.addEventListener('click', () => goToTier(route.number - 1));
-  tierNext.addEventListener('click', () => goToTier(route.number + 1));
+  tierNext.addEventListener('click', () =>
+    goToTier(route.page === 'tier' ? route.number + 1 : FIRST_CHAPTER)
+  );
   for (const link of document.querySelectorAll('[data-route]')) {
     link.addEventListener('click', (event) => {
       event.preventDefault();

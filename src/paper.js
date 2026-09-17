@@ -155,22 +155,35 @@ export function renderPaper(container, tier, tierCount, { onParameter, getState 
   }
 
   container.replaceChildren();
-  container.append(
-    element('p', 'eyebrow', `Tier ${tier.number} of ${tierCount}`),
-    element('h1', '', tier.title),
-    element('h2', '', 'What is added'),
-    element('p', 'added', text.added ?? '')
-  );
-  container.append(element('h2', '', 'Why'));
-  if (text.why?.length) {
-    for (const source of text.why) container.append(element('p', '', source));
+  // The overview and the outlook are plain sections of prose; the tiers have
+  // what is added, why, what to watch, and the model.
+  const eyebrow =
+    tier.kind === 'intro'
+      ? 'Before the tiers'
+      : tier.kind === 'outlook'
+        ? 'After the tiers'
+        : `Tier ${tier.number} of ${tierCount}`;
+  container.append(element('p', 'eyebrow', eyebrow), element('h1', '', tier.title));
+  if (text.sections) {
+    for (const section of text.sections) {
+      container.append(element('h2', '', section.heading));
+      for (const source of section.paragraphs ?? []) container.append(element('p', '', source));
+      if (section.list) {
+        const list = element('ul');
+        for (const item of section.list) list.append(element('li', '', item));
+        container.append(list);
+      }
+    }
   } else {
-    container.append(element('p', 'placeholder', 'Not written yet.'));
+    container.append(element('h2', '', 'What is added'), element('p', 'added', text.added ?? ''));
+    container.append(element('h2', '', 'Why'));
+    if (text.why?.length) {
+      for (const source of text.why) container.append(element('p', '', source));
+    } else {
+      container.append(element('p', 'placeholder', 'Not written yet.'));
+    }
+    container.append(element('h2', '', 'Watch for'), element('p', 'watch', text.watch ?? ''));
   }
-  container.append(
-    element('h2', '', 'Watch for'),
-    element('p', 'watch', text.watch ?? '')
-  );
   if (text.model) container.append(renderModel(text.model));
   container.scrollTop = 0;
   for (const [node, tex] of pendingDisplay) renderDisplay(node, tex);
