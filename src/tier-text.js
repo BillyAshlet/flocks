@@ -60,8 +60,8 @@ const HYST = sym('relations.hysteresis', 'h');
 const FD = sym('perception.detectionLengthFactor', 'f_D');
 const FSENSE = sym('relations.schoolSenseFactor', 'f_{\\text{sense}}');
 const FLOCK = sym('relations.burstRadiusFactor', 'f_{\\text{lock}}');
-const WP = sym('relations.pursuitWeight', 'w_p');
-const WB = sym('relations.burstWeight', 'w_b');
+const WP = sym('relations.pursuitWeight', '\\mathrm{w}_p');
+const WB = sym('relations.burstWeight', '\\mathrm{w}_b');
 const TIE = sym('relations.targetTieTolerance', '\\tau');
 const TGIVE = sym('relations.giveUpSeconds', 't_{\\text{give}}');
 const TLEAD = sym('locomotion.interceptLookAhead', 't_{\\text{lead}}');
@@ -72,7 +72,7 @@ const BUDGET = sym('locomotion.burstForceBudget', '\\gamma_F');
 const CAPTURE = sym('capture.captureLengthFactor', 'c');
 // Tier 4
 const FOV = sym('perception.fovDegrees', '\\varphi');
-const WE = sym('relations.evadeWeight', 'w_e');
+const WE = sym('relations.evadeWeight', '\\mathrm{w}_e');
 const ETA = sym('relations.signalThreshold', '\\eta');
 const TREF = sym('relations.refractoryTime', 't_{\\text{ref}}');
 const RISE = sym('relations.panicRiseRate', '\\lambda_{\\uparrow}');
@@ -89,7 +89,7 @@ const SSCHOOL = sym('ecology.energyShareSchool', 's_{\\text{school}}');
 const KAPPA = sym('ecology.captureEnergyPerSize', '\\kappa');
 const KMAX = sym('relations.KMax', 'k_{\\max}');
 // Tier 6
-const WEM = sym('relations.emergencyAlignmentWeight', 'w_{\\text{copy}}');
+const WEM = sym('relations.emergencyAlignmentWeight', '\\mathrm{w}_{\\text{copy}}');
 const FSIG = sym('relations.signalRadiusFactor', 'f_{\\text{sig}}');
 const BSRC = sym('relations.alignmentSourceBoost', '\\beta_{\\text{src}}');
 const BRCV = sym('relations.alignmentReceiverBoost', '\\beta_{\\text{rcv}}');
@@ -257,11 +257,19 @@ export const TIER_TEXT = {
             `\\sigma_v = \\max\\!\\left(${PHI_V},\\ ${B}^{-${ALPHA_V}}\\right),\\qquad v_{\\text{cruise}} = \\sigma_v\\,${U0},\\qquad v_{\\max} = \\sigma_v\\,${V0}`,
             `\\omega = ${OMEGA0}\\,\\max\\!\\left(${PHI_W},\\ ${B}^{-${ALPHA_W}}\\right)`,
           ],
-          live: [
-            { tex: B, value: ({ school }) => school.size },
-            { tex: '\\sigma_v', value: ({ config, school }) => sustainedSpeedScale(config, school) },
-            { tex: 'v_{\\max}', value: ({ config, school }) => effectiveMaxSpeed(config, school) },
-            { tex: '\\omega', value: ({ config, school }) => effectiveTurnSpeed(config, school), unit: ' rad/s' },
+          where: [
+            { tex: B, name: 'body size', meaning: 'size relative to Gold, which is 1', value: ({ school }) => school.size },
+            { tex: '\\sigma_v', name: 'speed scale', meaning: 'how much of its base speeds a fish of this size keeps', value: ({ config, school }) => sustainedSpeedScale(config, school) },
+            { tex: PHI_V, name: 'speed floor', meaning: 'the smallest share of base speed any size keeps', value: ({ config }) => config.traits.minSustainedSpeedFactor },
+            { tex: ALPHA_V, name: 'speed size exponent', meaning: 'how steeply speed falls with size', value: ({ config }) => config.traits.sizeSpeedPenaltyExponent },
+            { tex: U0, name: 'base cruise speed', meaning: 'the speed a fish drifts back up to before scaling', value: ({ school }) => school.cruiseSpeed },
+            { tex: V0, name: 'base top speed', meaning: 'the top speed before scaling', value: ({ school }) => school.maxSpeed },
+            { tex: 'v_{\\text{cruise}}', name: 'cruise speed', meaning: 'the scaled cruise speed', value: ({ config, school }) => school.cruiseSpeed * sustainedSpeedScale(config, school) },
+            { tex: 'v_{\\max}', name: 'top speed', meaning: 'the scaled top speed; steering aims at it and speed never exceeds it', value: ({ config, school }) => effectiveMaxSpeed(config, school) },
+            { tex: OMEGA0, name: 'base turn rate', meaning: 'the fastest turn before scaling, in radians per second', value: ({ school }) => school.turnSpeed },
+            { tex: PHI_W, name: 'turning floor', meaning: 'the smallest share of base turn rate any size keeps', value: ({ config }) => config.traits.minTurnFactor },
+            { tex: ALPHA_W, name: 'turning size exponent', meaning: 'how steeply turning falls with size', value: ({ config }) => config.traits.sizeTurnPenaltyExponent },
+            { tex: '\\omega', name: 'turn rate', meaning: 'the scaled fastest turn', value: ({ config, school }) => effectiveTurnSpeed(config, school), unit: ' rad/s' },
           ],
           note: 'Steering aims at the same scaled top speed. Size also sets body length, which sets the smallest neighbor radius (three body lengths).',
         },
@@ -272,6 +280,14 @@ export const TIER_TEXT = {
           ],
           formulas: [
             `\\mathbf{s}_i \\mathrel{+}= -\\!\\!\\sum_{\\substack{\\text{other species}\\\\ d_{ij} < R_x}}\\! \\hat{\\mathbf{d}}_{ij}\\left(1 - \\frac{d_{ij}}{R_x}\\right),\\qquad R_x = 0.15\\,\\max(b_i, b_j)`,
+          ],
+          where: [
+            { tex: '\\mathbf{s}_i', name: 'separation', meaning: 'the push away from close fish, the same sum as tier 1' },
+            { tex: 'd_{ij}', name: 'distance', meaning: 'distance between the two fish' },
+            { tex: '\\hat{\\mathbf{d}}_{ij}', name: 'direction', meaning: 'unit vector from fish i toward the other fish' },
+            { tex: 'R_x', name: 'cross-species radius', meaning: 'how close a fish of another species must be to push away from' },
+            { tex: 'b_i,\\ b_j', name: 'body sizes', meaning: 'sizes of the two fish; the larger one sets the radius' },
+            { tex: '0.15', name: 'cross-species scale', meaning: 'radius per unit of body size; adjustable at tier 6' },
           ],
         },
         {
@@ -306,6 +322,12 @@ export const TIER_TEXT = {
           formulas: [
             `r = \\frac{b_{\\text{hunter}}}{b_{\\text{prey}}},\\qquad \\text{hunts if } ${KREL} \\le r \\le 2.5,\\qquad \\text{keeps hunting while } ${KREL} - ${HYST} \\le r \\le 2.5 + ${HYST}`,
           ],
+          where: [
+            { tex: 'r', name: 'size ratio', meaning: 'the hunter’s body size over the prey’s' },
+            { tex: KREL, name: 'hunting threshold', meaning: 'how many times larger a fish must be to hunt another', value: ({ config }) => config.relations.k },
+            { tex: HYST, name: 'margin', meaning: 'extra room before an ongoing hunt stops, so it does not flicker', value: ({ config }) => config.relations.hysteresis },
+            { tex: '2.5', name: 'upper edge', meaning: 'beyond this ratio prey is too small to chase; adjustable at tier 5' },
+          ],
         },
         {
           title: 'Two radii',
@@ -316,12 +338,17 @@ export const TIER_TEXT = {
             `D = ${FD}\\,R_c,\\qquad R_{\\text{sense}} = ${FSENSE}\\,D,\\qquad R_{\\text{lock}} = ${FLOCK}\\,D`,
             `\\mathbf{F}^{\\text{scan}}_i = ${WP}\\,\\operatorname{steer}\\!\\left(\\bar{\\mathbf{x}}_{\\text{prey}} - \\mathbf{x}_i\\right)`,
           ],
-          live: [
-            { tex: 'D', value: ({ derived }) => derived.detectionLength },
-            { tex: 'R_{\\text{sense}}', value: ({ config, derived }) => derived.detectionLength * config.relations.schoolSenseFactor },
-            { tex: 'R_{\\text{lock}}', value: ({ config, derived }) => derived.detectionLength * config.relations.burstRadiusFactor },
+          where: [
+            { tex: 'D', name: 'detection length', meaning: 'the hunter’s base reach, a share of its cohesion radius', value: ({ derived }) => derived.detectionLength },
+            { tex: FD, name: 'detection factor', meaning: 'detection length as a share of the cohesion radius', value: ({ config }) => config.perception.detectionLengthFactor },
+            { tex: 'R_c', name: 'cohesion radius', meaning: 'the hunter’s own neighbor radius from tier 1', value: ({ derived }) => derived.cohesionRadius },
+            { tex: FSENSE, name: 'sensing factor', meaning: 'sensing radius in detection lengths', value: ({ config }) => config.relations.schoolSenseFactor },
+            { tex: 'R_{\\text{sense}}', name: 'sensing radius', meaning: 'how far a hunter senses prey', value: ({ config, derived }) => derived.detectionLength * config.relations.schoolSenseFactor },
+            { tex: FLOCK, name: 'lock factor', meaning: 'lock radius in detection lengths', value: ({ config }) => config.relations.burstRadiusFactor },
+            { tex: 'R_{\\text{lock}}', name: 'lock radius', meaning: 'how close prey must be to be picked as a target', value: ({ config, derived }) => derived.detectionLength * config.relations.burstRadiusFactor },
+            { tex: WP, name: 'pursuit weight', meaning: 'how strongly a hunter steers toward prey', value: ({ config }) => config.relations.pursuitWeight },
+            { tex: '\\bar{\\mathbf{x}}_{\\text{prey}}', name: 'prey center', meaning: 'plain average position of the prey the hunter senses' },
           ],
-          note: 'Radii are for the school being edited in the panel.',
         },
         {
           title: 'Choosing and giving up',
@@ -332,6 +359,12 @@ export const TIER_TEXT = {
             `|d_a - d_b| \\le ${TIE}\\,\\max(d_a, d_b) \;\\Rightarrow\; \\text{prefer larger } \\hat{\\mathbf{v}}_i \\cdot \\hat{\\mathbf{d}}`,
             `\\text{give up if } \\min_{t' \\in [t - ${TGIVE},\\,t]} d(t') \\text{ is no new minimum}`,
           ],
+          where: [
+            { tex: 'd_a,\\ d_b', name: 'candidate distances', meaning: 'distances from the hunter to two possible targets' },
+            { tex: TIE, name: 'tie tolerance', meaning: 'how close two distances must be to count as equally near', value: ({ config }) => config.relations.targetTieTolerance },
+            { tex: '\\hat{\\mathbf{v}}_i \\cdot \\hat{\\mathbf{d}}', name: 'in front', meaning: 'how directly ahead of the hunter a candidate is, from −1 behind to 1 straight ahead' },
+            { tex: TGIVE, name: 'give-up time', meaning: 'seconds without getting any closer before a hunter gives up', value: ({ config }) => config.relations.giveUpSeconds, unit: ' s' },
+          ],
         },
         {
           title: 'The lunge',
@@ -340,7 +373,19 @@ export const TIER_TEXT = {
           ],
           formulas: [
             `\\begin{aligned}\\mathbf{F}^{\\text{hunt}}_i ={} & ${WP}\\,\\operatorname{steer}(\\mathbf{x}_t - \\mathbf{x}_i) \\\\ & + ${WB}\\,\\operatorname{steer}\\!\\left(\\mathbf{x}_t + \\mathbf{v}_t\\,\\min\\!\\left(${TLEAD},\\tfrac{d}{v_0}\\right) - \\mathbf{x}_i\\right)\\end{aligned}`,
-            `w_a, w_c \\times ${SOCIAL},\\qquad v_{\\max} \\times ${BURST},\\qquad \\omega \\times ${BTURN},\\qquad F_{\\max} \\times ${BUDGET}`,
+            `\\mathrm{w}_a, \\mathrm{w}_c \\times ${SOCIAL},\\qquad v_{\\max} \\times ${BURST},\\qquad \\omega \\times ${BTURN},\\qquad F_{\\max} \\times ${BUDGET}`,
+          ],
+          where: [
+            { tex: '\\mathbf{x}_t,\\ \\mathbf{v}_t', name: 'target', meaning: 'position and velocity of the locked prey' },
+            { tex: 'd', name: 'distance', meaning: 'distance from the hunter to its target' },
+            { tex: WB, name: 'lunge weight', meaning: 'how strongly the hunter steers at where the target is heading', value: ({ config }) => config.relations.burstWeight },
+            { tex: TLEAD, name: 'lead time', meaning: 'the longest look ahead along the target’s motion', value: ({ config }) => config.locomotion.interceptLookAhead, unit: ' s' },
+            { tex: 'v_0', name: 'base top speed', meaning: 'the hunter’s top speed before size scaling', value: ({ school }) => school.maxSpeed },
+            { tex: SOCIAL, name: 'social damping', meaning: 'how much of its pull toward its school a lunging hunter keeps', value: ({ config }) => config.locomotion.burstSocialSuppression },
+            { tex: BURST, name: 'sprint speed', meaning: 'top speed multiplier while lunging', value: ({ config }) => config.locomotion.burstFactor },
+            { tex: BTURN, name: 'sprint turning', meaning: 'turn rate multiplier while lunging', value: ({ config }) => config.locomotion.burstTurnFactor },
+            { tex: BUDGET, name: 'sprint force', meaning: 'force cap multiplier while lunging', value: ({ config }) => config.locomotion.burstForceBudget },
+            { tex: 'F_{\\max}', name: 'force cap', meaning: 'the largest steering force a fish can apply' },
           ],
         },
         {
@@ -350,6 +395,10 @@ export const TIER_TEXT = {
           ],
           formulas: [
             `d \\le ${CAPTURE}\\,(L_{\\text{hunter}} + L_{\\text{prey}})`,
+          ],
+          where: [
+            { tex: CAPTURE, name: 'reach factor', meaning: 'mouth reach as a share of both body lengths together', value: ({ config }) => config.capture.captureLengthFactor },
+            { tex: 'L_{\\text{hunter}},\\ L_{\\text{prey}}', name: 'body lengths', meaning: 'lengths of the hunter and the prey' },
           ],
         },
         {
@@ -384,7 +433,11 @@ export const TIER_TEXT = {
           formulas: [
             `j \\text{ seen by } i \\iff \\hat{\\mathbf{v}}_i \\cdot \\hat{\\mathbf{d}}_{ij} \\ge \\cos\\frac{${FOV}}{2}`,
           ],
-          live: [{ tex: FOV, value: ({ config }) => config.perception.fovDegrees, unit: '°' }],
+          where: [
+            { tex: FOV, name: 'field of view', meaning: 'the full opening angle of the cone', value: ({ config }) => config.perception.fovDegrees, unit: '°' },
+            { tex: '\\hat{\\mathbf{v}}_i', name: 'heading', meaning: 'the direction fish i is swimming' },
+            { tex: '\\hat{\\mathbf{d}}_{ij}', name: 'direction', meaning: 'unit vector from fish i toward fish j' },
+          ],
         },
         {
           title: 'Sensing a hunter',
@@ -394,7 +447,13 @@ export const TIER_TEXT = {
           formulas: [
             `R_p = ${FD}\\,R_c,\\qquad T_i = \\max_{\\text{hunters}} \\left(1 - \\frac{d}{R_p}\\right)`,
           ],
-          live: [{ tex: 'R_p', value: ({ derived }) => derived.panicRadius }],
+          where: [
+            { tex: 'R_p', name: 'threat radius', meaning: 'how far a fish senses a hunter', value: ({ derived }) => derived.panicRadius },
+            { tex: FD, name: 'detection factor', meaning: 'threat radius as a share of the fish’s cohesion radius', value: ({ config }) => config.perception.detectionLengthFactor },
+            { tex: 'R_c', name: 'cohesion radius', meaning: 'the fish’s own neighbor radius from tier 1', value: ({ derived }) => derived.cohesionRadius },
+            { tex: 'T_i', name: 'threat', meaning: 'how close the nearest hunter is, 0 at the edge and 1 at contact' },
+            { tex: 'd', name: 'distance', meaning: 'distance to a hunter' },
+          ],
         },
         {
           title: 'The alarm pulse',
@@ -405,9 +464,12 @@ export const TIER_TEXT = {
             `h_i = \\max_{j \\text{ seen},\\ d_{ij} < R_c} a_j\\left(1 - \\frac{d_{ij}}{R_c}\\right),\\qquad \\text{send if } h_i \\ge ${ETA} \\text{ and } ${TREF} \\text{ has passed}`,
             `a_i \\leftarrow 1 \\text{ on sending},\\qquad a_i \\leftarrow a_i\\,e^{-\\Delta t / 0.35} \\text{ otherwise}`,
           ],
-          live: [
-            { tex: ETA, value: ({ config }) => config.relations.signalThreshold },
-            { tex: TREF, value: ({ config }) => config.relations.refractoryTime, unit: ' s' },
+          where: [
+            { tex: 'h_i', name: 'heard pulse', meaning: 'the strongest pulse fish i hears from neighbors it can see' },
+            { tex: 'a_j', name: 'pulse', meaning: 'the pulse neighbor j is sending, 1 when sent and fading after' },
+            { tex: ETA, name: 'alarm threshold', meaning: 'how strong a heard pulse must be to set a fish off', value: ({ config }) => config.relations.signalThreshold },
+            { tex: TREF, name: 'refractory time', meaning: 'seconds before a fish can send again', value: ({ config }) => config.relations.refractoryTime, unit: ' s' },
+            { tex: '0.35', name: 'fade time', meaning: 'seconds for a pulse to fall to about a third; adjustable at tier 6' },
           ],
         },
         {
@@ -419,9 +481,12 @@ export const TIER_TEXT = {
             `p^{*} = \\max\\!\\left(T_i \\text{ if gripped},\\ 1 \\text{ for } 0.5\\text{ s after sending}\\right)`,
             `p \\leftarrow p + (p^{*} - p)\\left(1 - e^{-\\lambda\\,\\Delta t}\\right),\\qquad \\lambda = \\begin{cases} ${RISE} & p^{*} > p \\\\ ${DECAY} & \\text{otherwise} \\end{cases}`,
           ],
-          live: [
-            { tex: RISE, value: ({ config }) => config.relations.panicRiseRate, unit: '/s' },
-            { tex: DECAY, value: ({ config }) => config.relations.panicDecayRate, unit: '/s' },
+          where: [
+            { tex: 'p', name: 'panic', meaning: 'how scared a fish is, from 0 to 1' },
+            { tex: 'p^{*}', name: 'panic target', meaning: 'the level panic is heading toward' },
+            { tex: RISE, name: 'rise rate', meaning: 'how fast panic climbs toward its target', value: ({ config }) => config.relations.panicRiseRate, unit: '/s' },
+            { tex: DECAY, name: 'decay rate', meaning: 'how fast panic falls back', value: ({ config }) => config.relations.panicDecayRate, unit: '/s' },
+            { tex: '0.5\\text{ s}', name: 'hold time', meaning: 'how long panic stays full after sending a pulse; adjustable at tier 6' },
           ],
         },
         {
@@ -431,9 +496,14 @@ export const TIER_TEXT = {
           ],
           formulas: [
             `\\mathbf{F}^{\\text{flee}}_i = ${WE}\\,T_i\\,(1 + p)\\,\\operatorname{steer}(\\mathbf{e}_i)`,
-            `w_c \\times \\max(0,\\,1 - 0.6\\,p),\\qquad \\omega \\times (1 + 1.2\\,p),\\qquad v_{\\max} \\times 1.15 \\text{ when } p > 0.06`,
+            `\\mathrm{w}_c \\times \\max(0,\\,1 - 0.6\\,p),\\qquad \\omega \\times (1 + 1.2\\,p),\\qquad v_{\\max} \\times 1.15 \\text{ when } p > 0.06`,
           ],
-          live: [{ tex: WE, value: ({ config }) => config.relations.evadeWeight }],
+          where: [
+            { tex: WE, name: 'flee weight', meaning: 'how strongly a threatened fish steers away', value: ({ config }) => config.relations.evadeWeight },
+            { tex: '\\mathbf{e}_i', name: 'escape direction', meaning: 'away from where the hunters will be 0.15 s ahead, plus a little sideways' },
+            { tex: 'T_i,\\ p', name: 'threat and panic', meaning: 'from the sections above' },
+            { tex: '0.6,\\ 1.2,\\ 1.15,\\ 0.06', name: 'panic effects', meaning: 'cohesion loss, turning gain, speed gain and the panic needed for it; adjustable at tier 6' },
+          ],
         },
         {
           title: 'Where this differs from textbook boids',
@@ -468,9 +538,11 @@ export const TIER_TEXT = {
             'Each fish carries energy E, in abstract units. The store grows faster than body size, so a large fish can go longer without food. Fish start at about 82% full, give or take a quarter, and die when E reaches zero.',
           ],
           formulas: [`E_{\\max} = 0.667\\,b^{1.5}`],
-          live: [
-            { tex: 'b', value: ({ school }) => school.size },
-            { tex: 'E_{\\max}', value: ({ config, school }) => energyCapacityFor(config, school) },
+          where: [
+            { tex: 'E', name: 'energy', meaning: 'what a fish has left; it dies at zero' },
+            { tex: 'E_{\\max}', name: 'energy store', meaning: 'the most a fish of this size can hold', value: ({ config, school }) => energyCapacityFor(config, school) },
+            { tex: 'b', name: 'body size', meaning: 'size relative to Gold', value: ({ school }) => school.size },
+            { tex: '0.667,\\ 1.5', name: 'store scale and exponent', meaning: 'adjustable at tier 6' },
           ],
         },
         {
@@ -481,13 +553,15 @@ export const TIER_TEXT = {
           formulas: [
             `\\frac{dE}{dt} = -\\,${MULT}\\,b^{0.75}\\left(${MU0} + ${MUB}\\,[\\text{sprinting}]\\right) + \\text{income}`,
           ],
-          live: [
-            { tex: MU0, value: ({ config }) => config.ecology.basalRate, unit: '/s' },
-            { tex: MUB, value: ({ config }) => config.ecology.burstMetabolicRate, unit: '/s' },
-            { tex: '\\text{at rest}', value: ({ config, school }) => metabolicRate(config, school, false), unit: '/s' },
-            { tex: 't_{\\text{starve}}', value: ({ config, school }) => energyCapacityFor(config, school) / metabolicRate(config, school, false), unit: ' s' },
+          where: [
+            { tex: MU0, name: 'resting cost', meaning: 'energy per second a size-1 fish burns just by living', value: ({ config }) => config.ecology.basalRate, unit: '/s' },
+            { tex: MUB, name: 'sprint cost', meaning: 'extra energy per second while sprinting', value: ({ config }) => config.ecology.burstMetabolicRate, unit: '/s' },
+            { tex: MULT, name: 'metabolism multiplier', meaning: 'this species’ own scaling of both costs', value: ({ school }) => school.metabolismMultiplier },
+            { tex: 'b^{0.75}', name: 'Kleiber scaling', meaning: 'costs grow with size, but slower than size' },
+            { tex: '[\\text{sprinting}]', name: 'sprinting', meaning: '1 while lunging at prey, 0 otherwise' },
+            { tex: 'c_{\\text{rest}}', name: 'burn at rest', meaning: 'what a fish of the edited school burns per second without sprinting', value: ({ config, school }) => metabolicRate(config, school, false), unit: '/s' },
+            { tex: 't_{\\text{starve}}', name: 'time to starve', meaning: 'how long a full fish of the edited school lasts at rest', value: ({ config, school }) => energyCapacityFor(config, school) / metabolicRate(config, school, false), unit: ' s' },
           ],
-          note: 't_starve is how long a full fish of the edited school lasts at rest.',
         },
         {
           title: 'Plankton',
@@ -498,12 +572,14 @@ export const TIER_TEXT = {
             `\\text{attempts per second} = 4\\,${GRAZE}\\,b^{0.45},\\qquad n = \\max\\!\\left(1,\\ \\operatorname{round}\\,\\min\\!\\left(S,\\ \\frac{4\\,S}{S + 1.57}\\right)\\right)`,
             `\\text{gain} = ${EP}\\,\\frac{n}{4}`,
           ],
-          live: [
-            { tex: EP, value: ({ config }) => config.ecology.planktonEnergy },
-            { tex: TREGROW, value: ({ config }) => config.plankton.regrowSeconds, unit: ' s' },
-            { tex: GRAZE, value: ({ school }) => school.grazeRate },
+          where: [
+            { tex: GRAZE, name: 'grazing rate', meaning: 'how often this species tries to graze', value: ({ school }) => school.grazeRate },
+            { tex: 'S', name: 'bites in reach', meaning: 'plankton bites within 0.3 of the fish' },
+            { tex: 'n', name: 'bites taken', meaning: 'whole bites taken in one attempt, at most 4' },
+            { tex: '1.57', name: 'half-saturation', meaning: 'bites in reach at which a fish gets half its full helping' },
+            { tex: EP, name: 'bite energy', meaning: 'energy of a full helping of 4 bites', value: ({ config }) => config.ecology.planktonEnergy },
+            { tex: TREGROW, name: 'regrow time', meaning: 'seconds before an emptied particle is whole again', value: ({ config }) => config.plankton.regrowSeconds, unit: ' s' },
           ],
-          note: 'S is the number of bites within reach (0.3) of the fish. At most 4 bites are taken at once.',
         },
         {
           title: 'Sharing a meal',
@@ -514,10 +590,11 @@ export const TIER_TEXT = {
             `\\text{eater: } 1 - ${SNEAR} - ${SSCHOOL},\\qquad \\text{nearby, same species: } ${SNEAR},\\qquad \\text{school pool: } ${SSCHOOL}`,
             `\\text{capture gain} = ${KAPPA}\\,b_{\\text{prey}}`,
           ],
-          live: [
-            { tex: SNEAR, value: ({ config }) => config.ecology.energyShareLocal },
-            { tex: SSCHOOL, value: ({ config }) => config.ecology.energyShareSchool },
-            { tex: KAPPA, value: ({ config }) => config.ecology.captureEnergyPerSize },
+          where: [
+            { tex: SNEAR, name: 'nearby share', meaning: 'split on the spot among same-species fish within 0.25', value: ({ config }) => config.ecology.energyShareLocal },
+            { tex: SSCHOOL, name: 'school share', meaning: 'put in a pool divided among the whole school', value: ({ config }) => config.ecology.energyShareSchool },
+            { tex: KAPPA, name: 'catch energy', meaning: 'energy per unit of prey body size', value: ({ config }) => config.ecology.captureEnergyPerSize },
+            { tex: 'b_{\\text{prey}}', name: 'prey size', meaning: 'body size of the fish caught' },
           ],
         },
         {
@@ -528,7 +605,10 @@ export const TIER_TEXT = {
           formulas: [
             `\\text{hunts if } 1.35 \\le \\frac{b_{\\text{hunter}}}{b_{\\text{prey}}} \\le ${KMAX}`,
           ],
-          live: [{ tex: KMAX, value: ({ config }) => config.relations.KMax }],
+          where: [
+            { tex: KMAX, name: 'upper edge', meaning: 'the largest size ratio still worth chasing', value: ({ config }) => config.relations.KMax },
+            { tex: '1.35', name: 'hunting threshold', meaning: 'the smallest size ratio that makes a hunter, from tier 3' },
+          ],
         },
         {
           title: 'Where this differs from textbook boids',
@@ -562,16 +642,24 @@ export const TIER_TEXT = {
             'A fish whose panic has passed the alarm threshold broadcasts its heading to the neighbors that can see it, within a signal radius. Close and very scared senders count far more. A receiver steers along the combined heading, as strongly as its most urgent sender. A scared fish also listens harder to ordinary alignment when its neighbors are scared too. None of this pulls fish together.',
           ],
           formulas: [
-            `R_{\\text{sig}} = ${FSIG}\\,R_a,\\qquad \\omega_j = \\left(1 - \\frac{d_{ij}}{R_{\\text{sig}}}\\right) p_j \\left(1 + ${BSRC}\\,p_j^{2}\\right) \\quad (p_j \\ge \\eta)`,
-            `\\mathbf{F}^{\\text{copy}}_i = ${WEM}\\,\\max_j\\!\\left[\\left(1 - \\frac{d_{ij}}{R_{\\text{sig}}}\\right) p_j\\right] \\operatorname{steer}\\!\\Big(\\sum_j \\omega_j\\,\\hat{\\mathbf{v}}_j\\Big)`,
-            `w_a \\times \\min\\!\\left(1 + ${BRCV}\\,\\bar{p}_{\\text{nbr}}\\,p_i,\\ ${RCVMAX}\\right)`,
+            `R_{\\text{sig}} = ${FSIG}\\,R_a,\\qquad q_j = \\left(1 - \\frac{d_{ij}}{R_{\\text{sig}}}\\right) p_j \\left(1 + ${BSRC}\\,p_j^{2}\\right) \\quad (p_j \\ge \\eta)`,
+            `\\mathbf{F}^{\\text{copy}}_i = ${WEM}\\,\\max_j\\!\\left[\\left(1 - \\frac{d_{ij}}{R_{\\text{sig}}}\\right) p_j\\right] \\operatorname{steer}\\!\\Big(\\sum_j q_j\\,\\hat{\\mathbf{v}}_j\\Big)`,
+            `\\mathrm{w}_a \\times \\min\\!\\left(1 + ${BRCV}\\,\\bar{p}_{\\text{nbr}}\\,p_i,\\ ${RCVMAX}\\right)`,
           ],
-          live: [
-            { tex: WEM, value: ({ config }) => config.relations.emergencyAlignmentWeight },
-            { tex: FSIG, value: ({ config }) => config.relations.signalRadiusFactor },
-            { tex: 'R_{\\text{sig}}', value: ({ config, derived }) => derived.alignmentRadius * config.relations.signalRadiusFactor },
+          where: [
+            { tex: 'R_{\\text{sig}}', name: 'signal radius', meaning: 'how far a heading is broadcast', value: ({ config, derived }) => derived.alignmentRadius * config.relations.signalRadiusFactor },
+            { tex: FSIG, name: 'signal factor', meaning: 'signal radius as a share of the alignment radius', value: ({ config }) => config.relations.signalRadiusFactor },
+            { tex: 'R_a', name: 'alignment radius', meaning: 'from tier 1', value: ({ derived }) => derived.alignmentRadius },
+            { tex: 'q_j', name: 'sender weight', meaning: 'how much sender j counts: closer and more scared counts more' },
+            { tex: 'p_j,\\ p_i', name: 'panic', meaning: 'panic of the sender and of the receiver' },
+            { tex: BSRC, name: 'sender boost', meaning: 'how much extra a very scared sender counts', value: ({ config }) => config.relations.alignmentSourceBoost },
+            { tex: '\\eta', name: 'alarm threshold', meaning: 'the panic a sender needs, from tier 4', value: ({ config }) => config.relations.signalThreshold },
+            { tex: WEM, name: 'copy weight', meaning: 'how strongly a receiver steers along the broadcast heading', value: ({ config }) => config.relations.emergencyAlignmentWeight },
+            { tex: '\\hat{\\mathbf{v}}_j', name: 'sender heading', meaning: 'the direction sender j is swimming' },
+            { tex: BRCV, name: 'listening boost', meaning: 'how much more a scared fish follows scared neighbors', value: ({ config }) => config.relations.alignmentReceiverBoost },
+            { tex: '\\bar{p}_{\\text{nbr}}', name: 'neighbor panic', meaning: 'the highest panic among neighbors the fish can see' },
+            { tex: RCVMAX, name: 'listening cap', meaning: 'the most ordinary alignment can be multiplied', value: ({ config }) => config.relations.alignmentReceiverMax },
           ],
-          note: 'p̄_nbr is the highest panic among the neighbors the fish can see.',
         },
         {
           title: 'Tipping point',
@@ -580,11 +668,12 @@ export const TIER_TEXT = {
           ],
           formulas: [
             `\\text{scatter on when } p_i \\ge ${PIN},\\qquad \\text{off when } p_i \\le ${POUT}`,
-            `\\text{while scattered: } w_c = 0,\\quad \\mathbf{F}^{\\text{copy}}_i = 0`,
+            `\\text{while scattered: } \\mathrm{w}_c = 0,\\quad \\mathbf{F}^{\\text{copy}}_i = 0`,
           ],
-          live: [
-            { tex: PIN, value: ({ config }) => config.relations.panicScatterEnter },
-            { tex: POUT, value: ({ config }) => config.relations.panicScatterExit },
+          where: [
+            { tex: 'p_i', name: 'panic', meaning: 'the fish’s own panic, from tier 4' },
+            { tex: PIN, name: 'scatter threshold', meaning: 'panic at which the fish breaks away', value: ({ config }) => config.relations.panicScatterEnter },
+            { tex: POUT, name: 'rejoin threshold', meaning: 'panic it must fall to before it rejoins', value: ({ config }) => config.relations.panicScatterExit },
           ],
         },
         {
@@ -594,12 +683,16 @@ export const TIER_TEXT = {
           ],
           formulas: [
             `\\text{desperate for } ${TDESP} \\text{ s once } E < ${QIN}\\,E_{\\max}`,
-            `\\text{sprint speed} \\times ${BDESP},\\qquad w_p \\times ${PDESP},\\qquad \\text{then all speeds} \\times ${EXH} \\text{ until } E \\ge ${QOUT}\\,E_{\\max}`,
+            `\\text{sprint speed} \\times ${BDESP},\\qquad \\mathrm{w}_p \\times ${PDESP},\\qquad \\text{then all speeds} \\times ${EXH} \\text{ until } E \\ge ${QOUT}\\,E_{\\max}`,
           ],
-          live: [
-            { tex: QIN, value: ({ config }) => config.ecology.desperationEnterRatio },
-            { tex: BDESP, value: ({ config }) => config.ecology.desperationSpeedBoost },
-            { tex: TDESP, value: ({ config }) => config.ecology.desperationSeconds, unit: ' s' },
+          where: [
+            { tex: 'E,\\ E_{\\max}', name: 'energy and store', meaning: 'from tier 5' },
+            { tex: QIN, name: 'desperation line', meaning: 'share of the store below which a fish becomes desperate', value: ({ config }) => config.ecology.desperationEnterRatio },
+            { tex: TDESP, name: 'desperate time', meaning: 'how long desperation lasts', value: ({ config }) => config.ecology.desperationSeconds, unit: ' s' },
+            { tex: BDESP, name: 'sprint boost', meaning: 'sprint speed multiplier while desperate', value: ({ config }) => config.ecology.desperationSpeedBoost },
+            { tex: PDESP, name: 'pursuit boost', meaning: 'pursuit weight multiplier while desperate', value: ({ config }) => config.ecology.desperationPursuitBoost },
+            { tex: EXH, name: 'exhausted speed', meaning: 'speed multiplier after desperation, until the fish recovers', value: ({ config }) => config.ecology.desperationExhaustedSpeed },
+            { tex: QOUT, name: 'recovery line', meaning: 'share of the store a fish must eat back to before it can be desperate again', value: ({ config }) => config.ecology.desperationRecoverRatio },
           ],
         },
         {
@@ -611,11 +704,13 @@ export const TIER_TEXT = {
             `D \\mathrel{+}= (1 - ${CNOW})\\,c_{\\text{sprint}}\\,\\Delta t \\text{ while desperate},\\qquad \\text{repay } \\frac{D_{\\text{last}}}{${TSETTLE}} \\text{ per second}`,
             `\\frac{dE}{dt} = -\\,c_{\\text{rest}} - ${CNOW}\\,c_{\\text{sprint}} - \\text{repayment} + \\text{income}`,
           ],
-          live: [
-            { tex: CNOW, value: ({ config }) => config.ecology.desperationCostShare },
-            { tex: TSETTLE, value: ({ config }) => config.ecology.debtSettleSeconds, unit: ' s' },
+          where: [
+            { tex: 'D', name: 'debt', meaning: 'energy still owed' },
+            { tex: CNOW, name: 'paid-now share', meaning: 'share of each sprint paid at once while desperate; 1 otherwise', value: ({ config }) => config.ecology.desperationCostShare },
+            { tex: 'c_{\\text{sprint}},\\ c_{\\text{rest}}', name: 'costs', meaning: 'the sprint and resting costs from tier 5' },
+            { tex: TSETTLE, name: 'repayment time', meaning: 'seconds over which a debt is repaid after the latest sprint', value: ({ config }) => config.ecology.debtSettleSeconds, unit: ' s' },
+            { tex: 'D_{\\text{last}}', name: 'debt to repay', meaning: 'the debt right after the latest sprint added to it' },
           ],
-          note: 'c_rest and c_sprint are the resting and sprint costs from tier 5; D_last is the debt right after the latest sprint added to it. Outside desperation the paid-now share is 1.',
         },
         {
           title: 'Switches',

@@ -10,7 +10,7 @@ function texOf(model, config) {
     for (const source of section.formulas ?? []) {
       pieces.push(typeof source === 'function' ? source(config) : source);
     }
-    for (const item of section.live ?? []) pieces.push(item.tex);
+    for (const item of [...(section.live ?? []), ...(section.where ?? [])]) pieces.push(item.tex);
   }
   return pieces.join(' ');
 }
@@ -41,6 +41,18 @@ test('every formula symbol names a parameter shown at its tier', () => {
   }
 });
 
+test('every formula group names its symbols', () => {
+  for (const { number } of TIERS) {
+    for (const section of TIER_TEXT[number]?.model?.sections ?? []) {
+      if (!section.formulas?.length) continue;
+      assert.ok(section.where?.length, `tier ${number}: "${section.title}" has no where list`);
+      for (const row of section.where) {
+        assert.ok(row.tex && row.name, `tier ${number}: "${section.title}" row lacks tex or name`);
+      }
+    }
+  }
+});
+
 test('live values read from a tier config without throwing', async () => {
   const { deriveExperiment } = await import('./experiment-model.js');
   for (const { number } of TIERS) {
@@ -53,7 +65,8 @@ test('live values read from a tier config without throwing', async () => {
       derived: deriveExperiment(config).schools[0],
     };
     for (const section of model.sections) {
-      for (const item of section.live ?? []) {
+      for (const item of [...(section.live ?? []), ...(section.where ?? [])]) {
+        if (!item.value) continue;
         assert.ok(Number.isFinite(Number(item.value(state))), `tier ${number}: ${item.tex}`);
       }
     }
