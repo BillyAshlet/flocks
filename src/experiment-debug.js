@@ -194,6 +194,8 @@ export function createExperimentDebug({
   simulation,
 }) {
   let pane = null;
+  // The open school editor, so a color edit can retint it without a rebuild.
+  let schoolEditorElement = null;
   let selectedSchoolIndex = 0;
   let roleState = null;
   let roleBindings = [];
@@ -408,6 +410,12 @@ export function createExperimentDebug({
       if (spec.applyMode !== 'live' && !event.last) return;
       try {
         controller.applyConfig(spec.applyMode, spec.path);
+        if (
+          spec.path === `schools.${selectedSchoolIndex}.color` &&
+          schoolEditorElement?.isConnected
+        ) {
+          schoolEditorElement.style.setProperty('--school-color', parent[key]);
+        }
         if (spec.path === 'tank.preset') {
           setTimeout(rebuildPane, 0);
         } else if (
@@ -543,6 +551,7 @@ export function createExperimentDebug({
     // The school's own tone, so it is clear whose numbers these are.
     editor.element.classList.add('school-editor');
     editor.element.style.setProperty('--school-color', school.color);
+    schoolEditorElement = editor.element;
     if (schools.length > 1) {
       editor
         .addButton({ title: t('← 上一个鱼群') })

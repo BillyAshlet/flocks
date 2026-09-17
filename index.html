@@ -365,13 +365,29 @@
           box-shadow: 0 0 0 0 rgba(246, 200, 90, 0);
         }
       }
-      /* Symbols linked to a slider. Clicking one opens the slider's folder. */
+      /* Symbols linked to a slider: bold on a soft marker highlight, so every
+         adjustable quantity reads as a control. Clicking one opens the slider
+         and turns it the color of its mechanism (and its panel folder). */
       #paper [data-param] {
-        border-radius: 2px;
+        padding: 0 0.12em;
+        border-radius: 3px;
+        background: rgba(214, 170, 82, 0.2);
         cursor: pointer;
+        transition:
+          background 150ms ease,
+          color 150ms ease;
+      }
+      #paper [data-param],
+      #paper [data-param] * {
+        font-weight: 700;
       }
       #paper [data-param]:hover {
-        background: rgba(20, 20, 19, 0.07);
+        background: rgba(214, 170, 82, 0.38);
+      }
+      #paper [data-param].is-active {
+        color: var(--mech-color, var(--ink));
+        background: color-mix(in srgb, var(--mech-color, var(--ink)) 16%, transparent);
+        box-shadow: inset 0 -2px 0 var(--mech-color, var(--ink));
       }
 
       /* The tank. */
@@ -750,15 +766,21 @@
       #panel-holder .tp-fldv.is-run > .tp-fldv_c {
         background: var(--run-grey);
       }
-      /* The school editor takes the school's own color. */
+      /* The school editor takes the school's own color, strongly enough to
+         tell at a glance whose numbers these are; it follows color edits. */
       #panel-holder .tp-fldv.school-editor > .tp-fldv_b {
-        box-shadow: inset 0 -2px 0 var(--school-color);
-        background: color-mix(in srgb, var(--school-color) 22%, #e9e4d8);
+        box-shadow:
+          inset 5px 0 0 var(--school-color),
+          inset 0 -3px 0 var(--school-color);
+        background: color-mix(in srgb, var(--school-color) 45%, #e9e4d8);
+        color: var(--ink);
+        font-weight: 700;
       }
       #panel-holder .tp-fldv.school-editor > .tp-fldv_c {
-        background: color-mix(in srgb, var(--school-color) 9%, var(--panel));
+        box-shadow: inset 5px 0 0 color-mix(in srgb, var(--school-color) 60%, transparent);
+        background: color-mix(in srgb, var(--school-color) 16%, var(--panel));
       }
-            /* A folder holding what this tier adds takes its mechanism's color. */
+      /* A folder holding what this tier adds takes its mechanism's color. */
       #panel-holder .tp-fldv.has-mech > .tp-fldv_b {
         box-shadow: inset 3px 0 0 var(--mech-color);
       }

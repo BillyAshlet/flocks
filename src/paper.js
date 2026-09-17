@@ -1,9 +1,11 @@
 /**
  * Renders a tier's text into the paper column (index.html #paper).
  *
- * Formula symbols carry `data-param` (see sym() in tier-text.js). A symbol of
- * a mechanism this tier introduces takes the mechanism's color; symbols from
- * earlier tiers stay in ink but are still clickable.
+ * Formula symbols carry `data-param` (see sym() in tier-text.js). Every one
+ * the reader can adjust is set bold on a soft highlight, so it reads as a
+ * control. Clicking one opens its slider and turns that symbol, everywhere on
+ * the page, into its mechanism's color, the color of the panel folder it
+ * opened, until another symbol is clicked.
  *
  * The returned view's update() re-reads the running simulation: paragraphs and
  * formulas written as functions of the config are redrawn when they change,
@@ -40,12 +42,12 @@ export function renderPaper(container, tier, tierCount, { onParameter, getState 
   const dynamicFormulas = [];
   const liveValues = [];
 
+  let activeParam = null;
   function colorSymbols(node) {
     for (const symbol of node.querySelectorAll('[data-param]')) {
       const mechanism = mechanismFor(symbol.dataset.param);
-      if (mechanism && MECHANISMS[mechanism].tier === tier.number) {
-        symbol.style.color = MECHANISMS[mechanism].color;
-      }
+      if (mechanism) symbol.style.setProperty('--mech-color', MECHANISMS[mechanism].color);
+      symbol.classList.toggle('is-active', symbol.dataset.param === activeParam);
     }
   }
 
@@ -185,6 +187,8 @@ export function renderPaper(container, tier, tierCount, { onParameter, getState 
   container.onclick = (event) => {
     const symbol = event.target.closest('[data-param]');
     if (!symbol || !container.contains(symbol)) return;
+    activeParam = symbol.dataset.param;
+    colorSymbols(container);
     onParameter?.(symbol.dataset.param);
   };
 
