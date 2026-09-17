@@ -23,7 +23,10 @@ import { BONUS_CHAPTER, CHAPTERS, chapterHref, neighborChapter } from '../../src
 // ── Top bar: the same chapters as the main page, as plain links ─────────
 {
   const steps = document.getElementById('tier-steps');
+  // As on the tier pages, this page itself is not in the bar; it is reached
+  // from the outlook.
   for (const chapter of CHAPTERS) {
+    if (chapter === BONUS_CHAPTER) continue;
     const item = document.createElement('li');
     const link = document.createElement('a');
     link.href = chapterHref(chapter);
@@ -35,15 +38,6 @@ import { BONUS_CHAPTER, CHAPTERS, chapterHref, neighborChapter } from '../../src
     title.className = 'step-title';
     title.textContent = chapter.title;
     link.append(number, title);
-    if (chapter === BONUS_CHAPTER) link.setAttribute('aria-current', 'page');
-    // As on the tier pages: this page hangs under the outlook as a small
-    // extra link, not a full-size slot.
-    if (chapter.kind === 'bonus' && steps.lastElementChild) {
-      link.classList.add('step-extra');
-      steps.lastElementChild.classList.add('has-extra');
-      steps.lastElementChild.append(link);
-      continue;
-    }
     item.append(link);
     steps.append(item);
   }

@@ -291,7 +291,11 @@ async function bootstrap() {
 
   // One link per chapter, all alike; the current one is marked, not the rest.
   // A chapter on another page (the Echo Cartography bonus) is a plain link.
+  // The application page (Echo Cartography) is left out: it is not a stage of
+  // flocks, and a slot or even a small pill here made it read as one. It is
+  // reached from the outlook, whose next leads to it.
   for (const tier of CHAPTERS) {
+    if (tier.kind === 'bonus') continue;
     const item = document.createElement('li');
     const link = document.createElement('a');
     link.href = chapterHref(tier);
@@ -305,14 +309,6 @@ async function bootstrap() {
         event.preventDefault();
         goToTier(tier.number);
       });
-    }
-    // The application page is not a stage of flocks: it hangs under the
-    // outlook as a small extra link instead of taking a full-size slot.
-    if (tier.kind === 'bonus' && tierSteps.lastElementChild) {
-      link.classList.add('step-extra');
-      tierSteps.lastElementChild.classList.add('has-extra');
-      tierSteps.lastElementChild.appendChild(link);
-      continue;
     }
     item.appendChild(link);
     tierSteps.appendChild(item);
