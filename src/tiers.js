@@ -47,6 +47,13 @@ function withoutDetails(config) {
   config.ecology.desperationDebt = false;
 }
 
+// Body size only sets how big a fish is drawn. Its cost in speed and turning
+// arrives in tier 2 with the second species; size is on the tier 1 panel
+// anyway, so it must not quietly slow the fish there.
+function withoutTraits(config) {
+  config.traits.enabled = false;
+}
+
 // 360 degrees = the fish see all around. The forward cone arrives in tier 4,
 // together with panic, whose signal travels along it.
 function withoutFieldOfView(config) {
@@ -197,9 +204,10 @@ export const TIERS = [
       withoutFieldOfView(config);
       withoutEcology(config);
       withoutPredation(config);
+      withoutTraits(config);
     },
     globals: BASICS,
-    schoolFields: REYNOLDS_FIELDS,
+    schoolFields: [...REYNOLDS_FIELDS, 'size'],
   },
   {
     number: 2,

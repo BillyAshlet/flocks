@@ -250,6 +250,7 @@ export const TIER_TEXT = {
             { tex: '\\mathbf{v}_i', name: 'velocity', meaning: 'of fish i' },
             { tex: '\\Delta t', name: 'time step', meaning: '1/60 s' },
           ],
+          note: 'Body size is on the panel already, but at this tier it only sets how big the fish are drawn. From tier 2 on, a larger body also swims slower and turns wider.',
         },
         {
           title: 'Walls',

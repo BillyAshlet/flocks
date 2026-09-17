@@ -134,3 +134,10 @@ test('tiers 1 to 5 mark everything they add; tier 6 marks its core and folds the
   assert.equal(scope.isDetailGlobal({ path: 'relations.holdTime' }), true);
   assert.equal(scope.isNewCoreSchoolField('podCount'), false);
 });
+
+test('body size is on the tier 1 panel but only costs speed and turning from tier 2', () => {
+  assert.equal(tierPanelScope(1).showSchoolField('size'), true);
+  assert.equal(tierConfig(1).traits.enabled, false);
+  assert.equal(tierConfig(2).traits.enabled, true);
+  assert.equal(tierPanelScope(2).isNewSchoolField('size'), false);
+});
