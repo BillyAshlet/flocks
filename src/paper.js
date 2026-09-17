@@ -13,6 +13,7 @@
  */
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
+import { CHAPTERS } from './chapters.js';
 import { MECHANISMS, mechanismFor } from './mechanisms.js';
 import { TIER_TEXT } from './tier-text.js';
 
@@ -56,7 +57,45 @@ function formatValue(value, unit = '') {
   return `${text}${unit}`;
 }
 
-export function renderPaper(container, tier, tierCount, { onParameter, getState } = {}) {
+function chapterLabel(chapter) {
+  return chapter.kind === 'tier' ? `Tier ${chapter.number} · ${chapter.title}` : chapter.title;
+}
+
+// Previous and next at the foot of every chapter, in reading order, so a
+// reader who finishes the page does not have to scroll back up to the top bar.
+// Before the first chapter is the title page; after the last, a thank-you
+// that also leads back to it.
+function chapterNav(chapter, { onChapter, onHome }) {
+  const index = CHAPTERS.findIndex((item) => item.number === chapter.number);
+  const previous = CHAPTERS[index - 1];
+  const next = CHAPTERS[index + 1];
+  const nav = element('nav', 'chapter-nav');
+  nav.setAttribute('aria-label', 'Chapters');
+  const button = (className, direction, label, action) => {
+    const node = element('button', `chapter-nav-button ${className}`);
+    node.type = 'button';
+    node.append(element('span', 'chapter-nav-direction', direction), element('span', 'chapter-nav-label', label));
+    node.addEventListener('click', action);
+    return node;
+  };
+  // A chapter with its own page (href) is left by a full navigation; the
+  // others are routes inside this app.
+  const go = (target) => () => {
+    if (target.href) window.location.assign(target.href);
+    else onChapter?.(target.number);
+  };
+  nav.append(
+    previous
+      ? button('is-previous', '← Previous', chapterLabel(previous), go(previous))
+      : button('is-previous', '← Back', 'To the title', () => onHome?.()),
+    next
+      ? button('is-next', 'Next →', chapterLabel(next), go(next))
+      : button('is-next is-last', 'The end', 'Thank you for your attention :))', () => onHome?.())
+  );
+  return nav;
+}
+
+export function renderPaper(container, tier, tierCount, { onParameter, getState, onChapter, onHome } = {}) {
   const text = TIER_TEXT[tier.number] ?? {};
   // Everything that depends on the running config, re-checked by update().
   const dynamicText = [];
@@ -208,6 +247,7 @@ export function renderPaper(container, tier, tierCount, { onParameter, getState 
     container.append(element('h2', '', 'Watch for'), element('p', 'watch', text.watch ?? ''));
   }
   if (text.model) container.append(renderModel(text.model));
+  container.append(chapterNav(tier, { onChapter, onHome }));
   container.scrollTop = 0;
   for (const [node, tex] of pendingDisplay) renderDisplay(node, tex);
   let lastWidth = container.clientWidth;

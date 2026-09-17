@@ -391,6 +391,8 @@ async function bootstrap() {
     paperView = renderPaper(paper, tier, TIER_COUNT, {
       onParameter: openParameter,
       getState: paperState,
+      onChapter: goToTier,
+      onHome: () => showRoute({ page: 'home' }, { push: true }),
     });
     document.title = `flocks · ${tier.title}`;
   }

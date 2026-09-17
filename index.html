@@ -232,6 +232,51 @@
         padding-left: 14px;
         border-left: 2px solid var(--ink);
       }
+      /* Previous and next at the foot of every chapter. */
+      #paper .chapter-nav {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+        margin-top: 56px;
+        padding-top: 20px;
+        border-top: 1px solid var(--line);
+      }
+      #paper .chapter-nav-button {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        min-width: 0;
+        padding: 12px 14px;
+        border: 1px solid var(--line-strong);
+        border-radius: 3px;
+        background: transparent;
+        color: var(--ink);
+        text-align: left;
+        cursor: pointer;
+        transition:
+          background 150ms ease,
+          border-color 150ms ease;
+      }
+      #paper .chapter-nav-button.is-next {
+        align-items: flex-end;
+        text-align: right;
+      }
+      #paper .chapter-nav-button:hover {
+        border-color: var(--ink);
+        background: var(--plate);
+      }
+      #paper .chapter-nav-direction {
+        color: var(--muted);
+        font: 600 11px/1.4 var(--sans);
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
+      #paper .chapter-nav-label {
+        font: 600 15px/1.35 var(--serif);
+      }
+      #paper .chapter-nav-button.is-last .chapter-nav-label {
+        font-style: italic;
+      }
       #paper .placeholder {
         color: var(--muted);
         font-style: italic;
