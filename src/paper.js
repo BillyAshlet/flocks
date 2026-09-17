@@ -25,6 +25,29 @@ function element(tag, className, text) {
   return node;
 }
 
+// Prose on the overview and outlook: email addresses and billyashlet.com
+// become links; everything else stays text.
+function linkified(text) {
+  const node = element('p');
+  const pattern = /([\w.+-]+@[\w-]+\.[\w.]+\w)|((?:[\w-]+\.)?billyashlet\.com)/g;
+  let last = 0;
+  for (const match of text.matchAll(pattern)) {
+    node.append(text.slice(last, match.index));
+    const link = element('a', '', match[0]);
+    if (match[1]) {
+      link.href = `mailto:${match[1]}`;
+    } else {
+      link.href = `https://${match[2].startsWith('www.') ? match[2] : `www.${match[2]}`}`;
+      link.target = '_blank';
+      link.rel = 'noopener';
+    }
+    node.append(link);
+    last = match.index + match[0].length;
+  }
+  node.append(text.slice(last));
+  return node;
+}
+
 function formatValue(value, unit = '') {
   if (!Number.isFinite(value)) return '—';
   const text = Number.isInteger(value)
@@ -167,7 +190,7 @@ export function renderPaper(container, tier, tierCount, { onParameter, getState 
   if (text.sections) {
     for (const section of text.sections) {
       container.append(element('h2', '', section.heading));
-      for (const source of section.paragraphs ?? []) container.append(element('p', '', source));
+      for (const source of section.paragraphs ?? []) container.append(linkified(source));
       if (section.list) {
         const list = element('ul');
         for (const item of section.list) list.append(element('li', '', item));

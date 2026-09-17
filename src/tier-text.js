@@ -796,7 +796,7 @@ export const TIER_TEXT = {
       {
         heading: 'Get in touch',
         paragraphs: [
-          'If you have questions or ideas, write to me at billyashlet@outlook.com.',
+          'If you have questions or ideas, write to me at billyashlet@outlook.com. More of my work is at billyashlet.com.',
         ],
       },
     ],
