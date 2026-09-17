@@ -107,6 +107,31 @@ export function renderPaper(container, tier, tierCount, { onParameter, getState 
     return line;
   }
 
+  // Every symbol a formula group uses, named: what it is, and its value now
+  // when it has one. A formula without this reads as unexplained notation.
+  function whereTable(rows) {
+    const table = element('table', 'where');
+    const body = element('tbody');
+    for (const row of rows) {
+      const tr = element('tr');
+      const symbol = element('td', 'where-symbol');
+      renderTex(symbol, row.tex, false);
+      const text = element('td', 'where-text');
+      text.append(element('span', 'where-name', row.name));
+      if (row.meaning) text.append(element('span', 'where-meaning', row.meaning));
+      const value = element('td', 'where-value');
+      if (row.value) {
+        const number = element('span', 'live-value', '—');
+        value.append(number);
+        liveValues.push({ node: number, item: row, last: null });
+      }
+      tr.append(symbol, text, value);
+      body.append(tr);
+    }
+    table.append(body);
+    return table;
+  }
+
   function renderModel(model) {
     const fragment = document.createDocumentFragment();
     fragment.append(element('h2', '', 'The model'));
@@ -115,6 +140,7 @@ export function renderPaper(container, tier, tierCount, { onParameter, getState 
       fragment.append(element('h3', '', section.title));
       for (const source of section.text ?? []) fragment.append(paragraph(source));
       for (const source of section.formulas ?? []) fragment.append(formula(source));
+      if (section.where) fragment.append(whereTable(section.where));
       if (section.live) fragment.append(liveLine(section.live));
       if (section.note) fragment.append(paragraph(section.note, 'note'));
       if (section.list) {

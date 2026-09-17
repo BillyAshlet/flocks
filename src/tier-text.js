@@ -34,13 +34,14 @@ const K = sym('schools.*.targetNeighbors', 'k');
 const N = sym('schools.*.count', 'N');
 const FS = sym('perception.separationRadiusFactor', 'f_s');
 const FA = sym('perception.alignmentRadiusFactor', 'f_a');
-const WS = sym('schools.*.separationWeight', 'w_s');
-const WA = sym('schools.*.alignmentWeight', 'w_a');
-const WC = sym('schools.*.cohesionWeight', 'w_c');
+// Weights are upright w: an italic w reads like omega.
+const WS = sym('schools.*.separationWeight', '\\mathrm{w}_s');
+const WA = sym('schools.*.alignmentWeight', '\\mathrm{w}_a');
+const WC = sym('schools.*.cohesionWeight', '\\mathrm{w}_c');
 const LOOK = sym('locomotion.avoidanceLookAhead', '\\ell');
 const STEP = sym('locomotion.avoidanceAngleStep', '\\theta');
-const WAV = sym('locomotion.avoidanceWeight', 'w_{\\text{wall}}');
-const WRC = sym('locomotion.recenterWeight', 'w_{\\text{home}}');
+const WAV = sym('locomotion.avoidanceWeight', '\\mathrm{w}_{\\text{wall}}');
+const WRC = sym('locomotion.recenterWeight', '\\mathrm{w}_{\\text{home}}');
 const TDELAY = sym('locomotion.recenterDelay', 't_{\\text{wait}}');
 const TPULL = sym('locomotion.recenterDuration', 't_{\\text{pull}}');
 
@@ -137,15 +138,16 @@ export const TIER_TEXT = {
             `R_c = \\max\\!\\left(\\sqrt[3]{\\dfrac{3\\,${K}\\,V}{4\\pi\\,${N}}},\\; 0.138\\right)`,
             `R_s = ${FS}\\,R_c,\\qquad R_a = ${FA}\\,R_c`,
           ],
-          note: 'V is the tank volume, 6 × 3.6 × 2.4. The floor 0.138 is three body lengths.',
-          live: [
-            { tex: K, value: ({ school }) => school.targetNeighbors },
-            { tex: N, value: ({ school }) => school.count },
-            { tex: FS, value: ({ config }) => config.perception.separationRadiusFactor },
-            { tex: FA, value: ({ config }) => config.perception.alignmentRadiusFactor },
-            { tex: 'R_c', value: ({ derived }) => derived.cohesionRadius },
-            { tex: 'R_s', value: ({ derived }) => derived.separationRadius },
-            { tex: 'R_a', value: ({ derived }) => derived.alignmentRadius },
+          where: [
+            { tex: 'R_c', name: 'cohesion radius', meaning: 'how far a fish looks for neighbors to move toward', value: ({ derived }) => derived.cohesionRadius },
+            { tex: 'R_s', name: 'separation radius', meaning: 'how close a neighbor must be to push away from', value: ({ derived }) => derived.separationRadius },
+            { tex: 'R_a', name: 'alignment radius', meaning: 'how close a neighbor must be to match its heading', value: ({ derived }) => derived.alignmentRadius },
+            { tex: K, name: 'target neighbors', meaning: 'how many fish the cohesion radius would hold if the school were spread evenly', value: ({ school }) => school.targetNeighbors },
+            { tex: N, name: 'school size', meaning: 'number of fish in the school', value: ({ school }) => school.count },
+            { tex: 'V', name: 'tank volume', meaning: 'width × height × depth', value: ({ config }) => config.tank.width * config.tank.height * config.tank.depth },
+            { tex: FS, name: 'separation radius factor', meaning: 'separation radius as a share of the cohesion radius', value: ({ config }) => config.perception.separationRadiusFactor },
+            { tex: FA, name: 'alignment radius factor', meaning: 'alignment radius as a share of the cohesion radius', value: ({ config }) => config.perception.alignmentRadiusFactor },
+            { tex: '0.138', name: 'radius floor', meaning: 'three body lengths; the cohesion radius never gets smaller' },
           ],
         },
         {
@@ -163,8 +165,19 @@ export const TIER_TEXT = {
             `\\mathbf{a}_i = \\frac{1}{n_a}\\!\\sum_{d_{ij} < R_a}\\! \\mathbf{v}_j`,
             (config) =>
               inverseCohesion(config)
-                ? `\\mathbf{c}_i = \\frac{\\sum_{d_{ij} < R_c} \\omega_j\\,\\mathbf{x}_j}{\\sum_{d_{ij} < R_c} \\omega_j} - \\mathbf{x}_i,\\qquad \\omega_j = \\frac{1}{d_{ij}^{2} + (0.15\\,R_c)^{2}}`
+                ? `\\mathbf{c}_i = \\frac{\\sum_{d_{ij} < R_c} q_j\\,\\mathbf{x}_j}{\\sum_{d_{ij} < R_c} q_j} - \\mathbf{x}_i,\\qquad q_j = \\frac{1}{d_{ij}^{2} + (0.15\\,R_c)^{2}}`
                 : `\\mathbf{c}_i = \\frac{1}{n_c}\\!\\sum_{d_{ij} < R_c}\\! \\mathbf{x}_j - \\mathbf{x}_i`,
+          ],
+          where: [
+            { tex: '\\mathbf{s}_i', name: 'separation', meaning: 'direction fish i wants to move to get away from close neighbors' },
+            { tex: '\\mathbf{a}_i', name: 'alignment', meaning: 'the average velocity of its neighbors' },
+            { tex: '\\mathbf{c}_i', name: 'cohesion', meaning: 'from fish i toward the (weighted) center of its neighbors' },
+            { tex: '\\mathbf{x}_i,\\ \\mathbf{x}_j', name: 'positions', meaning: 'of fish i and of a neighbor j' },
+            { tex: '\\mathbf{v}_j', name: 'velocity', meaning: 'of neighbor j' },
+            { tex: 'd_{ij}', name: 'distance', meaning: 'between fish i and neighbor j' },
+            { tex: '\\hat{\\mathbf{d}}_{ij}', name: 'unit direction', meaning: 'from i toward j' },
+            { tex: 'n_a,\\ n_c', name: 'neighbor counts', meaning: 'inside the alignment radius and inside the cohesion radius' },
+            { tex: 'q_j', name: 'closeness', meaning: 'how much neighbor j counts in the cohesion center; near fish count far more' },
           ],
         },
         {
@@ -178,11 +191,16 @@ export const TIER_TEXT = {
             `\\begin{aligned}\\mathbf{F}_i ={} & ${WS}\\,\\operatorname{steer}(\\mathbf{s}_i) + ${WA}\\,\\operatorname{steer}(\\mathbf{a}_i) + ${WC}\\,\\operatorname{steer}(\\mathbf{c}_i) \\\\ & + \\mathbf{F}^{\\text{wall}}_i + \\mathbf{F}^{\\text{wander}}_i\\end{aligned}`,
             `\\mathbf{v}_i \\leftarrow \\mathbf{v}_i + \\mathbf{F}_i\\,\\Delta t,\\qquad \\mathbf{x}_i \\leftarrow \\mathbf{x}_i + \\mathbf{v}_i\\,\\Delta t`,
           ],
-          note: 'The wander term is a small, slow wobble with weight 0.08.',
-          live: [
-            { tex: WS, value: ({ school }) => school.separationWeight },
-            { tex: WA, value: ({ school }) => school.alignmentWeight },
-            { tex: WC, value: ({ school }) => school.cohesionWeight },
+          where: [
+            { tex: '\\operatorname{steer}(\\mathbf{u})', name: 'steering', meaning: 'the push that turns the current velocity toward direction u at top speed' },
+            { tex: '\\mathbf{F}_i', name: 'total force', meaning: 'on fish i this step' },
+            { tex: WS, name: 'separation weight', meaning: 'how much separation counts', value: ({ school }) => school.separationWeight },
+            { tex: WA, name: 'alignment weight', meaning: 'how much alignment counts', value: ({ school }) => school.alignmentWeight },
+            { tex: WC, name: 'cohesion weight', meaning: 'how much cohesion counts', value: ({ school }) => school.cohesionWeight },
+            { tex: '\\mathbf{F}^{\\text{wall}}_i', name: 'wall force', meaning: 'see Walls below' },
+            { tex: '\\mathbf{F}^{\\text{wander}}_i', name: 'wander', meaning: 'a small, slow wobble with weight 0.08' },
+            { tex: '\\mathbf{v}_i', name: 'velocity', meaning: 'of fish i' },
+            { tex: '\\Delta t', name: 'time step', meaning: '1/60 s' },
           ],
         },
         {
@@ -195,14 +213,16 @@ export const TIER_TEXT = {
             `\\mathbf{h} = \\text{first clear heading among } \\pm${STEP},\\ \\pm 2${STEP},\\ \\dots`,
             `\\begin{aligned}\\mathbf{F}^{\\text{home}}_i &= ${WRC}\\,\\operatorname{steer}(-\\mathbf{x}_i) \\\\ &\\text{on from } ${TDELAY} \\text{ to } ${TDELAY} + ${TPULL} \\text{ after a hit}\\end{aligned}`,
           ],
-          note: 'The ray has length ℓ; d_hit is how far along it the wall is.',
-          live: [
-            { tex: WAV, value: ({ config }) => config.locomotion.avoidanceWeight },
-            { tex: LOOK, value: ({ config }) => config.locomotion.avoidanceLookAhead },
-            { tex: STEP, value: ({ config }) => config.locomotion.avoidanceAngleStep, unit: '°' },
-            { tex: WRC, value: ({ config }) => config.locomotion.recenterWeight },
-            { tex: TDELAY, value: ({ config }) => config.locomotion.recenterDelay, unit: ' s' },
-            { tex: TPULL, value: ({ config }) => config.locomotion.recenterDuration, unit: ' s' },
+          where: [
+            { tex: LOOK, name: 'look-ahead', meaning: 'length of the ray cast along the heading', value: ({ config }) => config.locomotion.avoidanceLookAhead },
+            { tex: 'd_{\\text{hit}}', name: 'hit distance', meaning: 'how far along the ray the wall is' },
+            { tex: 'u', name: 'urgency', meaning: '0 when the wall is at the ray’s tip, 1 at contact' },
+            { tex: '\\mathbf{h}', name: 'escape heading', meaning: 'the first turned heading whose ray is clear' },
+            { tex: STEP, name: 'turn step', meaning: 'how much each tried heading turns further', value: ({ config }) => config.locomotion.avoidanceAngleStep, unit: '°' },
+            { tex: WAV, name: 'wall weight', meaning: 'how hard a fish steers off a wall', value: ({ config }) => config.locomotion.avoidanceWeight },
+            { tex: WRC, name: 'home weight', meaning: 'how hard it pulls back toward the tank center', value: ({ config }) => config.locomotion.recenterWeight },
+            { tex: TDELAY, name: 'wait', meaning: 'delay after a hit before the pull starts', value: ({ config }) => config.locomotion.recenterDelay, unit: ' s' },
+            { tex: TPULL, name: 'pull duration', meaning: 'how long the pull lasts', value: ({ config }) => config.locomotion.recenterDuration, unit: ' s' },
           ],
         },
         {
