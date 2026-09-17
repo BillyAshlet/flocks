@@ -6,7 +6,7 @@
 import { CHAPTERS } from './chapters.js';
 import { TIER_TEXT } from './tier-text.js';
 
-const AUTHOR = { name: 'Billy Ashlet', nativeName: '岳昆林', email: 'billyashlet@gmail.com' };
+const AUTHOR = { name: 'Billy Ashlet', nativeName: '岳昆林', email: 'billyashlet@outlook.com' };
 
 const EARLIER_WORK = [
   {

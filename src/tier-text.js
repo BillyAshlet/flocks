@@ -791,12 +791,13 @@ export const TIER_TEXT = {
         list: [
           'The tank itself: obstacles inside it and larger, differently shaped environments, so schools have to split around things and find each other again.',
           'More of the ecosystem, with more ways for species to depend on each other.',
+          'Mapping by swerving, from Echo Cartography, an earlier team project. A fish that swerves around something has in effect measured how far away it is; many swerves add up to a map of places no camera has seen. Once the tank has things in it to find, I want to bring that into flocks.',
         ],
       },
       {
         heading: 'Get in touch',
         paragraphs: [
-          'If you have questions or ideas, write to me at billyashlet@gmail.com.',
+          'If you have questions or ideas, write to me at billyashlet@outlook.com.',
         ],
       },
     ],
