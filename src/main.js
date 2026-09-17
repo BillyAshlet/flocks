@@ -363,6 +363,7 @@ async function bootstrap() {
     const onTier = route.page === 'tier';
     home.hidden = onTier;
     labReset.hidden = !onTier;
+    paperView?.dispose();
     if (!onTier) {
       paperView = null;
       document.title = 'flocks';

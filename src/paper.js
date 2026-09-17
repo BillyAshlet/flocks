@@ -35,6 +35,8 @@ export function renderPaper(container, tier, tierCount, { onParameter, getState 
   const text = TIER_TEXT[tier.number] ?? {};
   // Everything that depends on the running config, re-checked by update().
   const dynamicText = [];
+  // Static formulas render once they are in the page and can be measured.
+  const pendingDisplay = [];
   const dynamicFormulas = [];
   const liveValues = [];
 
@@ -45,6 +47,19 @@ export function renderPaper(container, tier, tierCount, { onParameter, getState 
         symbol.style.color = MECHANISMS[mechanism].color;
       }
     }
+  }
+
+  // A display formula that does not fit the column is broken at its wide
+  // gaps (\qquad) into stacked lines, and checked again whenever the column
+  // changes width.
+  const displayFormulas = new Map();
+  function renderDisplay(node, tex) {
+    displayFormulas.set(node, tex);
+    renderTex(node, tex, true);
+    if (!node.isConnected || node.scrollWidth <= node.clientWidth + 1) return;
+    const parts = tex.split(/,?\s*\\qquad\s*/);
+    if (parts.length < 2) return;
+    renderTex(node, `\\begin{gathered}${parts.join('\\\\[4pt]')}\\end{gathered}`, true);
   }
 
   function renderTex(node, tex, displayMode) {
@@ -72,7 +87,7 @@ export function renderPaper(container, tier, tierCount, { onParameter, getState 
     if (typeof source === 'function') {
       dynamicFormulas.push({ node, source, last: null });
     } else {
-      renderTex(node, source, true);
+      pendingDisplay.push([node, source]);
     }
     return node;
   }
@@ -130,6 +145,16 @@ export function renderPaper(container, tier, tierCount, { onParameter, getState 
   );
   if (text.model) container.append(renderModel(text.model));
   container.scrollTop = 0;
+  for (const [node, tex] of pendingDisplay) renderDisplay(node, tex);
+  let lastWidth = container.clientWidth;
+  const resize = new ResizeObserver(() => {
+    if (!container.isConnected || container.clientWidth === lastWidth) return;
+    lastWidth = container.clientWidth;
+    for (const [node, tex] of displayFormulas) {
+      if (node.isConnected) renderDisplay(node, tex);
+    }
+  });
+  resize.observe(container);
 
   container.onclick = (event) => {
     const symbol = event.target.closest('[data-param]');
@@ -150,7 +175,7 @@ export function renderPaper(container, tier, tierCount, { onParameter, getState 
     for (const entry of dynamicFormulas) {
       const next = entry.source(state.config);
       if (next !== entry.last) {
-        renderTex(entry.node, next, true);
+        renderDisplay(entry.node, next);
         entry.last = next;
       }
     }
@@ -175,5 +200,10 @@ export function renderPaper(container, tier, tierCount, { onParameter, getState 
   }
 
   update();
-  return { update };
+  return {
+    update,
+    dispose() {
+      resize.disconnect();
+    },
+  };
 }
