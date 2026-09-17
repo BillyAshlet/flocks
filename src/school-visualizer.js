@@ -41,7 +41,7 @@ export const VISUALS = {
   },
   blindCone: {
     label: 'blind cone',
-    color: '#6f6a68',
+    color: MECHANISMS.vision.color,
     paths: ['perception.fovDegrees'],
   },
   ray: {
@@ -65,23 +65,23 @@ export const VISUALS = {
   },
   farSense: {
     label: 'prey sensing radius',
-    color: '#8f2d56',
+    color: MECHANISMS.hunting.color,
     paths: ['relations.schoolSenseFactor', 'perception.detectionLengthFactor'],
   },
   nearLock: {
     label: 'target lock radius and current target',
-    color: '#e0782f',
+    color: MECHANISMS.hunting.color,
     paths: ['relations.burstRadiusFactor', 'perception.detectionLengthFactor'],
   },
   threat: {
     label: 'threat radius',
-    color: '#5b4b8a',
+    color: MECHANISMS.flee.color,
     paths: ['perception.detectionLengthFactor'],
     requires: ['relations.evadeWeight'],
   },
   signal: {
     label: 'alarm signal radius',
-    color: '#a39b2c',
+    color: MECHANISMS.emergency.color,
     paths: ['relations.signalRadiusFactor'],
   },
 };
