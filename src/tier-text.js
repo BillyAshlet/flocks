@@ -243,7 +243,7 @@ export const TIER_TEXT = {
             { tex: 'v_{\\max}', value: ({ config, school }) => effectiveMaxSpeed(config, school) },
             { tex: '\\omega', value: ({ config, school }) => effectiveTurnSpeed(config, school), unit: ' rad/s' },
           ],
-          note: 'Steering still aims at the base top speed; only the cap on actual speed is scaled. Size also sets body length, which sets the smallest neighbor radius (three body lengths).',
+          note: 'Steering aims at the same scaled top speed. Size also sets body length, which sets the smallest neighbor radius (three body lengths).',
         },
         {
           title: 'Species keep apart',
@@ -472,10 +472,10 @@ export const TIER_TEXT = {
         {
           title: 'Plankton',
           text: [
-            'Plankton lives in particles scattered in clumps through the tank. Each holds three bites; an emptied particle comes back whole after t_regrow seconds. A fish that is not chasing prey and is below 80% full tries to graze several times a second, more often if it is big, and takes a few bites from what is within reach: fewer where the plankton is thin. A fish below half full also steers toward plankton it can sense.',
+            'Plankton lives in particles scattered in clumps through the tank. Each holds three bites; an emptied particle comes back whole after t_regrow seconds. A fish that is not chasing prey and is below 80% full tries to graze several times a second, more often if it is big, and takes a few whole bites from what is within reach: fewer where the plankton is thin, but at least one. A fish below half full also steers toward plankton it can sense; while chasing prey that pull is weakened like its pull toward its school.',
           ],
           formulas: [
-            `\\text{attempts per second} = 4\\,${GRAZE}\\,b^{0.45},\\qquad n = \\left\\lfloor \\min\\!\\left(S,\\ \\frac{4\\,S}{S + 1.57}\\right) \\right\\rfloor`,
+            `\\text{attempts per second} = 4\\,${GRAZE}\\,b^{0.45},\\qquad n = \\max\\!\\left(1,\\ \\operatorname{round}\\,\\min\\!\\left(S,\\ \\frac{4\\,S}{S + 1.57}\\right)\\right)`,
             `\\text{gain} = ${EP}\\,\\frac{n}{4}`,
           ],
           live: [
@@ -488,7 +488,7 @@ export const TIER_TEXT = {
         {
           title: 'Sharing a meal',
           text: [
-            'The eater keeps most of a plankton meal. A share is split on the spot among fish of its own species within 0.25, and another goes to a pool that is divided among all living fish of the school on the next step. A caught prey is worth energy in proportion to its size; its shared part goes entirely to the pool.',
+            'The eater keeps most of a plankton meal. A share is split on the spot among fish of its own species within 0.25, and another goes to a pool that is divided among all living fish of the school on the next step. A caught prey is worth energy in proportion to its size and is split the same way.',
           ],
           formulas: [
             `\\text{eater: } 1 - ${SNEAR} - ${SSCHOOL},\\qquad \\text{nearby, same species: } ${SNEAR},\\qquad \\text{school pool: } ${SSCHOOL}`,
@@ -527,7 +527,7 @@ export const TIER_TEXT = {
       'The last tier is the small things I tuned so it feels more like biology. Each one has its own switch, so you can turn it off and see what it was doing.',
       'Tipping point. When fear passes a threshold, a school stops turning together and breaks apart, each fish for itself. I used a switch instead of a smooth blend, because I wanted the feeling of something giving way.',
       'Copying heading. Scared fish copy which way their neighbors are going, not where they are. Pulling scared fish toward each other would make them clump, the opposite of a school bursting outward.',
-      'Adrenaline. A starving fish gets something like an adrenaline rush: its sprint becomes faster and it can sprint again. But the cost doesn’t vanish; part of it is paid back over the next seconds. Right after the lunge it seems fine; the bill arrives later, when the fish is already weaker.',
+      'Adrenaline. A starving fish gets something like an adrenaline rush: its sprint becomes faster and cheaper. But the cost doesn’t vanish; part of it is paid back over the next seconds. Right after the lunge it seems fine; the bill arrives later, when the fish is already weaker.',
       'Beyond those, a lot of what’s here is small numbers I adjusted by watching.',
       'This is also where I hit a wall. The parameters affect each other in non-linear ways, and tuning them by hand gets very hard. Craig Reynolds describes the same problem in EvoFlock, where he evolves the parameters instead of tuning them by hand.',
     ],
@@ -585,17 +585,17 @@ export const TIER_TEXT = {
         {
           title: 'The debt',
           text: [
-            'While desperate, a fish pays only part of its energy use at once; the rest becomes debt. Debt is paid off continuously, a fraction of what remains each moment, on top of normal costs, and eating does not clear it.',
+            'While desperate, a fish pays only part of each sprint at once; the rest becomes debt. Resting costs are always paid in full. Debt is paid off at a steady rate on top of normal costs, so it is gone t_settle seconds after the last sprint that added to it. Eating does not clear it.',
           ],
           formulas: [
-            `\\frac{dD}{dt} = (1 - ${CNOW})\\,c(t)\\,[\\text{desperate}] - \\frac{D}{${TSETTLE}}`,
-            `\\frac{dE}{dt} = -\\,${CNOW}\\,c(t) - \\frac{D}{${TSETTLE}} + \\text{income}`,
+            `D \\mathrel{+}= (1 - ${CNOW})\\,c_{\\text{sprint}}\\,\\Delta t \\text{ while desperate},\\qquad \\text{repay } \\frac{D_{\\text{last}}}{${TSETTLE}} \\text{ per second}`,
+            `\\frac{dE}{dt} = -\\,c_{\\text{rest}} - ${CNOW}\\,c_{\\text{sprint}} - \\text{repayment} + \\text{income}`,
           ],
           live: [
             { tex: CNOW, value: ({ config }) => config.ecology.desperationCostShare },
             { tex: TSETTLE, value: ({ config }) => config.ecology.debtSettleSeconds, unit: ' s' },
           ],
-          note: 'c(t) is the fish’s whole energy use at that moment, resting and sprinting together. Outside desperation the paid-now share is 1. After t_settle seconds about 63% of a debt is paid.',
+          note: 'c_rest and c_sprint are the resting and sprint costs from tier 5; D_last is the debt right after the latest sprint added to it. Outside desperation the paid-now share is 1.',
         },
         {
           title: 'Switches',
