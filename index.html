@@ -78,7 +78,7 @@
       #topbar {
         grid-area: top;
         display: flex;
-        height: 52px;
+        height: 60px;
         border-bottom: 1px solid var(--line);
         background: var(--paper);
       }
@@ -88,7 +88,7 @@
         padding: 0 20px;
         border-right: 1px solid var(--line);
         color: var(--ink);
-        font: 600 21px/1 var(--serif);
+        font: 600 24px/1 var(--serif);
         text-decoration: none;
       }
       #tier-nav {
@@ -98,11 +98,12 @@
       }
       #tier-nav .edge {
         flex: none;
-        padding: 0 16px;
+        padding: 0 20px;
         border: 0;
         background: transparent;
         color: var(--ink-soft);
-        font: 500 13px var(--sans);
+        font: 500 15px var(--sans);
+        white-space: nowrap;
         cursor: pointer;
       }
       #tier-nav .edge:hover:not(:disabled) {
@@ -112,14 +113,26 @@
         color: var(--line-strong);
         cursor: default;
       }
+      /* One row that scrolls sideways when the chapters do not fit; wrapping
+         to a second row pushed the page down and split the contents. The
+         wheel scrolls it too (main.js). */
       #tier-steps {
         flex: 1;
-        display: grid;
-        grid-template-columns: repeat(8, minmax(0, 1fr));
+        display: flex;
+        min-width: 0;
         margin: 0;
         padding: 0;
+        overflow-x: auto;
+        overflow-y: hidden;
         border-inline: 1px solid var(--line);
         list-style: none;
+        scrollbar-width: none;
+      }
+      #tier-steps::-webkit-scrollbar {
+        display: none;
+      }
+      #tier-steps li {
+        flex: none;
       }
       #tier-steps li + li {
         border-left: 1px solid var(--line);
@@ -127,24 +140,19 @@
       #tier-steps a {
         display: flex;
         align-items: center;
-        gap: 8px;
+        gap: 9px;
         height: 100%;
-        padding: 0 12px;
+        padding: 0 20px;
         box-sizing: border-box;
         color: var(--ink-soft);
-        font: 13px/1.2 var(--sans);
+        font: 15px/1.2 var(--sans);
         text-decoration: none;
-        overflow: hidden;
-      }
-      #tier-steps a .step-title {
-        overflow: hidden;
-        text-overflow: ellipsis;
         white-space: nowrap;
       }
       #tier-steps a .step-number {
         flex: none;
         color: var(--muted);
-        font: 11px/1 var(--mono);
+        font: 13px/1 var(--mono);
       }
       #tier-steps a:hover {
         background: var(--plate);
@@ -162,7 +170,7 @@
          double-click to reset. */
       #paper-resizer {
         position: absolute;
-        top: 52px;
+        top: 60px;
         bottom: 0;
         left: calc(var(--paper-width) - 4px);
         z-index: 6;
@@ -469,6 +477,46 @@
         top: 0;
         left: 0;
         display: block;
+      }
+      /* Previous and next at mid-height on the tank's edges. */
+      .stage-arrow {
+        position: absolute;
+        top: 50%;
+        z-index: 4;
+        display: grid;
+        place-items: center;
+        width: 46px;
+        height: 46px;
+        padding: 0 0 3px;
+        transform: translateY(-50%);
+        border: 1px solid var(--line-strong);
+        border-radius: 50%;
+        background: rgba(248, 245, 238, 0.86);
+        color: var(--ink-soft);
+        font: 400 30px/1 var(--serif);
+        cursor: pointer;
+        transition:
+          background 150ms ease,
+          border-color 150ms ease,
+          color 150ms ease;
+      }
+      .stage-arrow.is-previous {
+        left: 14px;
+      }
+      .stage-arrow.is-next {
+        right: 14px;
+      }
+      .stage-arrow:hover {
+        border-color: var(--ink);
+        background: var(--paper);
+        color: var(--ink);
+      }
+      .stage-arrow:disabled {
+        display: none;
+      }
+      #app:is([data-camera-mode="closeup"], [data-camera-mode="follow"]) .stage-arrow {
+        opacity: 0;
+        pointer-events: none;
       }
       #lab-reset {
         position: absolute;
@@ -1063,6 +1111,8 @@
       <div id="paper-resizer" role="separator" aria-orientation="vertical" aria-label="Resize the text column" title="Drag to resize · double-click to reset"></div>
       <main id="stage">
         <button id="lab-reset" type="button" hidden>Reset fish</button>
+        <button id="stage-prev" class="stage-arrow is-previous" type="button" aria-label="Previous chapter">‹</button>
+        <button id="stage-next" class="stage-arrow is-next" type="button" aria-label="Next chapter">›</button>
         <div id="startup-status" role="status" aria-live="polite">Starting simulation…</div>
       </main>
       <aside id="panel-column" aria-label="Simulation parameters">

@@ -284,6 +284,9 @@ async function bootstrap() {
   const tierSteps = document.getElementById('tier-steps');
   const tierPrev = document.getElementById('tier-prev');
   const tierNext = document.getElementById('tier-next');
+  // The same previous and next again at mid-height on the tank's edges.
+  const stagePrev = document.getElementById('stage-prev');
+  const stageNext = document.getElementById('stage-next');
   const paper = document.getElementById('paper');
   const panelToggle = document.getElementById('panel-toggle');
 
@@ -392,12 +395,17 @@ async function bootstrap() {
       paperView = null;
       tierPrev.disabled = true;
       tierNext.disabled = false;
+      syncStageArrows();
       renderHome(paper, { onChapter: goToTier });
       document.title = 'flocks';
       return;
     }
     tierPrev.disabled = tier.number === FIRST_CHAPTER;
     tierNext.disabled = tier.number === LAST_CHAPTER;
+    syncStageArrows();
+    tierSteps
+      .querySelector('a[aria-current="page"]')
+      ?.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
     paperView = renderPaper(paper, tier, TIER_COUNT, {
       onParameter: openParameter,
       getState: paperState,
@@ -440,6 +448,28 @@ async function bootstrap() {
     if (chapter.href) window.location.assign(chapter.href);
     else goToTier(chapter.number);
   }
+  function syncStageArrows() {
+    const current = route.page === 'tier' ? chapterByNumber(route.number) : null;
+    const previous = current ? neighborChapter(current, -1) : null;
+    const next = current ? neighborChapter(current, 1) : chapterByNumber(FIRST_CHAPTER);
+    stagePrev.disabled = tierPrev.disabled;
+    stageNext.disabled = tierNext.disabled;
+    stagePrev.title = previous ? `Previous: ${previous.title}` : '';
+    stageNext.title = next ? `Next: ${next.title}` : '';
+  }
+  stagePrev.addEventListener('click', () => tierPrev.click());
+  stageNext.addEventListener('click', () => tierNext.click());
+  // A mouse wheel scrolls the one-row chapter bar sideways.
+  tierSteps.addEventListener(
+    'wheel',
+    (event) => {
+      if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+      if (tierSteps.scrollWidth <= tierSteps.clientWidth) return;
+      event.preventDefault();
+      tierSteps.scrollLeft += event.deltaY;
+    },
+    { passive: false }
+  );
   tierPrev.addEventListener('click', () =>
     goToChapter(neighborChapter(chapterByNumber(route.number), -1))
   );
