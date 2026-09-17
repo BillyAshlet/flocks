@@ -125,6 +125,53 @@
       #tier-steps a[aria-current="page"] .step-number {
         color: var(--line-strong);
       }
+      /* The application page hangs under the outlook as a small extra link,
+         so it does not read as another stage of flocks. */
+      #tier-steps li.has-extra {
+        display: flex;
+        flex-direction: column;
+      }
+      #tier-steps li.has-extra > a:not(.step-extra) {
+        flex: 1;
+        height: auto;
+        min-height: 0;
+      }
+      #tier-steps a.step-extra {
+        flex: none;
+        align-self: flex-start;
+        gap: 5px;
+        height: auto;
+        margin: 0 10px 6px;
+        padding: 2px 9px;
+        border: 1px solid var(--line-strong);
+        border-radius: 999px;
+        color: var(--muted);
+        font: 11px/1.3 var(--sans);
+      }
+      #tier-steps a.step-extra .step-number {
+        font-size: 10px;
+      }
+      #tier-steps a.step-extra[aria-current="page"] {
+        border-color: var(--ink);
+        background: var(--ink);
+        color: var(--paper);
+      }
+      #tier-steps a.step-extra[aria-current="page"] .step-number {
+        color: var(--line-strong);
+      }
+      /* On the outlook itself the whole slot is dark, pill included. */
+      #tier-steps li.has-extra:has(> a:first-child[aria-current="page"]) {
+        background: var(--ink);
+      }
+      #tier-steps li.has-extra:has(> a:first-child[aria-current="page"]) a.step-extra {
+        border-color: rgba(248, 245, 238, 0.35);
+        color: var(--line-strong);
+      }
+      #tier-steps li.has-extra:has(> a:first-child[aria-current="page"]) a.step-extra:hover {
+        border-color: var(--paper);
+        background: transparent;
+        color: var(--paper);
+      }
 
       #paper {
         grid-area: paper;

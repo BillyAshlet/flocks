@@ -36,6 +36,14 @@ import { BONUS_CHAPTER, CHAPTERS, chapterHref, neighborChapter } from '../../src
     title.textContent = chapter.title;
     link.append(number, title);
     if (chapter === BONUS_CHAPTER) link.setAttribute('aria-current', 'page');
+    // As on the tier pages: this page hangs under the outlook as a small
+    // extra link, not a full-size slot.
+    if (chapter.kind === 'bonus' && steps.lastElementChild) {
+      link.classList.add('step-extra');
+      steps.lastElementChild.classList.add('has-extra');
+      steps.lastElementChild.append(link);
+      continue;
+    }
     item.append(link);
     steps.append(item);
   }

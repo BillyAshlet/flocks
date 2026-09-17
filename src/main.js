@@ -306,6 +306,14 @@ async function bootstrap() {
         goToTier(tier.number);
       });
     }
+    // The application page is not a stage of flocks: it hangs under the
+    // outlook as a small extra link instead of taking a full-size slot.
+    if (tier.kind === 'bonus' && tierSteps.lastElementChild) {
+      link.classList.add('step-extra');
+      tierSteps.lastElementChild.classList.add('has-extra');
+      tierSteps.lastElementChild.appendChild(link);
+      continue;
+    }
     item.appendChild(link);
     tierSteps.appendChild(item);
   }
