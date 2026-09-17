@@ -247,7 +247,29 @@ export function renderPaper(container, tier, tierCount, { onParameter, getState,
     container.append(element('h2', '', 'Watch for'), element('p', 'watch', text.watch ?? ''));
   }
   if (text.model) container.append(renderModel(text.model));
-  container.append(chapterNav(tier, { onChapter, onHome }));
+  const nav = chapterNav(tier, { onChapter, onHome });
+  container.append(nav);
+  // The outlook ends the text: once the reader reaches its foot, a thank-you
+  // slides down from under the buttons by itself.
+  let stopThanks = null;
+  if (tier.kind === 'outlook') {
+    const thanks = element('div', 'thank-you');
+    thanks.setAttribute('aria-live', 'polite');
+    thanks.append(element('p', '', 'Thank you for your attention :))'));
+    container.append(thanks);
+    const reveal = () => {
+      const bottom = container.getBoundingClientRect().bottom;
+      if (nav.getBoundingClientRect().bottom > bottom) return;
+      thanks.classList.add('is-shown');
+      stopThanks();
+    };
+    container.addEventListener('scroll', reveal, { passive: true });
+    stopThanks = () => container.removeEventListener('scroll', reveal);
+    // A column tall enough to show the foot without scrolling never scrolls.
+    setTimeout(() => {
+      if (container.isConnected && !thanks.classList.contains('is-shown')) reveal();
+    }, 600);
+  }
   container.scrollTop = 0;
   for (const [node, tex] of pendingDisplay) renderDisplay(node, tex);
   let lastWidth = container.clientWidth;
@@ -310,6 +332,7 @@ export function renderPaper(container, tier, tierCount, { onParameter, getState,
     update,
     dispose() {
       resize.disconnect();
+      stopThanks?.();
     },
   };
 }
