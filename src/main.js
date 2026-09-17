@@ -25,7 +25,14 @@ import { createExperimentDebug } from './experiment-debug.js';
 import { TimeShortcutController } from './time-shortcuts.js';
 import { SchoolVisualizer } from './school-visualizer.js';
 import { TIER_COUNT, tierConfig, tierPanelScope } from './tiers.js';
-import { CHAPTERS, FIRST_CHAPTER, LAST_CHAPTER, chapterByNumber } from './chapters.js';
+import {
+  CHAPTERS,
+  FIRST_CHAPTER,
+  LAST_CHAPTER,
+  chapterByNumber,
+  chapterHref,
+  neighborChapter,
+} from './chapters.js';
 import { renderPaper } from './paper.js';
 import { renderHome } from './home.js';
 
@@ -281,19 +288,22 @@ async function bootstrap() {
   const panelToggle = document.getElementById('panel-toggle');
 
   // One link per chapter, all alike; the current one is marked, not the rest.
+  // A chapter on another page (the Echo Cartography bonus) is a plain link.
   for (const tier of CHAPTERS) {
     const item = document.createElement('li');
     const link = document.createElement('a');
-    link.href = `/tier/${tier.number}`;
-    link.dataset.tier = String(tier.number);
+    link.href = chapterHref(tier);
+    if (tier.number !== null) link.dataset.tier = String(tier.number);
     link.innerHTML = '<span class="step-number"></span><span class="step-title"></span>';
-    link.querySelector('.step-number').textContent = String(tier.number);
+    link.querySelector('.step-number').textContent = tier.label ?? String(tier.number);
     link.querySelector('.step-title').textContent = tier.title;
     link.title = tier.title;
-    link.addEventListener('click', (event) => {
-      event.preventDefault();
-      goToTier(tier.number);
-    });
+    if (!tier.href) {
+      link.addEventListener('click', (event) => {
+        event.preventDefault();
+        goToTier(tier.number);
+      });
+    }
     item.appendChild(link);
     tierSteps.appendChild(item);
   }
@@ -424,9 +434,21 @@ async function bootstrap() {
     showRoute({ page: 'tier', number }, { push: true });
   }
 
-  tierPrev.addEventListener('click', () => goToTier(route.number - 1));
+  // Previous and next follow reading order, which includes the bonus page.
+  function goToChapter(chapter) {
+    if (!chapter) return;
+    if (chapter.href) window.location.assign(chapter.href);
+    else goToTier(chapter.number);
+  }
+  tierPrev.addEventListener('click', () =>
+    goToChapter(neighborChapter(chapterByNumber(route.number), -1))
+  );
   tierNext.addEventListener('click', () =>
-    goToTier(route.page === 'tier' ? route.number + 1 : FIRST_CHAPTER)
+    goToChapter(
+      route.page === 'tier'
+        ? neighborChapter(chapterByNumber(route.number), 1)
+        : chapterByNumber(FIRST_CHAPTER)
+    )
   );
   for (const link of document.querySelectorAll('[data-route]')) {
     link.addEventListener('click', (event) => {

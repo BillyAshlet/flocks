@@ -1,11 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { CHAPTERS, FIRST_CHAPTER, LAST_CHAPTER, chapterByNumber } from './chapters.js';
+import {
+  CHAPTERS,
+  FIRST_CHAPTER,
+  LAST_CHAPTER,
+  chapterByNumber,
+  chapterHref,
+  neighborChapter,
+} from './chapters.js';
 import { TIER_COUNT } from './tiers.js';
 
 test('chapters run from the overview through the tiers to the outlook, in order', () => {
   assert.deepEqual(
-    CHAPTERS.map((chapter) => chapter.number),
+    CHAPTERS.filter((chapter) => chapter.kind !== 'bonus').map((chapter) => chapter.number),
     Array.from({ length: TIER_COUNT + 2 }, (_, index) => index)
   );
   assert.equal(chapterByNumber(FIRST_CHAPTER).kind, 'intro');
@@ -18,4 +25,13 @@ test('chapters run from the overview through the tiers to the outlook, in order'
 test('the overview and the outlook run the full ecosystem', () => {
   assert.equal(chapterByNumber(FIRST_CHAPTER).runs, TIER_COUNT);
   assert.equal(chapterByNumber(LAST_CHAPTER).runs, TIER_COUNT);
+});
+
+test('the bonus page sits between the last tier and the outlook', () => {
+  const tier = chapterByNumber(TIER_COUNT);
+  const bonus = neighborChapter(tier, 1);
+  assert.equal(bonus.kind, 'bonus');
+  assert.equal(chapterHref(bonus), '/echo');
+  assert.equal(neighborChapter(bonus, 1), chapterByNumber(LAST_CHAPTER));
+  assert.equal(neighborChapter(chapterByNumber(FIRST_CHAPTER), -1), null);
 });

@@ -1,0 +1,525 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>flocks · Echo Cartography</title>
+    <style>
+      /* Echo Cartography, a bonus page with its own engine (src/). The
+         page frame (tokens, top bar, text column) repeats the main page's
+         styles in index.html; keep the two in step. */
+      :root {
+        color-scheme: light;
+        --paper: #f8f5ee;
+        --plate: #eee9df;
+        --panel: #f3efe6;
+        --ink: #141413;
+        --ink-soft: #3d3a35;
+        --muted: #716c62;
+        --line: #e2dccf;
+        --line-strong: #cbc3b3;
+        --accent: #b07a24;
+        --serif: "Source Serif 4 Variable", "Source Serif Pro", Georgia, serif;
+        --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+        --mono: "SFMono-Regular", ui-monospace, Menlo, "Roboto Mono", monospace;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: var(--paper);
+        color: var(--ink);
+        font-family: var(--sans);
+      }
+      #app {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        grid-template-columns: clamp(380px, 32vw, 520px) minmax(0, 1fr);
+        grid-template-rows: auto minmax(0, 1fr);
+        grid-template-areas:
+          "top top"
+          "paper stage";
+      }
+      #topbar {
+        grid-area: top;
+        display: flex;
+        height: 52px;
+        border-bottom: 1px solid var(--line);
+        background: var(--paper);
+      }
+      #topbar .brand {
+        display: flex;
+        align-items: center;
+        padding: 0 20px;
+        border-right: 1px solid var(--line);
+        color: var(--ink);
+        font: 600 21px/1 var(--serif);
+        text-decoration: none;
+      }
+      #tier-nav {
+        flex: 1;
+        display: flex;
+        min-width: 0;
+      }
+      #tier-nav .edge {
+        display: flex;
+        flex: none;
+        align-items: center;
+        padding: 0 16px;
+        color: var(--ink-soft);
+        font: 500 13px var(--sans);
+        text-decoration: none;
+      }
+      #tier-nav .edge:hover {
+        background: var(--plate);
+      }
+      #tier-steps {
+        flex: 1;
+        display: grid;
+        grid-auto-columns: minmax(0, 1fr);
+        grid-auto-flow: column;
+        margin: 0;
+        padding: 0;
+        border-inline: 1px solid var(--line);
+        list-style: none;
+      }
+      #tier-steps li + li {
+        border-left: 1px solid var(--line);
+      }
+      #tier-steps a {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        height: 100%;
+        padding: 0 12px;
+        box-sizing: border-box;
+        color: var(--ink-soft);
+        font: 13px/1.2 var(--sans);
+        text-decoration: none;
+        overflow: hidden;
+      }
+      #tier-steps a .step-title {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      #tier-steps a .step-number {
+        flex: none;
+        color: var(--muted);
+        font: 11px/1 var(--mono);
+      }
+      #tier-steps a:hover {
+        background: var(--plate);
+      }
+      #tier-steps a[aria-current="page"] {
+        background: var(--ink);
+        color: var(--paper);
+      }
+      #tier-steps a[aria-current="page"] .step-number {
+        color: var(--line-strong);
+      }
+
+      #paper {
+        grid-area: paper;
+        min-height: 0;
+        overflow-y: auto;
+        box-sizing: border-box;
+        padding: 34px 36px 96px;
+        border-right: 1px solid var(--line);
+        font: 16.5px/1.65 var(--serif);
+      }
+      #paper .eyebrow {
+        margin: 0;
+        color: var(--muted);
+        font: 600 11px/1.4 var(--mono);
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+      #paper h1 {
+        margin: 6px 0 20px;
+        font: 600 32px/1.15 var(--serif);
+      }
+      #paper h2 {
+        margin: 36px 0 10px;
+        color: var(--muted);
+        font: 650 11.5px/1.4 var(--sans);
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+      #paper p {
+        margin: 0 0 14px;
+      }
+      #paper .lead {
+        font-size: 19px;
+        line-height: 1.45;
+      }
+      #paper a {
+        color: var(--ink);
+        text-decoration: underline;
+        text-decoration-color: var(--line-strong);
+        text-underline-offset: 3px;
+      }
+      #paper .team-note {
+        padding: 9px 12px;
+        border-left: 2px solid var(--line-strong);
+        background: var(--plate);
+        color: var(--ink-soft);
+        font: 13.5px/1.55 var(--sans);
+      }
+      .start-button {
+        appearance: none;
+        padding: 10px 18px;
+        border: 1px solid var(--ink);
+        background: var(--ink);
+        color: var(--paper);
+        font: 600 14px var(--sans);
+        cursor: pointer;
+      }
+      .start-button:hover {
+        background: transparent;
+        color: var(--ink);
+      }
+      body:not(.sim-paused) .start-button {
+        background: transparent;
+        color: var(--ink);
+      }
+
+      #stage {
+        grid-area: stage;
+        position: relative;
+        min-width: 0;
+        min-height: 0;
+        overflow: hidden;
+        background: var(--plate);
+      }
+      #scene {
+        position: absolute;
+        inset: 0;
+      }
+      #scene > canvas {
+        display: block;
+      }
+      #stage-start {
+        position: absolute;
+        /* Centered in the part of the tank the terminal panel leaves free. */
+        left: calc((100% - 342px) / 2);
+        bottom: 96px;
+        z-index: 20;
+        transform: translateX(-50%);
+        box-shadow: 0 10px 30px rgba(20, 20, 19, 0.18);
+      }
+      body:not(.sim-paused) #stage-start {
+        display: none;
+      }
+
+      #hud {
+        position: absolute;
+        left: 14px;
+        right: 360px;
+        bottom: 12px;
+        z-index: 5;
+        padding: 6px 10px;
+        border: 1px solid var(--line);
+        background: rgba(248, 245, 238, 0.92);
+        color: var(--muted);
+        font: 11px/1.6 var(--mono);
+        letter-spacing: 0.03em;
+        pointer-events: none;
+      }
+      #hud b {
+        color: var(--ink);
+        font-weight: 600;
+      }
+      #hud em {
+        color: var(--accent);
+        font-style: normal;
+        font-weight: 700;
+      }
+      #hud i::before {
+        margin: 0 9px;
+        color: var(--line-strong);
+        content: "·";
+      }
+
+      /* The terminal: what the centralized layer knows and decides. Its map
+         is drawn into #map by scissoring the tank's canvas, so the panel has
+         to sit over the tank, not beside it. */
+      #terminal {
+        position: absolute;
+        top: 12px;
+        right: 12px;
+        bottom: 12px;
+        z-index: 6;
+        width: 330px;
+        overflow-y: auto;
+        border: 1px solid var(--line-strong);
+        color: var(--ink-soft);
+        font: 11px/1.5 var(--mono);
+      }
+      /* Every part of the panel has its own background except the map box:
+         the point cloud is drawn into the canvas underneath and must show
+         through. */
+      #terminal > :not(.tp-sec),
+      #terminal .tp-h,
+      #terminal .tp-body,
+      #terminal #map-bar {
+        background: rgba(248, 245, 238, 0.95);
+      }
+      #terminal #tp-map .tp-body {
+        background: transparent;
+      }
+      #terminal #tp-map .tp-body #map-bar {
+        margin-bottom: 0;
+        padding-bottom: 7px;
+      }
+      #tp-bar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 9px 11px;
+        border-bottom: 1px solid var(--line);
+        color: var(--ink);
+        font-weight: 700;
+        letter-spacing: 0.06em;
+      }
+      #tp-phase {
+        margin-left: auto;
+        padding: 1px 6px;
+        border: 1px solid var(--line-strong);
+        color: var(--muted);
+        font-weight: 600;
+      }
+      #tp-phase[data-phase="plan"] { color: #3f6f9a; border-color: #3f6f9a; }
+      #tp-phase[data-phase="frontier"] { color: var(--accent); border-color: var(--accent); }
+      #tp-phase[data-phase="recall"] { color: var(--paper); border-color: var(--ink); background: var(--ink); }
+      #tp-min {
+        width: 20px;
+        height: 20px;
+        padding: 0;
+        border: 1px solid var(--line-strong);
+        background: transparent;
+        color: var(--muted);
+        cursor: pointer;
+      }
+      #tp-min::after { content: "−"; }
+      #terminal.min #tp-min::after { content: "+"; }
+      #terminal.min .tp-sec,
+      #terminal.min #tp-pipeline,
+      #terminal.min #tp-phase-note,
+      #terminal.min #tp-recall-bar { display: none; }
+      #tp-pipeline {
+        display: flex;
+        gap: 4px;
+        padding: 8px 11px 0;
+      }
+      #tp-pipeline .tp-step {
+        flex: 1;
+        padding: 2px 0;
+        border: 1px solid var(--line);
+        color: var(--line-strong);
+        text-align: center;
+      }
+      #tp-pipeline .tp-step.on { color: var(--ink-soft); border-color: var(--line-strong); background: var(--plate); }
+      #tp-pipeline .tp-step.now-roam { color: var(--ink); border-color: var(--ink); }
+      #tp-pipeline .tp-step.now-plan { color: #3f6f9a; border-color: #3f6f9a; }
+      #tp-pipeline .tp-step.now-frontier { color: var(--accent); border-color: var(--accent); }
+      #tp-pipeline .tp-step.now-recall { color: var(--paper); border-color: var(--ink); background: var(--ink); }
+      #tp-phase-note {
+        min-height: 16px;
+        padding: 6px 11px 4px;
+        color: var(--muted);
+      }
+      #tp-recall-bar { padding: 0 11px 8px; }
+      #tp-recall-btn {
+        width: 100%;
+        padding: 6px;
+        border: 1px solid var(--ink);
+        background: var(--ink);
+        color: var(--paper);
+        font: 600 11px var(--mono);
+        cursor: pointer;
+      }
+      #tp-recall-btn:disabled { opacity: 0.45; cursor: default; }
+      #terminal .tp-sec { border-top: 1px solid var(--line); }
+      #terminal .tp-h {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 7px 11px;
+        color: var(--muted);
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        cursor: pointer;
+      }
+      #terminal .tp-h::before { content: "▾"; font-size: 9px; }
+      #terminal .tp-sec.folded .tp-h::before { content: "▸"; }
+      #terminal .tp-sec.folded .tp-body { display: none; }
+      #terminal .tp-body { padding: 0 11px 10px; }
+      #terminal .tp-row { display: flex; align-items: center; gap: 9px; margin-top: 6px; }
+      #terminal .tp-lbl { width: 70px; color: var(--muted); }
+      #terminal .tp-track { position: relative; flex: 1; height: 5px; background: var(--line); }
+      #terminal .tp-fill { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--ink-soft); }
+      #terminal.phase-plan #tp-cover-fine .tp-fill { background: #3f6f9a; }
+      #terminal .tp-num { width: 46px; color: var(--ink); text-align: right; }
+      #tp-plan-wrap { margin-top: 8px; border: 1px solid var(--line); }
+      #tp-plan { display: block; width: 100%; height: auto; image-rendering: pixelated; }
+      #tp-plan-legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 10px;
+        margin-top: 6px;
+        color: var(--muted);
+      }
+      #tp-plan-legend i { display: inline-block; width: 8px; height: 8px; margin-right: 4px; vertical-align: -1px; }
+      #tp-plan-legend .lg-unk { background: #e2dccf; box-shadow: 0 0 0 1px var(--line-strong); }
+      #tp-plan-legend .lg-free { background: #b9cdde; }
+      #tp-plan-legend .lg-occ { background: #8f8068; }
+      #tp-plan-legend .lg-tgt { background: #d8a03c; }
+      #tp-plan-legend .lg-swarm { background: #5b90c4; }
+      #terminal .tp-kv { display: flex; gap: 9px; margin-top: 5px; }
+      #terminal .tp-kv b { color: var(--ink); font-weight: 600; }
+      #terminal .tp-kv span:first-child { min-width: 70px; color: var(--muted); }
+      #terminal .tp-mono { color: var(--muted); word-break: break-all; }
+      #map {
+        position: relative;
+        width: 100%;
+        height: 220px;
+        border: 1px solid var(--line);
+      }
+      #map-bar {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        margin-bottom: 7px;
+        white-space: nowrap;
+      }
+      #map-stat { margin-left: auto; color: var(--muted); }
+      #map-reset,
+      #map-save {
+        padding: 2px 7px;
+        border: 1px solid var(--line-strong);
+        background: transparent;
+        color: var(--ink-soft);
+        font: 10px var(--mono);
+        cursor: pointer;
+      }
+      #map-reset:hover,
+      #map-save:hover { border-color: var(--ink); color: var(--ink); }
+    </style>
+  </head>
+  <body class="sim-paused">
+    <div id="app">
+      <header id="topbar">
+        <a class="brand" href="/">flocks</a>
+        <nav id="tier-nav" aria-label="Chapters">
+          <a id="tier-prev" class="edge" href="/tier/6">← Previous</a>
+          <ol id="tier-steps"></ol>
+          <a id="tier-next" class="edge" href="/tier/7">Next →</a>
+        </nav>
+      </header>
+      <article id="paper" aria-label="About this page">
+        <p class="eyebrow">Bonus</p>
+        <h1>Echo Cartography</h1>
+        <p class="lead">A swarm that maps a place it cannot see, using nothing but the moments it almost hits something.</p>
+        <p>
+          <button type="button" class="start-button" data-start>Release the swarm</button>
+        </p>
+
+        <h2>The idea</h2>
+        <p>A fish that swerves around a wall has, for a moment, worked out that something is there and how far away it is. Normally that is thrown away once the fish has turned. Here each device keeps it and sends only that: “I almost hit something, here.” Many near misses add up to a map of places no camera has seen.</p>
+        <p>A ray that passes through open water counts against anything being there. Moving things, like the predators or the devices themselves, keep getting erased from the map this way; rock cannot be erased, because nothing ever passes through it. So the seabed separates from the fish without any recognition.</p>
+
+        <h2>What you are looking at</h2>
+        <p>The swarm explores a canyon: blue devices, turning gold when they panic. Red predators patrol it, and the swarm flees and scatters from them. The panel on the right is the terminal: it rebuilds the map from what the swarm sends, tracks how much has been covered, sends devices toward unexplored edges, and finally calls them back.</p>
+        <p>The line at the bottom compares what the swarm sends with what streaming every sensor would cost.</p>
+        <p>Drag to orbit. Press Space to pause and resume.</p>
+
+        <h2>Where this comes from</h2>
+        <p class="team-note">Echo Cartography is a past project of mine, made as a team project at the Manycore spatial intelligence workshop in August 2026. It is here as one place a swarm like flocks could be put to use. The code is moved over almost as it was, with its own engine, only recolored and trimmed for this page. The full project is at <a href="https://manycore.billyashlet.com" target="_blank" rel="noopener">manycore.billyashlet.com</a>.</p>
+      </article>
+      <main id="stage">
+        <!-- 342 = the terminal panel's width and margin (see #terminal). -->
+        <div id="scene" data-covered-right="342"></div>
+    <div id="terminal">
+      <div id="tp-bar">
+        <span id="tp-title"></span>
+        <span id="tp-phase"></span>
+        <button id="tp-min"></button>
+      </div>
+      <div id="tp-pipeline">
+        <span class="tp-step" data-step="roam">1 roam</span>
+        <span class="tp-step" data-step="plan">2 plan</span>
+        <span class="tp-step" data-step="frontier">3 frontier</span>
+        <span class="tp-step" data-step="recall">4 recall</span>
+      </div>
+      <div id="tp-phase-note"></div>
+      <div id="tp-recall-bar" hidden>
+        <button type="button" id="tp-recall-btn"></button>
+      </div>
+
+      <div class="tp-sec" id="tp-map">
+        <div class="tp-h"><span></span></div>
+        <div class="tp-body">
+          <div id="map-bar">
+            <button id="map-reset"></button>
+            <button id="map-save"></button>
+            <span id="map-stat"></span>
+          </div>
+          <div id="map"></div>
+        </div>
+      </div>
+
+      <div class="tp-sec" id="tp-cover">
+        <div class="tp-h"><span></span></div>
+        <div class="tp-body">
+          <div class="tp-row" id="tp-cover-a">
+            <span class="tp-lbl"></span>
+            <span class="tp-track"><span class="tp-fill"></span></span>
+            <span class="tp-num">—</span>
+          </div>
+          <div class="tp-row" id="tp-cover-fine">
+            <span class="tp-lbl"></span>
+            <span class="tp-track"><span class="tp-fill"></span></span>
+            <span class="tp-num">—</span>
+          </div>
+          <div id="tp-plan-wrap">
+            <canvas id="tp-plan" width="240" height="147"></canvas>
+          </div>
+          <div id="tp-plan-legend">
+            <span id="tp-plan-res" style="margin-left:auto;color:var(--accent)">—</span>
+            <span><i class="lg-unk"></i><span id="tp-lg-unk">unknown</span></span>
+            <span><i class="lg-free"></i><span id="tp-lg-free">free</span></span>
+            <span><i class="lg-occ"></i><span id="tp-lg-occ">occupied</span></span>
+            <span><i class="lg-tgt"></i><span id="tp-lg-tgt">target</span></span>
+            <span><i class="lg-swarm"></i><span id="tp-lg-swarm">swarm</span></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="tp-sec" id="tp-front">
+        <div class="tp-h"><span></span></div>
+        <div class="tp-body">
+          <div class="tp-kv"><span>frontier</span><b id="tp-frontier-n">0</b>
+            <span style="min-width:0">clusters</span><b id="tp-cluster-n">0</b></div>
+          <div class="tp-mono" style="margin-top:5px" id="tp-targets">—</div>
+        </div>
+      </div>
+
+      <div class="tp-sec" id="tp-link">
+        <div class="tp-h"><span></span></div>
+        <div class="tp-body">
+          <div class="tp-kv"><span>uplink</span><b id="tp-up">—</b>
+            <span style="min-width:0">vs central</span><b id="tp-ratio">—</b></div>
+          <div class="tp-kv"><span>points</span><b id="tp-pts">0</b></div>
+        </div>
+      </div>
+    </div>
+        <button type="button" id="stage-start" class="start-button" data-start>Release the swarm</button>
+        <div id="hud">…</div>
+      </main>
+    </div>
+    <script type="module" src="/echo-cartography/src/main.js"></script>
+  </body>
+</html>
