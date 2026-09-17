@@ -85,8 +85,11 @@ test('tier 5 introduces the food web and the core energy knobs; the rest wait fo
     introducedResearch(5, (scope, spec) => scope.isNewGlobal(spec)),
     [
       'ecology.basalRate',
+      'ecology.basalSizeExponent',
       'ecology.burstMetabolicRate',
+      'ecology.capacitySizeExponent',
       'ecology.captureEnergyPerSize',
+      'ecology.energyCapacity',
       'ecology.energyShareLocal',
       'ecology.energyShareSchool',
       'ecology.planktonEnergy',

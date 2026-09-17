@@ -63,6 +63,10 @@ const ALPHA_W = sym('traits.sizeTurnPenaltyExponent', '\\alpha_\\omega');
 const PHI_W = sym('traits.minTurnFactor', '\\phi_\\omega');
 // Tier 3
 const KREL = sym('relations.k', 'k_{\\text{hunt}}');
+// Tier 5 size scaling of the energy store and of metabolism.
+const E1 = sym('ecology.energyCapacity', 'E_1');
+const ALPHA_E = sym('ecology.capacitySizeExponent', '\\alpha_E');
+const ALPHA_MU = sym('ecology.basalSizeExponent', '\\alpha_\\mu');
 const HYST = sym('relations.hysteresis', 'h');
 const FD = sym('perception.detectionLengthFactor', 'f_D');
 const FSENSE = sym('relations.schoolSenseFactor', 'f_{\\text{sense}}');
@@ -161,8 +165,6 @@ export const TIER_TEXT = {
     watch:
       'Pods form, merge and split, though no fish knows the shape of its school.',
     model: {
-      draft:
-        'Draft: written from the code, not yet checked by the author.',
       sections: [
         {
           title: 'Who counts as a neighbor',
@@ -292,7 +294,6 @@ export const TIER_TEXT = {
     watch:
       'Red swings through wide arcs while Gold turns tightly; each schools only with its own kind.',
     model: {
-      draft: 'Draft: written from the code, not yet checked by the author.',
       sections: [
         {
           title: 'Body size costs speed and turning',
@@ -358,7 +359,6 @@ export const TIER_TEXT = {
     watch:
       'A hunter picking a target, giving up when it is not closing, and switching to a nearer fish.',
     model: {
-      draft: 'Draft: written from the code, not yet checked by the author.',
       sections: [
         {
           title: 'Who hunts whom',
@@ -469,7 +469,6 @@ export const TIER_TEXT = {
     ],
     watch: 'A startle crossing a school from the side nearest the predator.',
     model: {
-      draft: 'Draft: written from the code, not yet checked by the author.',
       sections: [
         {
           title: 'A forward cone',
@@ -576,34 +575,35 @@ export const TIER_TEXT = {
     watch:
       'A hungry Red too weak to sprint catches less, grows hungrier, and starves.',
     model: {
-      draft: 'Draft: written from the code, not yet checked by the author.',
       sections: [
         {
           title: 'Energy store',
           text: [
             'Each fish carries energy E, in abstract units. The store grows faster than body size, so a large fish can go longer without food. Fish start at about 82% full, give or take a quarter, and die when E reaches zero.',
           ],
-          formulas: [`E_{\\max} = 0.667\\,b^{1.5}`],
+          formulas: [`E_{\\max} = ${E1}\\,${B}^{${ALPHA_E}}`],
           where: [
             { tex: 'E', name: 'energy', meaning: 'what a fish has left; it dies at zero' },
             { tex: 'E_{\\max}', name: 'energy store', meaning: 'the most a fish of this size can hold', value: ({ config, school }) => energyCapacityFor(config, school) },
-            { tex: 'b', name: 'body size', meaning: 'size relative to Gold', value: ({ school }) => school.size },
-            { tex: '0.667,\\ 1.5', name: 'store scale and exponent', meaning: 'adjustable at tier 6' },
+            { tex: B, name: 'body size', meaning: 'size relative to Gold', value: ({ school }) => school.size },
+            { tex: E1, name: 'store at size 1', meaning: 'the most a size-1 fish can hold', value: ({ config }) => config.ecology.energyCapacity },
+            { tex: ALPHA_E, name: 'store exponent', meaning: 'how fast the store grows with size; above 1, bigger fish last longer', value: ({ config }) => config.ecology.capacitySizeExponent },
           ],
         },
         {
           title: 'The cost of living',
           text: [
-            'Every fish burns energy all the time, more when it sprints after prey. Both costs rise with size as b^0.75 (Kleiber): a big fish burns more in total, less per unit of body. A fish may only sprint while it holds at least a third of its store.',
+            'Every fish burns energy all the time, more when it sprints after prey. Both costs rise with a power of size, 0.75 by default (Kleiber): a big fish burns more in total, less per unit of body. A fish may only sprint while it holds at least a third of its store.',
           ],
           formulas: [
-            `\\frac{dE}{dt} = -\\,${MULT}\\,b^{0.75}\\left(${MU0} + ${MUB}\\,[\\text{sprinting}]\\right) + \\text{income}`,
+            `\\frac{dE}{dt} = -\\,${MULT}\\,${B}^{${ALPHA_MU}}\\left(${MU0} + ${MUB}\\,[\\text{sprinting}]\\right) + \\text{income}`,
           ],
           where: [
             { tex: MU0, name: 'resting cost', meaning: 'energy per second a size-1 fish burns just by living', value: ({ config }) => config.ecology.basalRate, unit: '/s' },
             { tex: MUB, name: 'sprint cost', meaning: 'extra energy per second while sprinting', value: ({ config }) => config.ecology.burstMetabolicRate, unit: '/s' },
             { tex: MULT, name: 'metabolism multiplier', meaning: 'this species’ own scaling of both costs', value: ({ school }) => school.metabolismMultiplier },
-            { tex: 'b^{0.75}', name: 'Kleiber scaling', meaning: 'costs grow with size, but slower than size' },
+            { tex: B, name: 'body size', meaning: 'size relative to Gold', value: ({ school }) => school.size },
+            { tex: ALPHA_MU, name: 'cost exponent', meaning: 'Kleiber scaling: below 1, costs grow with size but slower than size', value: ({ config }) => config.ecology.basalSizeExponent },
             { tex: '[\\text{sprinting}]', name: 'sprinting', meaning: '1 while lunging at prey, 0 otherwise' },
             { tex: 'c_{\\text{rest}}', name: 'burn at rest', meaning: 'what a fish of the edited school burns per second without sprinting', value: ({ config, school }) => metabolicRate(config, school, false), unit: '/s' },
             { tex: 't_{\\text{starve}}', name: 'time to starve', meaning: 'how long a full fish of the edited school lasts at rest', value: ({ config, school }) => energyCapacityFor(config, school) / metabolicRate(config, school, false), unit: ' s' },
@@ -615,7 +615,7 @@ export const TIER_TEXT = {
             'Plankton lives in particles scattered in clumps through the tank. Each holds three bites; an emptied particle comes back whole after t_regrow seconds. A fish that is not chasing prey and is below 80% full tries to graze several times a second, more often if it is big, and takes a few whole bites from what is within reach: fewer where the plankton is thin, but at least one. A fish below half full also steers toward plankton it can sense; while chasing prey that pull is weakened like its pull toward its school.',
           ],
           formulas: [
-            `\\text{attempts per second} = 4\\,${GRAZE}\\,b^{0.45},\\qquad n = \\max\\!\\left(1,\\ \\operatorname{round}\\,\\min\\!\\left(S,\\ \\frac{4\\,S}{S + 1.57}\\right)\\right)`,
+            `\\text{attempts per second} = 4\\,${GRAZE}\\,${B}^{0.45},\\qquad n = \\max\\!\\left(1,\\ \\operatorname{round}\\,\\min\\!\\left(S,\\ \\frac{4\\,S}{S + 1.57}\\right)\\right)`,
             `\\text{gain} = ${EP}\\,\\frac{n}{4}`,
           ],
           where: [
@@ -649,11 +649,11 @@ export const TIER_TEXT = {
             'The size window from tier 3 now has an adjustable upper edge. With three sizes it decides whether the largest fish also eats the smallest (a web) or only the middle one (a chain).',
           ],
           formulas: [
-            `\\text{hunts if } 1.35 \\le \\frac{b_{\\text{hunter}}}{b_{\\text{prey}}} \\le ${KMAX}`,
+            `\\text{hunts if } ${KREL} \\le \\frac{b_{\\text{hunter}}}{b_{\\text{prey}}} \\le ${KMAX}`,
           ],
           where: [
             { tex: KMAX, name: 'upper edge', meaning: 'the largest size ratio still worth chasing', value: ({ config }) => config.relations.KMax },
-            { tex: '1.35', name: 'hunting threshold', meaning: 'the smallest size ratio that makes a hunter, from tier 3' },
+            { tex: KREL, name: 'hunting threshold', meaning: 'the smallest size ratio that makes a hunter, from tier 3', value: ({ config }) => config.relations.k },
           ],
         },
         {
@@ -680,7 +680,6 @@ export const TIER_TEXT = {
     watch:
       'A starving Red sprinting on borrowed energy, and schools breaking apart under heavy panic.',
     model: {
-      draft: 'Draft: written from the code, not yet checked by the author.',
       sections: [
         {
           title: 'Copying heading',

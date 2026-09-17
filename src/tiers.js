@@ -123,20 +123,19 @@ const ECOLOGY = ['ecology.*', 'plankton.*'];
 // smallest (a web) or only the middle one (a chain).
 const FOOD_WEB = ['relations.KMax'];
 // Energy and plankton knobs beyond tier 5's core: living cost, hunting cost,
-// what a catch and a plankton bite are worth, how a meal is shared, and how
-// fast plankton regrows.
+// how the store and those costs scale with size, what a catch and a plankton
+// bite are worth, how a meal is shared, and how fast plankton regrows. The
+// size scaling is core because the page's formulas are written in it, and a
+// symbol on the page should be a slider the reader can move.
 // The rest shape the numbers rather than the idea, so they wait for tier 6,
 // like PANIC_FINE. Display-only paths (carcasses, particles) are not listed;
 // they stay under Non-research settings.
 const ECOLOGY_FINE = [
   'ecology.enabled',
   'ecology.seekHungerRatio',
-  'ecology.energyCapacity',
-  'ecology.capacitySizeExponent',
   'ecology.initialEnergyRatio',
   'ecology.initialEnergyJitter',
   'ecology.energyShareRadius',
-  'ecology.basalSizeExponent',
   'ecology.minBurstEnergyRatio',
   'ecology.burstSizeScaled',
   'ecology.grazeSizeExponent',
