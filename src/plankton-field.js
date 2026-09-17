@@ -239,8 +239,10 @@ export class SpatialPlanktonField {
     this._forEachNear(x, y, z, this.reach, (p, d2) => near.push([d2, p]));
     if (!near.length) return 0;
     near.sort((a, b) => a[0] - b[0]);
-    // Units are bites, so only whole bites can be taken: a request for 2.7 takes 2.
-    let left = Math.floor(amount);
+    // Units are bites, so a request becomes whole bites, rounded, and at least
+    // one. Rounding down once meant a request below one bite took nothing, so
+    // thin plankton could not feed a fish at all.
+    let left = Math.max(1, Math.round(amount));
     let taken = 0;
     for (const [, p] of near) {
       while (left > 0 && this.uses[p] > 0) {

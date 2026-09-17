@@ -294,6 +294,9 @@ export class ExperimentSimulation {
     this.desperationArmed = new Uint8Array(this.count);
     this.desperationUntil = new Float32Array(this.count);
     this.debt = new Float32Array(this.count);
+    // Debt paid per second: remaining debt spread evenly over debtSettleSeconds
+    // from the latest deferral.
+    this.debtRate = new Float32Array(this.count);
     this.corpse = new Uint8Array(this.count);
     // Seconds since death; drives color fade, belly-up roll and rise.
     this.corpseAge = new Float32Array(this.count);
@@ -550,7 +553,7 @@ export class ExperimentSimulation {
     this.prevHeadings.fill(0);
     // Initial energy needs per-fish jitter. Earlier every fish in a school
     // started with the same energy, and metabolism is deterministic
-    // (basalRate / size^0.75), so the first wave starved in the same second.
+    // (basalRate x size^0.75), so the first wave starved in the same second.
     {
       const jitter = Math.max(0, this.config.ecology.initialEnergyJitter ?? 0);
       const ratio = this.config.ecology.initialEnergyRatio;
@@ -573,6 +576,7 @@ export class ExperimentSimulation {
     this.desperationArmed.fill(1);
     this.desperationUntil.fill(0);
     this.debt.fill(0);
+    this.debtRate.fill(0);
     this.corpse.fill(0);
     this.corpseAge.fill(0);
     this.locomotionStates.fill(LOCOMOTION.CRUISE);
@@ -1734,7 +1738,10 @@ export class ExperimentSimulation {
     const vx = this.velocities[offset];
     const vy = this.velocities[offset + 1];
     const vz = this.velocities[offset + 2];
-    const ruleMaxSpeed = school.maxSpeed;
+    // The size-scaled top speed, the same one that caps actual speed. Earlier
+    // steering aimed at the base maxSpeed while speed was capped lower, so a
+    // large fish steered as if it could go faster than it can.
+    const ruleMaxSpeed = effectiveMaxSpeed(this.config, school);
     const ruleMaxForce = this.config.locomotion.maxForce;
     let fx = 0;
     let fy = 0;
@@ -1957,11 +1964,14 @@ export class ExperimentSimulation {
           this.positions[offset + 2]
         );
         if (toFood) {
+          // A hunter locked on prey cannot graze, so plankton pulls it only as
+          // weakly as its own school does. At full weight a hungry hunter was
+          // dragged mid-chase toward food it was not allowed to eat.
           applyRule(
             toFood[0],
             toFood[1],
             toFood[2],
-            this.config.locomotion.forageWeight * urgency
+            this.config.locomotion.forageWeight * urgency * socialScale
           );
         }
       }
@@ -2316,14 +2326,6 @@ export class ExperimentSimulation {
     this.food.regrow(dt);
     // Each meal is split three ways: the fish itself, nearby fish, and the
     // whole school. See experiment-config.js.
-    const localShare = clamp(this.config.ecology.energyShareLocal ?? 0, 0, 1);
-    const schoolShare = clamp(this.config.ecology.energyShareSchool ?? 0, 0, 1);
-    const shareFraction = Math.min(1, localShare + schoolShare);
-    const shareRadius = Math.max(
-      0,
-      this.config.ecology.energyShareRadius ?? 0
-    );
-    const shareRadius2 = shareRadius * shareRadius;
     const planktonEnergy = Math.max(
       0,
       this.config.ecology.planktonEnergy ?? 0.132
@@ -2429,43 +2431,7 @@ export class ExperimentSimulation {
       }
 
       if (!ate || gain <= 0) continue;
-      this.energy[index] = Math.min(
-        capacityLimit,
-        this.energy[index] + gain * (1 - shareFraction)
-      );
-      // The school-wide share goes to the pool, split among living fish each step.
-      this.energyPools[schoolIndex] += gain * schoolShare;
-      // The nearby share is split on the spot among fish of the same species
-      // that are physically close. Small groups eat well together and starve
-      // together, which is how dying off group by group emerges. Other species
-      // get none: a predator beside grazing prey used to be fed by them.
-      if (localShare > 0 && shareRadius2 > 0) {
-        const neighbours = [];
-        this.hash.forEachCandidate(index, (other) => {
-          if (other === index || !this.alive[other]) return;
-          if (this.schoolIds[other] !== schoolIndex) return;
-          const oo = other * 3;
-          const dx = this.positions[oo] - this.positions[offset];
-          const dy = this.positions[oo + 1] - this.positions[offset + 1];
-          const dz = this.positions[oo + 2] - this.positions[offset + 2];
-          if (dx * dx + dy * dy + dz * dz <= shareRadius2) neighbours.push(other);
-        });
-        if (neighbours.length > 0) {
-          const each = (gain * localShare) / neighbours.length;
-          for (const other of neighbours) {
-            this.energy[other] = Math.min(
-              capacityLimit,
-              this.energy[other] + each
-            );
-          }
-        } else {
-          // No fish nearby: this share goes to the eater; loners are not penalized.
-          this.energy[index] = Math.min(
-            capacityLimit,
-            this.energy[index] + gain * localShare
-          );
-        }
-      }
+      this._shareMeal(index, gain);
       this.captureVfx?.emitFeed?.(
         this.positions[offset],
         this.positions[offset + 1],
@@ -2509,19 +2475,19 @@ export class ExperimentSimulation {
       const fishCapacity = energyCapacityFor(this.config, school);
       const enterAt = fishCapacity * (eco.desperationEnterRatio ?? 0);
       const recoverAt = fishCapacity * (eco.desperationRecoverRatio ?? 1);
-      let drain =
-        metabolicRate(
-          this.config,
-          school,
-          this.locomotionStates[index] === LOCOMOTION.BURST
-        ) * dt;
+      const sprinting = this.locomotionStates[index] === LOCOMOTION.BURST;
+      const restDrain = metabolicRate(this.config, school, false) * dt;
+      const sprintDrain = sprinting
+        ? metabolicRate(this.config, school, true) * dt - restDrain
+        : 0;
+      let drain = restDrain + sprintDrain;
 
       // Desperation. The latch re-arms once energy reaches the recovery line,
       // which also ends exhaustion.
       if (this.energy[index] >= recoverAt) this.desperationArmed[index] = 1;
       if (this.desperation[index]) {
         // Timer expired without recovering: leave desperation and become
-        // exhausted (armed stays 0, speed x0.8).
+        // exhausted (armed stays 0, speed x desperationExhaustedSpeed).
         if (this.elapsed >= this.desperationUntil[index]) {
           this.desperation[index] = 0;
         }
@@ -2541,16 +2507,20 @@ export class ExperimentSimulation {
       // debt. Eating does not erase debt: it keeps draining energy and can
       // still kill at 0, so the fish dies of the bill coming due. That is what
       // an inherited cost looks like for a single fish.
-      if (this.desperation[index] && costShare < 1) {
-        const deferred = drain * (1 - costShare);
+      //
+      // Only the sprint is borrowed: resting costs are always paid at once.
+      // Earlier the deferred part was taken from all drain, resting included.
+      if (this.desperation[index] && costShare < 1 && sprintDrain > 0) {
+        const deferred = sprintDrain * (1 - costShare);
         this.debt[index] += deferred;
+        this.debtRate[index] = this.debt[index] / settleSeconds;
         drain -= deferred;
       }
+      // Paid back at a steady rate, so a debt is cleared debtSettleSeconds after
+      // the last sprint that added to it. Earlier each step paid a fraction of
+      // what remained, which never quite reached zero.
       if (this.debt[index] > 0) {
-        const settle = Math.min(
-          this.debt[index],
-          (this.debt[index] / settleSeconds) * dt
-        );
+        const settle = Math.min(this.debt[index], this.debtRate[index] * dt);
         this.debt[index] -= settle;
         drain += settle;
       }
@@ -2610,6 +2580,47 @@ export class ExperimentSimulation {
       best = other;
     });
     return best;
+  }
+
+  // How a meal is split: the eater keeps what is not shared; the nearby share
+  // goes on the spot to fish of the same species within energyShareRadius;
+  // the school share goes to the pool, divided among the school next step.
+  // With nobody near (or no neighbor lookup yet), the eater keeps the nearby
+  // share: loners are not penalized. The nearby share once went to any fish
+  // in the radius, so a predator beside grazing prey was fed by them.
+  _shareMeal(index, gain) {
+    const ecology = this.config.ecology;
+    const schoolIndex = this.schoolIds[index];
+    const capacity = energyCapacityFor(this.config, this.config.schools[schoolIndex]);
+    const localShare = clamp(ecology.energyShareLocal ?? 0, 0, 1);
+    const schoolShare = clamp(ecology.energyShareSchool ?? 0, 0, 1);
+    const shareFraction = Math.min(1, localShare + schoolShare);
+    this.energy[index] = Math.min(capacity, this.energy[index] + gain * (1 - shareFraction));
+    this.energyPools[schoolIndex] += gain * schoolShare;
+    if (localShare <= 0) return;
+    const radius = Math.max(0, ecology.energyShareRadius ?? 0);
+    const radius2 = radius * radius;
+    const neighbours = [];
+    if (radius2 > 0 && this.hash?.positions) {
+      const offset = index * 3;
+      this.hash.forEachCandidate(index, (other) => {
+        if (other === index || !this.alive[other]) return;
+        if (this.schoolIds[other] !== schoolIndex) return;
+        const oo = other * 3;
+        const dx = this.positions[oo] - this.positions[offset];
+        const dy = this.positions[oo + 1] - this.positions[offset + 1];
+        const dz = this.positions[oo + 2] - this.positions[offset + 2];
+        if (dx * dx + dy * dy + dz * dz <= radius2) neighbours.push(other);
+      });
+    }
+    if (neighbours.length === 0) {
+      this.energy[index] = Math.min(capacity, this.energy[index] + gain * localShare);
+      return;
+    }
+    const each = (gain * localShare) / neighbours.length;
+    for (const other of neighbours) {
+      this.energy[other] = Math.min(capacity, this.energy[other] + each);
+    }
   }
 
   _capture(dt) {
@@ -2694,20 +2705,9 @@ export class ExperimentSimulation {
         const captureGain =
           this.config.ecology.captureEnergyPerSize *
           this.config.schools[preySchool].size;
-        const captureShare = clamp(
-          (this.config.ecology.energyShareLocal ?? 0) +
-            (this.config.ecology.energyShareSchool ?? 0),
-          0,
-          1
-        );
-        this.energyPools[predatorSchool] += captureGain * captureShare;
-        this.energy[predator] = Math.min(
-          energyCapacityFor(
-            this.config,
-            this.config.schools[predatorSchool]
-          ),
-          this.energy[predator] + captureGain * (1 - captureShare)
-        );
+        // Split like any meal. The nearby share once went into the school pool
+        // instead, so a catch fed the whole school but never the hunter's pod.
+        this._shareMeal(predator, captureGain);
       }
     }
   }

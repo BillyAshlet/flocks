@@ -785,3 +785,66 @@ test("the nearby share of a meal stays within the eater's species", () => {
   assert.ok(simulation.energy[peer] > 0.5, 'a nearby schoolmate gets a share');
   assert.equal(simulation.energy[stranger], 0.5, 'a nearby fish of another species gets none');
 });
+
+test('desperation borrows only the sprint and repays it within debtSettleSeconds', async () => {
+  const { metabolicRate } = await import('./experiment-model.js');
+  const simulation = smallSimulation('steady', 20260918);
+  const fish = simulation.schoolRanges[2].start;
+  const school = simulation.config.schools[simulation.schoolIds[fish]];
+  const ecology = simulation.config.ecology;
+  ecology.desperation = true;
+  ecology.desperationDebt = true;
+  ecology.desperationCostShare = 0.5;
+  ecology.debtSettleSeconds = 2;
+  for (const s of simulation.config.schools) s.grazeRate = 0;
+  simulation.desperation[fish] = 1;
+  simulation.desperationArmed[fish] = 0;
+  simulation.desperationUntil[fish] = 1e9;
+  simulation.energy[fish] = 1;
+
+  const dt = 0.1;
+  const rest = metabolicRate(simulation.config, school, false) * dt;
+  const sprint = metabolicRate(simulation.config, school, true) * dt - rest;
+  simulation.locomotionStates.fill(0);
+  simulation.locomotionStates[fish] = 1; // BURST
+  simulation._updateEcology(dt);
+  const firstDebt = simulation.debt[fish];
+  assert.ok(Math.abs(firstDebt - (sprint * 0.5 - (sprint * 0.5 / 2) * dt)) < 1e-6, 'only half the sprint is borrowed');
+
+  simulation.locomotionStates[fish] = 0;
+  for (let t = 0; t < 2 + 1e-6; t += dt) simulation._updateEcology(dt);
+  assert.ok(simulation.debt[fish] < 1e-6, 'the debt is gone after debtSettleSeconds');
+});
+
+test('a catch is split like a plankton meal, nearby share included', () => {
+  const simulation = smallSimulation('steady', 20260919);
+  const eater = simulation.schoolRanges[2].start;
+  const mate = eater + 1;
+  const ecology = simulation.config.ecology;
+  ecology.energyShareLocal = 0.3;
+  ecology.energyShareSchool = 0.2;
+  ecology.energyShareRadius = 0.25;
+  simulation.energy.fill(0);
+  simulation.energyPools.fill(0);
+  const x = simulation.positions[eater * 3];
+  const y = simulation.positions[eater * 3 + 1];
+  const z = simulation.positions[eater * 3 + 2];
+  place(simulation, mate, x + 0.05, y, z);
+  simulation.hash.build(simulation.positions, simulation.alive, simulation.count);
+
+  simulation._shareMeal(eater, 1);
+
+  assert.ok(Math.abs(simulation.energy[eater] - 0.5) < 1e-6);
+  assert.ok(Math.abs(simulation.energy[mate] - 0.3) < 1e-6);
+  assert.ok(Math.abs(simulation.energyPools[simulation.schoolIds[eater]] - 0.2) < 1e-6);
+});
+
+test('a plankton request under one bite still takes one bite', () => {
+  const simulation = smallSimulation('steady', 20260920);
+  const field = simulation.food;
+  let particle = 0;
+  while (particle < field.count && field.uses[particle] === 0) particle += 1;
+  const o = particle * 3;
+  const taken = field.take(field.positions[o], field.positions[o + 1], field.positions[o + 2], 0.4);
+  assert.equal(taken, 1);
+});
