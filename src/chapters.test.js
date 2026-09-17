@@ -27,11 +27,14 @@ test('the overview and the outlook run the full ecosystem', () => {
   assert.equal(chapterByNumber(LAST_CHAPTER).runs, TIER_COUNT);
 });
 
-test('the bonus page sits between the last tier and the outlook', () => {
-  const tier = chapterByNumber(TIER_COUNT);
-  const bonus = neighborChapter(tier, 1);
+// After the outlook, not before it: between the tiers and the outlook the
+// application page read as the final stage of flocks.
+test('the application page comes last, after the outlook', () => {
+  const outlook = chapterByNumber(LAST_CHAPTER);
+  assert.equal(neighborChapter(chapterByNumber(TIER_COUNT), 1), outlook);
+  const bonus = neighborChapter(outlook, 1);
   assert.equal(bonus.kind, 'bonus');
   assert.equal(chapterHref(bonus), '/echo');
-  assert.equal(neighborChapter(bonus, 1), chapterByNumber(LAST_CHAPTER));
+  assert.equal(neighborChapter(bonus, 1), null);
   assert.equal(neighborChapter(chapterByNumber(FIRST_CHAPTER), -1), null);
 });

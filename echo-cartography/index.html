@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>flocks · Echo Cartography</title>
     <style>
-      /* Echo Cartography, a bonus page with its own engine (src/). The
+      /* Echo Cartography, one possible application, with its own engine (src/). The
          page frame (tokens, top bar, text column) repeats the main page's
          styles in index.html; keep the two in step. */
       :root {
@@ -156,6 +156,11 @@
       #paper p {
         margin: 0 0 14px;
       }
+      #paper .application-note {
+        margin-top: -10px;
+        color: var(--muted);
+        font: italic 15px/1.5 var(--serif);
+      }
       #paper .lead {
         font-size: 19px;
         line-height: 1.45;
@@ -235,6 +240,9 @@
       }
       .stage-arrow.is-next {
         right: calc(342px + 14px);
+      }
+      .stage-arrow[hidden] {
+        display: none;
       }
       .stage-arrow:hover {
         border-color: var(--ink);
@@ -454,14 +462,15 @@
       <header id="topbar">
         <a class="brand" href="/">flocks</a>
         <nav id="tier-nav" aria-label="Chapters">
-          <a id="tier-prev" class="edge" href="/tier/6">← Previous</a>
+          <a id="tier-prev" class="edge" href="/tier/7">← Previous</a>
           <ol id="tier-steps"></ol>
-          <a id="tier-next" class="edge" href="/tier/7">Next →</a>
+          <a id="tier-next" class="edge" href="/">Next →</a>
         </nav>
       </header>
       <article id="paper" aria-label="About this page">
-        <p class="eyebrow">Bonus</p>
+        <p class="eyebrow">One possible application</p>
         <h1>Echo Cartography</h1>
+        <p class="application-note">Not the last stage of flocks: one of the uses I have in mind for a swarm like it, from a past project of mine.</p>
         <p class="lead">A swarm that maps a place it cannot see, using nothing but the moments it almost hits something.</p>
         <p>
           <button type="button" class="start-button" data-start>Release the swarm</button>
@@ -556,8 +565,8 @@
         </div>
       </div>
     </div>
-        <a id="stage-prev" class="stage-arrow is-previous" href="/tier/6" aria-label="Previous chapter">‹</a>
-        <a id="stage-next" class="stage-arrow is-next" href="/tier/7" aria-label="Next chapter">›</a>
+        <a id="stage-prev" class="stage-arrow is-previous" href="/tier/7" aria-label="Previous chapter">‹</a>
+        <a id="stage-next" class="stage-arrow is-next" href="/" aria-label="Next chapter">›</a>
         <button type="button" id="stage-start" class="start-button" data-start>Release the swarm</button>
         <div id="hud">…</div>
       </main>

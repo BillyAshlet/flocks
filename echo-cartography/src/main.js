@@ -42,16 +42,25 @@ import { BONUS_CHAPTER, CHAPTERS, chapterHref, neighborChapter } from '../../src
   const previous = neighborChapter(BONUS_CHAPTER, -1);
   const next = neighborChapter(BONUS_CHAPTER, 1);
   // The top bar's edges and the arrows on the tank lead to the same places.
+  // This page comes last, so with nothing after it the top bar's next leads
+  // back to the title and the next arrow is hidden.
   for (const [id, chapter, word] of [
     ['tier-prev', previous, 'Previous'],
     ['stage-prev', previous, 'Previous'],
     ['tier-next', next, 'Next'],
     ['stage-next', next, 'Next'],
   ]) {
-    if (!chapter) continue;
     const link = document.getElementById(id);
-    link.href = chapterHref(chapter);
-    link.title = `${word}: ${chapter.title}`;
+    if (chapter) {
+      link.href = chapterHref(chapter);
+      link.title = `${word}: ${chapter.title}`;
+    } else if (id === 'tier-next') {
+      link.href = '/';
+      link.textContent = 'Title →';
+      link.title = 'Back to the title';
+    } else {
+      link.hidden = true;
+    }
   }
   // A mouse wheel scrolls the one-row chapter bar sideways, and the current
   // chapter starts in view.

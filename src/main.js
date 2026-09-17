@@ -28,7 +28,6 @@ import { TIER_COUNT, tierConfig, tierPanelScope } from './tiers.js';
 import {
   CHAPTERS,
   FIRST_CHAPTER,
-  LAST_CHAPTER,
   chapterByNumber,
   chapterHref,
   neighborChapter,
@@ -400,8 +399,8 @@ async function bootstrap() {
       document.title = 'flocks';
       return;
     }
-    tierPrev.disabled = tier.number === FIRST_CHAPTER;
-    tierNext.disabled = tier.number === LAST_CHAPTER;
+    tierPrev.disabled = !neighborChapter(tier, -1);
+    tierNext.disabled = !neighborChapter(tier, 1);
     syncStageArrows();
     tierSteps
       .querySelector('a[aria-current="page"]')
