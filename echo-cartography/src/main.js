@@ -41,8 +41,33 @@ import { BONUS_CHAPTER, CHAPTERS, chapterHref, neighborChapter } from '../../src
   }
   const previous = neighborChapter(BONUS_CHAPTER, -1);
   const next = neighborChapter(BONUS_CHAPTER, 1);
-  if (previous) document.getElementById('tier-prev').href = chapterHref(previous);
-  if (next) document.getElementById('tier-next').href = chapterHref(next);
+  // The top bar's edges and the arrows on the tank lead to the same places.
+  for (const [id, chapter, word] of [
+    ['tier-prev', previous, 'Previous'],
+    ['stage-prev', previous, 'Previous'],
+    ['tier-next', next, 'Next'],
+    ['stage-next', next, 'Next'],
+  ]) {
+    if (!chapter) continue;
+    const link = document.getElementById(id);
+    link.href = chapterHref(chapter);
+    link.title = `${word}: ${chapter.title}`;
+  }
+  // A mouse wheel scrolls the one-row chapter bar sideways, and the current
+  // chapter starts in view.
+  steps.addEventListener(
+    'wheel',
+    (event) => {
+      if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+      if (steps.scrollWidth <= steps.clientWidth) return;
+      event.preventDefault();
+      steps.scrollLeft += event.deltaY;
+    },
+    { passive: false }
+  );
+  steps
+    .querySelector('a[aria-current="page"]')
+    ?.scrollIntoView({ block: 'nearest', inline: 'center' });
 }
 
 const i18n = new I18n();
