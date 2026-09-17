@@ -61,6 +61,11 @@ const BASICS = [
   'runtime.spawnMode',
   'locomotion.avoidance*',
   'locomotion.recenter*',
+  // Tank size from tier 1: the page's radius formula uses the tank volume,
+  // and a symbol on the page should open a slider the reader can move.
+  'tank.width',
+  'tank.height',
+  'tank.depth',
 ];
 const PREDATION = [
   'relations.k',

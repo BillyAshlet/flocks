@@ -32,6 +32,8 @@ export function sym(path, tex) {
 
 const K = sym('schools.*.targetNeighbors', 'k');
 const N = sym('schools.*.count', 'N');
+// Volume is width × height × depth; the symbol opens the tank folder.
+const V = sym('tank.width', 'V');
 // Each species' three radii. In 'neighbors' mode the cohesion radius is
 // computed, so it is written plain (not a slider) there.
 const RS = sym('schools.*.separationRadius', 'R_s');
@@ -151,7 +153,7 @@ export const TIER_TEXT = {
               `\\mathcal{N}^{s}_i = \\{\\, j : d_{ij} < ${RS} \\,\\},\\qquad \\mathcal{N}^{a}_i = \\{\\, j : d_{ij} < ${RA} \\,\\},\\qquad \\mathcal{N}^{c}_i = \\{\\, j : d_{ij} < ${rc(config)} \\,\\}`,
             (config) =>
               fromNeighbors(config)
-                ? `R_c = \\max\\!\\left(\\sqrt[3]{\\dfrac{3\\,${K}\\,V}{4\\pi\\,${N}}},\\; 0.138\\right)`
+                ? `R_c = \\max\\!\\left(\\sqrt[3]{\\dfrac{3\\,${K}\\,${V}}{4\\pi\\,${N}}},\\; 0.138\\right)`
                 : `${RC_SET},\\ ${RS},\\ ${RA}\\ \\text{set for each species}`,
           ],
           where: [
@@ -162,7 +164,7 @@ export const TIER_TEXT = {
             { tex: RC_SET, name: 'cohesion radius', meaning: 'how far a fish looks for neighbors to move toward', value: ({ derived }) => derived.cohesionRadius },
             { tex: K, name: 'target neighbors', meaning: 'computed mode only: how many fish the cohesion radius would hold if the school were spread evenly', value: ({ school }) => school.targetNeighbors },
             { tex: N, name: 'school size', meaning: 'number of fish in the school', value: ({ school }) => school.count },
-            { tex: 'V', name: 'tank volume', meaning: 'width × height × depth', value: ({ config }) => config.tank.width * config.tank.height * config.tank.depth },
+            { tex: V, name: 'tank volume', meaning: 'width × height × depth', value: ({ config }) => config.tank.width * config.tank.height * config.tank.depth },
             { tex: '0.138', name: 'radius floor', meaning: 'computed mode only: three body lengths; the cohesion radius never gets smaller' },
           ],
         },
