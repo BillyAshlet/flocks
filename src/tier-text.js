@@ -351,13 +351,13 @@ export const TIER_TEXT = {
             'Both radii grow with the hunter’s own neighbor radius. Out to the sensing radius, a hunter with no target steers toward the plain center of the prey it senses. Within the lock radius it picks one fish.',
           ],
           formulas: [
-            `D = ${FD}\\,R_c,\\qquad R_{\\text{sense}} = ${FSENSE}\\,D,\\qquad R_{\\text{lock}} = ${FLOCK}\\,D`,
+            (config) => `D = ${FD}\\,${rc(config)},\\qquad R_{\\text{sense}} = ${FSENSE}\\,D,\\qquad R_{\\text{lock}} = ${FLOCK}\\,D`,
             `\\mathbf{F}^{\\text{scan}}_i = ${WP}\\,\\operatorname{steer}\\!\\left(\\bar{\\mathbf{x}}_{\\text{prey}} - \\mathbf{x}_i\\right)`,
           ],
           where: [
             { tex: 'D', name: 'detection length', meaning: 'the hunter’s base reach, a share of its cohesion radius', value: ({ derived }) => derived.detectionLength },
             { tex: FD, name: 'detection factor', meaning: 'detection length as a share of the cohesion radius', value: ({ config }) => config.perception.detectionLengthFactor },
-            { tex: 'R_c', name: 'cohesion radius', meaning: 'the hunter’s own neighbor radius from tier 1', value: ({ derived }) => derived.cohesionRadius },
+            { tex: RC_SET, name: 'cohesion radius', meaning: 'the hunter’s own neighbor radius from tier 1', value: ({ derived }) => derived.cohesionRadius },
             { tex: FSENSE, name: 'sensing factor', meaning: 'sensing radius in detection lengths', value: ({ config }) => config.relations.schoolSenseFactor },
             { tex: 'R_{\\text{sense}}', name: 'sensing radius', meaning: 'how far a hunter senses prey', value: ({ config, derived }) => derived.detectionLength * config.relations.schoolSenseFactor },
             { tex: FLOCK, name: 'lock factor', meaning: 'lock radius in detection lengths', value: ({ config }) => config.relations.burstRadiusFactor },
@@ -461,12 +461,12 @@ export const TIER_TEXT = {
             'A fish senses any fish that hunts its species within its threat radius, in every direction. Threat grows linearly from zero at the edge to one at contact.',
           ],
           formulas: [
-            `R_p = ${FD}\\,R_c,\\qquad T_i = \\max_{\\text{hunters}} \\left(1 - \\frac{d}{R_p}\\right)`,
+            (config) => `R_p = ${FD}\\,${rc(config)},\\qquad T_i = \\max_{\\text{hunters}} \\left(1 - \\frac{d}{R_p}\\right)`,
           ],
           where: [
             { tex: 'R_p', name: 'threat radius', meaning: 'how far a fish senses a hunter', value: ({ derived }) => derived.panicRadius },
             { tex: FD, name: 'detection factor', meaning: 'threat radius as a share of the fish’s cohesion radius', value: ({ config }) => config.perception.detectionLengthFactor },
-            { tex: 'R_c', name: 'cohesion radius', meaning: 'the fish’s own neighbor radius from tier 1', value: ({ derived }) => derived.cohesionRadius },
+            { tex: RC_SET, name: 'cohesion radius', meaning: 'the fish’s own neighbor radius from tier 1', value: ({ derived }) => derived.cohesionRadius },
             { tex: 'T_i', name: 'threat', meaning: 'how close the nearest hunter is, 0 at the edge and 1 at contact' },
             { tex: 'd', name: 'distance', meaning: 'distance to a hunter' },
           ],
@@ -477,7 +477,7 @@ export const TIER_TEXT = {
             'A fish sends a pulse when a threat first grips it (T passes 0.55; it lets go below 0.25), or when the pulse it hears from neighbors it can see passes a threshold η. A pulse starts at 1 and fades within a fraction of a second. After sending, a fish cannot send again for a refractory time.',
           ],
           formulas: [
-            `h_i = \\max_{j \\text{ seen},\\ d_{ij} < R_c} a_j\\left(1 - \\frac{d_{ij}}{R_c}\\right),\\qquad \\text{send if } h_i \\ge ${ETA} \\text{ and } ${TREF} \\text{ has passed}`,
+            (config) => `h_i = \\max_{j \\text{ seen},\\ d_{ij} < ${rc(config)}} a_j\\left(1 - \\frac{d_{ij}}{${rc(config)}}\\right),\\qquad \\text{send if } h_i \\ge ${ETA} \\text{ and } ${TREF} \\text{ has passed}`,
             `a_i \\leftarrow 1 \\text{ on sending},\\qquad a_i \\leftarrow a_i\\,e^{-\\Delta t / 0.35} \\text{ otherwise}`,
           ],
           where: [
@@ -658,14 +658,14 @@ export const TIER_TEXT = {
             'A fish whose panic has passed the alarm threshold broadcasts its heading to the neighbors that can see it, within a signal radius. Close and very scared senders count far more. A receiver steers along the combined heading, as strongly as its most urgent sender. A scared fish also listens harder to ordinary alignment when its neighbors are scared too. None of this pulls fish together.',
           ],
           formulas: [
-            `R_{\\text{sig}} = ${FSIG}\\,R_a,\\qquad q_j = \\left(1 - \\frac{d_{ij}}{R_{\\text{sig}}}\\right) p_j \\left(1 + ${BSRC}\\,p_j^{2}\\right) \\quad (p_j \\ge \\eta)`,
+            `R_{\\text{sig}} = ${FSIG}\\,${RA},\\qquad q_j = \\left(1 - \\frac{d_{ij}}{R_{\\text{sig}}}\\right) p_j \\left(1 + ${BSRC}\\,p_j^{2}\\right) \\quad (p_j \\ge \\eta)`,
             `\\mathbf{F}^{\\text{copy}}_i = ${WEM}\\,\\max_j\\!\\left[\\left(1 - \\frac{d_{ij}}{R_{\\text{sig}}}\\right) p_j\\right] \\operatorname{steer}\\!\\Big(\\sum_j q_j\\,\\hat{\\mathbf{v}}_j\\Big)`,
             `\\mathrm{w}_a \\times \\min\\!\\left(1 + ${BRCV}\\,\\bar{p}_{\\text{nbr}}\\,p_i,\\ ${RCVMAX}\\right)`,
           ],
           where: [
             { tex: 'R_{\\text{sig}}', name: 'signal radius', meaning: 'how far a heading is broadcast', value: ({ config, derived }) => derived.alignmentRadius * config.relations.signalRadiusFactor },
             { tex: FSIG, name: 'signal factor', meaning: 'signal radius as a share of the alignment radius', value: ({ config }) => config.relations.signalRadiusFactor },
-            { tex: 'R_a', name: 'alignment radius', meaning: 'from tier 1', value: ({ derived }) => derived.alignmentRadius },
+            { tex: RA, name: 'alignment radius', meaning: 'from tier 1', value: ({ derived }) => derived.alignmentRadius },
             { tex: 'q_j', name: 'sender weight', meaning: 'how much sender j counts: closer and more scared counts more' },
             { tex: 'p_j,\\ p_i', name: 'panic', meaning: 'panic of the sender and of the receiver' },
             { tex: BSRC, name: 'sender boost', meaning: 'how much extra a very scared sender counts', value: ({ config }) => config.relations.alignmentSourceBoost },
