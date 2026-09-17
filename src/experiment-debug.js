@@ -101,22 +101,22 @@ export const SCHOOL_SECTIONS = [
     // reached the panel.
     fields: ['grazeRate', 'metabolismMultiplier'],
   },
+  // Each rule's radius sits beside its weight. The cohesion folder also holds
+  // the switch for how the cohesion radius is set; only the field that mode
+  // uses is shown (see radiusFieldShown).
   {
     title: '分离 · Separation',
-    fields: ['separationWeight'],
-    derivedRadius: 'separationRadius',
-    globalPaths: ['perception.separationRadiusFactor'],
+    fields: ['separationRadius', 'separationWeight'],
   },
   {
     title: '对齐 · Alignment',
-    fields: ['alignmentWeight'],
-    derivedRadius: 'alignmentRadius',
-    globalPaths: ['perception.alignmentRadiusFactor'],
+    fields: ['alignmentRadius', 'alignmentWeight'],
   },
   {
     title: '凝聚 · Cohesion',
-    fields: ['targetNeighbors', 'cohesionWeight'],
+    fields: ['cohesionRadius', 'targetNeighbors', 'cohesionWeight'],
     derivedRadius: 'cohesionRadius',
+    globalPaths: ['perception.radiusMode'],
   },
   {
     title: '出生布局',
@@ -416,7 +416,7 @@ export function createExperimentDebug({
         ) {
           schoolEditorElement.style.setProperty('--school-color', parent[key]);
         }
-        if (spec.path === 'tank.preset') {
+        if (spec.path === 'tank.preset' || spec.path === 'perception.radiusMode') {
           setTimeout(rebuildPane, 0);
         } else if (
           spec.path.endsWith('.name') ||
@@ -631,7 +631,8 @@ export function createExperimentDebug({
         return section.fields.some(
           (field) =>
             (relative === field || relative.startsWith(`${field}.`)) &&
-            schoolFieldVisible(field)
+            schoolFieldVisible(field) &&
+            radiusFieldShown(field)
         );
       });
       if (
@@ -643,7 +644,7 @@ export function createExperimentDebug({
       }
       const folder = editor.addFolder({ title: t(section.title) });
       registerLeaf(folder, `school:${section.title}`);
-      if (section.derivedRadius) {
+      if (section.derivedRadius && radiusComputed()) {
         const radiusBinding = folder.addBinding(boidState, section.derivedRadius, {
           label: t('actual radius'),
           readonly: true,
@@ -903,6 +904,18 @@ export function createExperimentDebug({
   function globalVisible(project, spec) {
     const scope = controller.panelScope;
     return scope ? scope.showGlobal(spec) : groupVisible(project, spec.group);
+  }
+
+  // A set cohesion radius and a target neighbor count are two ways to the
+  // same radius; show the one perception.radiusMode uses.
+  function radiusComputed() {
+    return controller.stage.perception.radiusMode === 'neighbors';
+  }
+
+  function radiusFieldShown(field) {
+    if (field === 'cohesionRadius') return !radiusComputed();
+    if (field === 'targetNeighbors') return radiusComputed();
+    return true;
   }
 
   function schoolFieldVisible(field) {

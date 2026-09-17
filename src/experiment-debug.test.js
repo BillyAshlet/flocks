@@ -39,39 +39,21 @@ test('boid editor keeps each radius control beside its school weight', () => {
     SCHOOL_SECTIONS.map((section) => [section.title, section])
   );
   assert.deepEqual(sections['分离 · Separation'].fields, [
+    'separationRadius',
     'separationWeight',
   ]);
-  assert.deepEqual(sections['分离 · Separation'].globalPaths, [
-    'perception.separationRadiusFactor',
-  ]);
-  assert.equal(
-    sections['分离 · Separation'].derivedRadius,
-    'separationRadius'
-  );
   assert.deepEqual(sections['对齐 · Alignment'].fields, [
+    'alignmentRadius',
     'alignmentWeight',
   ]);
-  assert.deepEqual(sections['对齐 · Alignment'].globalPaths, [
-    'perception.alignmentRadiusFactor',
-  ]);
-  assert.equal(
-    sections['对齐 · Alignment'].derivedRadius,
-    'alignmentRadius'
-  );
   assert.deepEqual(sections['凝聚 · Cohesion'].fields, [
+    'cohesionRadius',
     'targetNeighbors',
     'cohesionWeight',
   ]);
-  assert.equal(sections['凝聚 · Cohesion'].globalPaths, undefined);
   assert.equal(
     sections['凝聚 · Cohesion'].derivedRadius,
     'cohesionRadius'
   );
-  assert.deepEqual(
-    [...SCHOOL_EMBEDDED_GLOBAL_PATHS].sort(),
-    [
-      'perception.alignmentRadiusFactor',
-      'perception.separationRadiusFactor',
-    ].sort()
-  );
+  assert.deepEqual([...SCHOOL_EMBEDDED_GLOBAL_PATHS], ['perception.radiusMode']);
 });

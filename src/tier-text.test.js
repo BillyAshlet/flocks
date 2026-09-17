@@ -35,7 +35,7 @@ test('every formula symbol names a parameter shown at its tier', () => {
       const field = /^schools\.\*\.(.+)$/.exec(path)?.[1];
       const shown = field
         ? scope.showSchoolField(field)
-        : scope.showGlobal({ path }) || path.startsWith('perception.') && path.endsWith('RadiusFactor');
+        : scope.showGlobal({ path });
       assert.ok(shown, `tier ${number}: ${path} is not in the panel`);
     }
   }

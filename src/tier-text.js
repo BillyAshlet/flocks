@@ -32,8 +32,13 @@ export function sym(path, tex) {
 
 const K = sym('schools.*.targetNeighbors', 'k');
 const N = sym('schools.*.count', 'N');
-const FS = sym('perception.separationRadiusFactor', 'f_s');
-const FA = sym('perception.alignmentRadiusFactor', 'f_a');
+// Each species' three radii. In 'neighbors' mode the cohesion radius is
+// computed, so it is written plain (not a slider) there.
+const RS = sym('schools.*.separationRadius', 'R_s');
+const RA = sym('schools.*.alignmentRadius', 'R_a');
+const RC_SET = sym('schools.*.cohesionRadius', 'R_c');
+const fromNeighbors = (config) => config.perception.radiusMode === 'neighbors';
+const rc = (config) => (fromNeighbors(config) ? 'R_c' : RC_SET);
 // Weights are upright w: an italic w reads like omega.
 const WS = sym('schools.*.separationWeight', '\\mathrm{w}_s');
 const WA = sym('schools.*.alignmentWeight', '\\mathrm{w}_a');
@@ -108,8 +113,8 @@ const TSETTLE = sym('ecology.debtSettleSeconds', 't_{\\text{settle}}');
 // The forms a rule can take, as they are in experiment-simulation.js.
 const SEPARATION_FALLOFF = {
   inverse: { g: '\\frac{1}{d_{ij}}', words: 'one over its distance' },
-  linear: { g: '\\left(1 - \\frac{d_{ij}}{R_s}\\right)', words: 'a share that falls linearly to zero at the separation radius' },
-  invlog: { g: '\\ln\\frac{R_s}{d_{ij}}', words: 'the log of the separation radius over its distance' },
+  linear: { g: `\\left(1 - \\frac{d_{ij}}{${RS}}\\right)`, words: 'a share that falls linearly to zero at the separation radius' },
+  invlog: { g: `\\ln\\frac{${RS}}{d_{ij}}`, words: 'the log of the separation radius over its distance' },
 };
 const separationFalloff = (config) =>
   SEPARATION_FALLOFF[config.perception.separationFalloff] ?? SEPARATION_FALLOFF.inverse;
@@ -119,7 +124,7 @@ export const TIER_TEXT = {
   1: {
     added: 'Three rules per fish (separation, alignment, cohesion) and walls.',
     why: [
-      "This project started from two things colliding: a water-jet ring-toss toy I played with as a kid, and Craig Reynolds' boids. They share one idea: simple rules, complex systems. Each fish follows three rules (keep a little distance, match your neighbors' direction, move toward your neighbors) and only looks at the fish around it. No leader, no choreography.",
+      "This project started from two things colliding: a water-jet ring-toss toy I played with as a kid, and Craig Reynolds' boids. I first set out to rebuild the toy as a game; I didn't carry on with the game, but the fish stayed. The toy and boids share one idea: simple rules, complex systems. Each fish follows three rules (keep a little distance, match your neighbors' direction, move toward your neighbors) and only looks at the fish around it. No leader, no choreography.",
       "The interesting part is tuning. Each rule has a strength and a reach, and small changes swing the whole school between two dead ends: too tidy, and everything locks into one regular loop; too loose, and it's just noise. What I was looking for is the narrow band in between: regular enough that you sense a pattern, irregular enough that you can't describe it in one sentence.",
       "Tuning also showed me the three rules don't do the same job. Separation mostly just keeps fish from bumping into each other. The large shapes come from alignment and cohesion.",
     ],
@@ -132,22 +137,33 @@ export const TIER_TEXT = {
         {
           title: 'Who counts as a neighbor',
           text: [
-            "Each fish looks at the fish of its own school within a radius, in every direction. The radius is not set by hand. It is the radius of a sphere that would hold k fish if the school were spread evenly through the tank, so asking for more neighbors widens every fish's reach. Separation and alignment use fixed fractions of it.",
+            (config) =>
+              fromNeighbors(config)
+                ? "Each fish looks at the fish of its own school within three radii, one per rule. Separation and alignment radii are set for each species. The cohesion radius is computed here: it is the radius of a sphere that would hold k fish if the school were spread evenly through the tank."
+                : "Each fish looks at the fish of its own school within three radii, one per rule, set for each species: the closest neighbors it pushes away from, a wider ring whose heading it matches, and the widest it moves toward. They are set separately because the three forces act differently; separation, for one, grows sharply as a neighbor comes close.",
+            (config) =>
+              fromNeighbors(config)
+                ? "The reach then follows density: more fish or a smaller tank shrink the cohesion radius, so a fish keeps about k neighbors on average whatever the school or tank size. The switch \"cohesion radius from\" in the Cohesion folder sets it back to a radius set directly, and the formula below changes with it."
+                : "The cohesion radius can instead be computed from a target number of neighbors (the switch \"cohesion radius from\" in the Cohesion folder). Then the reach follows density, so a fish keeps about the same number of neighbors when fish are added or the tank changes size. The formula below changes with the switch.",
           ],
           formulas: [
-            `R_c = \\max\\!\\left(\\sqrt[3]{\\dfrac{3\\,${K}\\,V}{4\\pi\\,${N}}},\\; 0.138\\right)`,
-            `R_s = ${FS}\\,R_c,\\qquad R_a = ${FA}\\,R_c`,
+            (config) =>
+              `\\mathcal{N}^{s}_i = \\{\\, j : d_{ij} < ${RS} \\,\\},\\qquad \\mathcal{N}^{a}_i = \\{\\, j : d_{ij} < ${RA} \\,\\},\\qquad \\mathcal{N}^{c}_i = \\{\\, j : d_{ij} < ${rc(config)} \\,\\}`,
+            (config) =>
+              fromNeighbors(config)
+                ? `R_c = \\max\\!\\left(\\sqrt[3]{\\dfrac{3\\,${K}\\,V}{4\\pi\\,${N}}},\\; 0.138\\right)`
+                : `${RC_SET},\\ ${RS},\\ ${RA}\\ \\text{set for each species}`,
           ],
           where: [
-            { tex: 'R_c', name: 'cohesion radius', meaning: 'how far a fish looks for neighbors to move toward', value: ({ derived }) => derived.cohesionRadius },
-            { tex: 'R_s', name: 'separation radius', meaning: 'how close a neighbor must be to push away from', value: ({ derived }) => derived.separationRadius },
-            { tex: 'R_a', name: 'alignment radius', meaning: 'how close a neighbor must be to match its heading', value: ({ derived }) => derived.alignmentRadius },
-            { tex: K, name: 'target neighbors', meaning: 'how many fish the cohesion radius would hold if the school were spread evenly', value: ({ school }) => school.targetNeighbors },
+            { tex: '\\mathcal{N}^{s}_i,\\ \\mathcal{N}^{a}_i,\\ \\mathcal{N}^{c}_i', name: 'neighbor sets', meaning: 'the fish of i’s own school that each rule looks at' },
+            { tex: 'd_{ij}', name: 'distance', meaning: 'between fish i and fish j' },
+            { tex: RS, name: 'separation radius', meaning: 'how close a neighbor must be to push away from', value: ({ derived }) => derived.separationRadius },
+            { tex: RA, name: 'alignment radius', meaning: 'how close a neighbor must be to match its heading', value: ({ derived }) => derived.alignmentRadius },
+            { tex: RC_SET, name: 'cohesion radius', meaning: 'how far a fish looks for neighbors to move toward', value: ({ derived }) => derived.cohesionRadius },
+            { tex: K, name: 'target neighbors', meaning: 'computed mode only: how many fish the cohesion radius would hold if the school were spread evenly', value: ({ school }) => school.targetNeighbors },
             { tex: N, name: 'school size', meaning: 'number of fish in the school', value: ({ school }) => school.count },
             { tex: 'V', name: 'tank volume', meaning: 'width × height × depth', value: ({ config }) => config.tank.width * config.tank.height * config.tank.depth },
-            { tex: FS, name: 'separation radius factor', meaning: 'separation radius as a share of the cohesion radius', value: ({ config }) => config.perception.separationRadiusFactor },
-            { tex: FA, name: 'alignment radius factor', meaning: 'alignment radius as a share of the cohesion radius', value: ({ config }) => config.perception.alignmentRadiusFactor },
-            { tex: '0.138', name: 'radius floor', meaning: 'three body lengths; the cohesion radius never gets smaller' },
+            { tex: '0.138', name: 'radius floor', meaning: 'computed mode only: three body lengths; the cohesion radius never gets smaller' },
           ],
         },
         {
@@ -161,12 +177,12 @@ export const TIER_TEXT = {
           ],
           formulas: [
             (config) =>
-              `\\mathbf{s}_i = -\\!\\!\\sum_{d_{ij} < R_s}\\! \\hat{\\mathbf{d}}_{ij}\\, ${separationFalloff(config).g},\\qquad \\hat{\\mathbf{d}}_{ij} = \\frac{\\mathbf{x}_j - \\mathbf{x}_i}{d_{ij}}`,
-            `\\mathbf{a}_i = \\frac{1}{n_a}\\!\\sum_{d_{ij} < R_a}\\! \\mathbf{v}_j`,
+              `\\mathbf{s}_i = -\\!\\!\\sum_{d_{ij} < ${RS}}\\! \\hat{\\mathbf{d}}_{ij}\\, ${separationFalloff(config).g},\\qquad \\hat{\\mathbf{d}}_{ij} = \\frac{\\mathbf{x}_j - \\mathbf{x}_i}{d_{ij}}`,
+            `\\mathbf{a}_i = \\frac{1}{n_a}\\!\\sum_{d_{ij} < ${RA}}\\! \\mathbf{v}_j`,
             (config) =>
               inverseCohesion(config)
-                ? `\\mathbf{c}_i = \\frac{\\sum_{d_{ij} < R_c} q_j\\,\\mathbf{x}_j}{\\sum_{d_{ij} < R_c} q_j} - \\mathbf{x}_i,\\qquad q_j = \\frac{1}{d_{ij}^{2} + (0.15\\,R_c)^{2}}`
-                : `\\mathbf{c}_i = \\frac{1}{n_c}\\!\\sum_{d_{ij} < R_c}\\! \\mathbf{x}_j - \\mathbf{x}_i`,
+                ? `\\mathbf{c}_i = \\frac{\\sum_{d_{ij} < ${rc(config)}} q_j\\,\\mathbf{x}_j}{\\sum_{d_{ij} < ${rc(config)}} q_j} - \\mathbf{x}_i,\\qquad q_j = \\frac{1}{d_{ij}^{2} + (0.15\\,${rc(config)})^{2}}`
+                : `\\mathbf{c}_i = \\frac{1}{n_c}\\!\\sum_{d_{ij} < ${rc(config)}}\\! \\mathbf{x}_j - \\mathbf{x}_i`,
           ],
           where: [
             { tex: '\\mathbf{s}_i', name: 'separation', meaning: 'direction fish i wants to move to get away from close neighbors' },
@@ -228,7 +244,7 @@ export const TIER_TEXT = {
         {
           title: 'Where this differs from textbook boids',
           list: [
-            'The neighbor radius comes from a density (how many neighbors a fish should have), not a fixed distance.',
+            'Each rule has its own radius for each species, and the cohesion radius can follow density (a target number of neighbors) instead of being set.',
             'Cohesion is weighted by inverse squared distance rather than a plain average, which keeps pods apart.',
             'Separation, alignment and cohesion ignore vision here: every fish sees all around it.',
             'Turning is limited to a maximum rate, so no fish can reverse on the spot.',
@@ -271,7 +287,7 @@ export const TIER_TEXT = {
             { tex: ALPHA_W, name: 'turning size exponent', meaning: 'how steeply turning falls with size', value: ({ config }) => config.traits.sizeTurnPenaltyExponent },
             { tex: '\\omega', name: 'turn rate', meaning: 'the scaled fastest turn', value: ({ config, school }) => effectiveTurnSpeed(config, school), unit: ' rad/s' },
           ],
-          note: 'Steering aims at the same scaled top speed. Size also sets body length, which sets the smallest neighbor radius (three body lengths).',
+          note: 'Steering aims at the same scaled top speed. When the cohesion radius is computed from target neighbors, size also sets body length, which sets its floor (three body lengths).',
         },
         {
           title: 'Species keep apart',

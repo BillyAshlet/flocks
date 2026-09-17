@@ -6,7 +6,8 @@ import { VISUALS } from './school-visualizer.js';
 test('parameters map to their mechanism for any school index', () => {
   assert.equal(mechanismFor('schools.0.separationWeight'), 'separation');
   assert.equal(mechanismFor('schools.4.targetNeighbors'), 'cohesion');
-  assert.equal(mechanismFor('perception.alignmentRadiusFactor'), 'alignment');
+  assert.equal(mechanismFor('schools.1.alignmentRadius'), 'alignment');
+  assert.equal(mechanismFor('perception.radiusMode'), 'cohesion');
   assert.equal(mechanismFor('locomotion.recenterDelay'), 'walls');
   assert.equal(mechanismFor('schools.0.count'), null);
   assert.equal(mechanismFor('relations.signalRadiusFactor'), 'emergency');

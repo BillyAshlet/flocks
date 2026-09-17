@@ -17,12 +17,13 @@ import {
 } from './experiment-model.js';
 import { createDefaultConfig } from './experiment-config.js';
 
-test('default aquarium is doubled and dynamic radii follow its density', () => {
+test('radii computed from target neighbors follow the aquarium density', () => {
   const config = createDefaultConfig();
   assert.deepEqual(
     [config.tank.width, config.tank.height, config.tank.depth],
     [6, 3.6, 2.4]
   );
+  config.perception.radiusMode = 'neighbors';
   const derived = deriveExperiment(config);
   assert.ok(Math.abs(derived.schools[0].neighborRadius - 0.628) < 0.002);
   assert.ok(Math.abs(derived.schools[1].neighborRadius - 0.791) < 0.002);
@@ -40,8 +41,41 @@ test('default aquarium is doubled and dynamic radii follow its density', () => {
   );
 });
 
+test('set radii are the defaults and equal what target neighbors gives', () => {
+  const config = createDefaultConfig();
+  assert.equal(config.perception.radiusMode, 'fixed');
+  const set = deriveExperiment(config).schools;
+  config.perception.radiusMode = 'neighbors';
+  const computed = deriveExperiment(config).schools;
+  for (let index = 0; index < set.length; index += 1) {
+    const school = config.schools[index];
+    assert.equal(set[index].separationRadius, school.separationRadius);
+    assert.equal(set[index].alignmentRadius, school.alignmentRadius);
+    assert.equal(set[index].cohesionRadius, school.cohesionRadius);
+    // Switching the default must not have changed any school's behavior.
+    assert.ok(Math.abs(set[index].cohesionRadius - computed[index].cohesionRadius) < 0.001);
+  }
+});
+
+test('in target-neighbors mode only the cohesion radius is computed', () => {
+  const config = createDefaultConfig();
+  config.perception.radiusMode = 'neighbors';
+  config.schools[0].count = 800;
+  const derived = deriveExperiment(config).schools[0];
+  assert.ok(derived.cohesionRadius < 0.6, 'more fish, shorter reach');
+  assert.equal(derived.separationRadius, config.schools[0].separationRadius);
+  assert.equal(derived.alignmentRadius, config.schools[0].alignmentRadius);
+});
+
+test('the hash cell fits a radius set wider than the cohesion radius', () => {
+  const config = createDefaultConfig();
+  config.schools[0].alignmentRadius = 1.6;
+  assert.ok(deriveExperiment(config).cellSize >= 1.6);
+});
+
 test('visual-length lower bound prevents dense configurations from tunneling', () => {
   const config = createDefaultConfig();
+  config.perception.radiusMode = 'neighbors';
   config.schools[0].count = 20000;
   config.schools[0].targetNeighbors = 1;
   const derived = deriveExperiment(config).schools[0];

@@ -68,10 +68,12 @@ export function deriveSchool(config, school) {
             (4 * Math.PI * count)
         );
   const length = visualLength(school.size, config.visual);
-  const neighborRadius = Math.max(
-    rawRadius,
-    config.perception.minNeighborRadiusFactor * length
-  );
+  // perception.radiusMode: the cohesion radius is either set directly or
+  // computed from targetNeighbors (see the comment in experiment-config.js).
+  const neighborRadius =
+    config.perception.radiusMode === 'neighbors'
+      ? Math.max(rawRadius, config.perception.minNeighborRadiusFactor * length)
+      : Math.max(EPSILON, school.cohesionRadius);
   return {
     id: school.id,
     count,
@@ -79,10 +81,8 @@ export function deriveSchool(config, school) {
     rawRadius,
     neighborRadius,
     cohesionRadius: neighborRadius,
-    alignmentRadius:
-      neighborRadius * config.perception.alignmentRadiusFactor,
-    separationRadius:
-      neighborRadius * config.perception.separationRadiusFactor,
+    alignmentRadius: Math.max(EPSILON, school.alignmentRadius),
+    separationRadius: Math.max(EPSILON, school.separationRadius),
     detectionLength:
       neighborRadius * config.perception.detectionLengthFactor,
     panicRadius:
@@ -94,9 +94,14 @@ export function deriveExperiment(config) {
   const schools = config.schools.map((school) => deriveSchool(config, school));
   let cellSize = 0;
   for (const value of schools) {
+    // Every radius a pair test uses must fit in one hash cell. Once separation
+    // and alignment radii were set directly they could exceed the cohesion
+    // radius, and pairs beyond the cell would silently be missed.
     cellSize = Math.max(
       cellSize,
       value.cohesionRadius,
+      value.alignmentRadius,
+      value.separationRadius,
       value.detectionLength
     );
   }

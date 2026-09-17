@@ -11,6 +11,7 @@ function school({
   count,
   size,
   targetNeighbors,
+  radii,
   podCount,
   centerX,
 }) {
@@ -21,6 +22,14 @@ function school({
     count,
     size,
     targetNeighbors,
+    // Neighbor radii, one set per species: how close a neighbor must be to
+    // push away from (separation), to match heading with (alignment) and to
+    // move toward (cohesion). Set directly by default, as in the original
+    // aquarium. With perception.radiusMode 'neighbors' the cohesion radius is
+    // computed from targetNeighbors instead (see deriveSchool).
+    separationRadius: radii.separation,
+    alignmentRadius: radii.alignment,
+    cohesionRadius: radii.cohesion,
     // Number of pods this school is split into (used when spawnMode is 'pods').
     // Fish see each other within a pod but not across pods; merging and
     // splitting afterwards is left to the boids rules.
@@ -77,6 +86,9 @@ export const DEFAULT_EXPERIMENT_CONFIG = Object.freeze({
       count: 400,
       size: 1,
       targetNeighbors: 8,
+      // These equal what targetNeighbors gave before radii could be set
+      // directly, so switching the default did not change any school.
+      radii: { separation: 0.139, alignment: 0.335, cohesion: 0.628 },
       podCount: 10,
       centerX: 0.32,
     }),
@@ -87,6 +99,7 @@ export const DEFAULT_EXPERIMENT_CONFIG = Object.freeze({
       count: 200,
       size: 1.5,
       targetNeighbors: 8,
+      radii: { separation: 0.176, alignment: 0.422, cohesion: 0.791 },
       podCount: 8,
       centerX: -0.05,
     }),
@@ -99,6 +112,7 @@ export const DEFAULT_EXPERIMENT_CONFIG = Object.freeze({
       count: 80,
       size: 2.25,
       targetNeighbors: 5,
+      radii: { separation: 0.204, alignment: 0.489, cohesion: 0.918 },
       podCount: 8,
       centerX: -0.38,
     }),
@@ -111,13 +125,21 @@ export const DEFAULT_EXPERIMENT_CONFIG = Object.freeze({
     wallMargin: 0.035,
   },
   perception: {
+    // How each school's cohesion radius is set.
+    //   'fixed'      the school's cohesionRadius, as set. The original aquarium
+    //                worked this way, and a radius you set is a radius you can
+    //                reason about.
+    //   'neighbors'  computed from targetNeighbors: the radius of a sphere that
+    //                would hold that many fish if the school were spread evenly
+    //                through the tank. The reach then follows density: more
+    //                fish or a smaller tank shrink it, so the expected number
+    //                of neighbors stays put when the school or tank changes.
+    // Separation and alignment radii are always set directly. They used to be
+    // fixed fractions of the cohesion radius (0.222 and 0.533); that tied three
+    // forces that act differently to one number.
+    radiusMode: 'fixed',
+    // Floor on the computed cohesion radius, in body lengths ('neighbors' only).
     minNeighborRadiusFactor: 3,
-    // Ratios match the original boids.js (sep 0.1 / ali 0.24 / coh 0.45 /
-    // detect 0.23). Its alignment neighbourhood is more than half the cohesion
-    // one: many alignment neighbours make the whole school turn together, and a
-    // tighter separation radius keeps the school compact.
-    alignmentRadiusFactor: 0.533,
-    separationRadiusFactor: 0.222,
     detectionLengthFactor: 0.511,
     // The view cone gates only alignment and cohesion; separation stays
     // omnidirectional (lateral line). As the original notes, a forward cone
@@ -680,20 +702,9 @@ const scalarEntries = [
     'reset',
     { min: 1, max: 8, step: 0.1 }
   ),
-  entry(
-    'perception.alignmentRadiusFactor',
-    '感知',
-    'radius ×（全局）',
-    'live',
-    { min: 0.05, max: 1, step: 0.01 }
-  ),
-  entry(
-    'perception.separationRadiusFactor',
-    '感知',
-    'radius ×（全局）',
-    'live',
-    { min: 0.05, max: 1, step: 0.01 }
-  ),
+  entry('perception.radiusMode', '感知', 'cohesion radius from', 'reset', {
+    options: { 'radius as set': 'fixed', 'target neighbors': 'neighbors' },
+  }),
   entry(
     'perception.detectionLengthFactor',
     '感知',
@@ -1487,6 +1498,21 @@ function schoolEntries(config) {
           step: 1,
         }
       ),
+      entry(`${p}.separationRadius`, group, 'separation radius', 'live', {
+        min: 0.01,
+        max: 2,
+        step: 0.005,
+      }),
+      entry(`${p}.alignmentRadius`, group, 'alignment radius', 'live', {
+        min: 0.01,
+        max: 2,
+        step: 0.005,
+      }),
+      entry(`${p}.cohesionRadius`, group, 'cohesion radius', 'live', {
+        min: 0.01,
+        max: 2,
+        step: 0.005,
+      }),
       entry(`${p}.cruiseSpeed`, group, 'cruise speed', 'live', {
         min: 0.01,
         max: 2,

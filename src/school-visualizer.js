@@ -16,8 +16,7 @@ import { MECHANISMS } from './mechanisms.js';
 /**
  * key -> the panel rows that switch it (global `paths`, per-school `fields`)
  * and its color. `gateFields` are extra rows that make a tier offer the
- * visual: the radius factors sit inside the school editor's sections and
- * appear together with their section's weight. `requires` rows must also be
+ * visual. `requires` rows must also be
  * shown: the threat radius shares its factor with hunting, but only means
  * something once prey react (tier 4).
  */
@@ -25,19 +24,17 @@ export const VISUALS = {
   separation: {
     label: 'separation radius',
     color: MECHANISMS.separation.color,
-    paths: ['perception.separationRadiusFactor'],
-    gateFields: ['separationWeight'],
+    fields: ['separationRadius'],
   },
   alignment: {
     label: 'alignment radius',
     color: MECHANISMS.alignment.color,
-    paths: ['perception.alignmentRadiusFactor'],
-    gateFields: ['alignmentWeight'],
+    fields: ['alignmentRadius'],
   },
   cohesion: {
     label: 'cohesion radius',
     color: MECHANISMS.cohesion.color,
-    fields: ['targetNeighbors'],
+    fields: ['cohesionRadius', 'targetNeighbors'],
   },
   blindCone: {
     label: 'blind cone',

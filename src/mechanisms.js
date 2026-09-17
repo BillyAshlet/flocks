@@ -11,17 +11,22 @@ export const MECHANISMS = {
   separation: {
     tier: 1,
     color: '#8a5a9c',
-    paths: ['schools.*.separationWeight', 'perception.separationRadiusFactor'],
+    paths: ['schools.*.separationWeight', 'schools.*.separationRadius'],
   },
   alignment: {
     tier: 1,
     color: '#5b8743',
-    paths: ['schools.*.alignmentWeight', 'perception.alignmentRadiusFactor'],
+    paths: ['schools.*.alignmentWeight', 'schools.*.alignmentRadius'],
   },
   cohesion: {
     tier: 1,
     color: '#2f6e73',
-    paths: ['schools.*.cohesionWeight', 'schools.*.targetNeighbors'],
+    paths: [
+      'schools.*.cohesionWeight',
+      'schools.*.cohesionRadius',
+      'schools.*.targetNeighbors',
+      'perception.radiusMode',
+    ],
   },
   walls: {
     tier: 1,

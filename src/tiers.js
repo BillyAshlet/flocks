@@ -172,6 +172,9 @@ const FULL_CORE = [
 
 const REYNOLDS_FIELDS = [
   'count',
+  'separationRadius',
+  'alignmentRadius',
+  'cohesionRadius',
   'separationWeight',
   'alignmentWeight',
   'cohesionWeight',
