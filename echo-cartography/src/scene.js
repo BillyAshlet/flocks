@@ -1,10 +1,13 @@
-// 渲染层。算法侧不 import 这个文件，反过来也一样单向：
-// 这里只【读】仿真状态，不写回去。
+// Rendering layer. The algorithm side never imports this file, and the
+// dependency stays one-way in the other direction too: here we only read
+// simulation state, we never write back to it.
 //
-// 场景是一条海沟：阶梯状的沟壁向下收拢，中间留出一条通道。
-// 沟壁用轴对齐盒体拼 —— 不是偷懒，是因为射线求交与真值体素化对 AABB
-// 都是解析精确的（见 TERRAIN-SPEC.md）。美术要好看可以另外套一层 mesh，
-// 那层不参与物理。
+// The scene is a trench: stepped walls close in as they descend, leaving a
+// channel open down the middle. The walls are assembled from axis-aligned
+// boxes -- not out of laziness, but because ray intersection and
+// ground-truth voxelization are both analytically exact on an AABB (see
+// TERRAIN-SPEC.md). If it needs to look better, drape another mesh over it;
+// that layer takes no part in the physics.
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
@@ -32,26 +35,30 @@ const _bodyQ = new THREE.Quaternion();
 const ROV_URL = new URL('../assets/models/industrial-deep-sea-inspection-rov.glb', import.meta.url).href;
 const PREDATOR_URL = new URL('../assets/models/predator-red-fish.glb', import.meta.url).href;
 
-// 机体附近的假光：半透明加色光晕，不创建真实 Point/SpotLight。
+// Fake light near the body: a translucent additive glow, with no real
+// Point/SpotLight created.
 // flocks: on a light background an additive glow disappears, so the halos
 // are drawn with normal blending and kept faint.
 const GLOW = {
-  coreScale: 5,   // 相对 bodyLength
+  coreScale: 5,   // relative to bodyLength
   haloScale: 12,
   coreOpacity: 0.12,
   haloOpacity: 0.04,
 };
 
-// 捕食者暗红假光：比 ROV 的暖琥珀更沉、更威胁感。
+// Dark red fake light for the predator: heavier and more menacing than the
+// ROV's warm amber.
 const CREATURE_GLOW = {
-  coreScale: 3.2,  // 相对 bodyLength
+  coreScale: 3.2,  // relative to bodyLength
   haloScale: 8.5,
   coreOpacity: 0.14,
   haloOpacity: 0.05,
 };
 
-// ROV 原材质是冷青工业色，和场景暖深海（骨白/赭石/沟壁棕）冲突。
-// 按角色重映射成"暖深渊黄铜"：壳暖灰、架深褐、件黄铜、灯琥珀。
+// The ROV's original materials are a cold cyan industrial palette, which
+// clashes with the warm deep sea of the scene (bone white, ochre,
+// trench-wall brown). They are remapped by role into a warm abyssal brass:
+// warm grey shell, dark brown frame, brass fittings, amber lamps.
 const ROV_TONE = {
   shell: new THREE.Color('#4f463c'),
   frame: new THREE.Color('#1b1713'),
@@ -63,51 +70,56 @@ const ROV_TONE = {
 function toneRovMaterial(base, emissive) {
   const eSum = emissive.r + emissive.g + emissive.b;
   const sum = base.r + base.g + base.b;
-  // 原亮青灯 / 带 emissive → 探测灯改琥珀
+  // Originally bright cyan lamps / anything emissive → survey lamps go amber
   if (eSum > 0.15 || (base.b > 0.65 && base.g > 0.55)) {
     return { color: ROV_TONE.eye.clone(), emissive: ROV_TONE.eyeEmissive.clone() };
   }
-  // 原中亮青零件 → 黄铜件
+  // Originally mid-bright cyan parts → brass fittings
   if (base.b > 0.25 && base.g > 0.2 && base.r < 0.15) {
     return { color: ROV_TONE.accent.clone(), emissive: new THREE.Color(0x000000) };
   }
-  // 近黑结构架
+  // Near-black structural frame
   if (sum < 0.12) {
     return { color: ROV_TONE.frame.clone(), emissive: new THREE.Color(0x000000) };
   }
-  // 主壳体
+  // Main shell
   return { color: ROV_TONE.shell.clone(), emissive: new THREE.Color(0x000000) };
 }
 
-// ── 纺锤形个体 ─────────────────────────────────────────────────
-// 真实鱼类与水下航行器共有的低阻体形：两端收尖、中段最粗。
-// 用 LatheGeometry 旋转一条剖面线得到，再拼一个小锥体当尾。
+// ── Spindle-shaped agent ───────────────────────────────────────────────────
+// The low-drag body shape shared by real fish and underwater vehicles:
+// tapered at both ends, thickest in the middle. It is made by revolving a
+// profile line with LatheGeometry, with a small cone joined on as the tail.
 function buildAgentGeometry() {
   const segments = 14;
   const profile = [];
   for (let i = 0; i <= segments; i += 1) {
     const t = i / segments;
-    // sin 曲线取 0.75 次幂：比纯 sin 更饱满，头尾仍然收尖
+    // The sine curve is raised to the power 0.75: fuller than plain sine,
+    // while head and tail still taper to a point
     const r = AGENT.bodyRadius * Math.pow(Math.sin(Math.PI * t), 0.75);
     profile.push(new THREE.Vector2(Math.max(r, 1e-4), (t - 0.5) * AGENT.bodyLength));
   }
   const body = new THREE.LatheGeometry(profile, 10);
 
   const tail = new THREE.ConeGeometry(AGENT.tailRadius, AGENT.tailLength, 6, 1, true);
-  tail.scale(1, 1, 0.35); // 压扁成尾鳍而不是一个圆锥
-  tail.rotateX(Math.PI); // 锥尖朝 −Y（朝后）
+  tail.scale(1, 1, 0.35); // flattened into a tail fin rather than a cone
+  tail.rotateX(Math.PI); // cone tip points at -Y (backwards)
   tail.translate(0, -AGENT.bodyLength / 2 - AGENT.tailLength / 2 + 0.06, 0);
 
   const merged = BufferGeometryUtils.mergeGeometries([body, tail], false);
-  merged.rotateX(Math.PI / 2); // 长轴由 +Y 转到 +Z = 前方
+  merged.rotateX(Math.PI / 2); // long axis turned from +Y to +Z = forward
   return merged;
 }
 
 
-// 把多材质低模 ROV 烘焙成【单个】BufferGeometry，供 InstancedMesh 使用。
-// - 原模型 +X 朝前、眼睛在 +X；项目约定 +Z 朝前，因此绕 Y 转 -90°
-// - 顶点色保留壳体分区；instanceColor 再叠冷静/恐慌染色
-// - 无贴图、无骨骼，加载后只留一份合并几何
+// Bakes the multi-material low-poly ROV into a single BufferGeometry for an
+// InstancedMesh.
+// - the original model faces +X with the eyes on +X; this project's
+//   convention is +Z forward, so it is rotated -90 degrees about Y
+// - vertex colors keep the shell's material zones; instanceColor then adds
+//   the calm/panic tint on top
+// - no textures, no skeleton: after loading only one merged geometry is kept
 async function loadRovAgentGeometry() {
   const loader = new GLTFLoader();
   const gltf = await loader.loadAsync(ROV_URL);
@@ -123,10 +135,11 @@ async function loadRovAgentGeometry() {
       ? obj.geometry.groups
       : [{ start: 0, count: (obj.geometry.index ? obj.geometry.index.count : obj.geometry.attributes.position.count), materialIndex: 0 }];
 
-    // 多 primitive 可能被 loader 收成"单 mesh + groups"；按 group 拆开烘焙顶点色
+    // Several primitives may be collapsed by the loader into a single mesh
+    // with groups, so the vertex colors are baked group by group
     for (const group of groups) {
       const geom = obj.geometry.clone();
-      // 只保留该 group 的索引范围
+      // Keep only this group's index range
       if (obj.geometry.index) {
         const src = obj.geometry.index;
         const slice = new src.array.constructor(group.count);
@@ -138,10 +151,12 @@ async function loadRovAgentGeometry() {
       const mat = mats[group.materialIndex || 0] || mats[0] || {};
       const base = mat.color ? mat.color.clone() : new THREE.Color(0xffffff);
       const emissive = mat.emissive ? mat.emissive.clone() : new THREE.Color(0x000000);
-      // 丢掉冷青原色，烘焙进暖深渊角色色；灯保留一点 emissive 亮度
+      // Drop the original cold cyan and bake in the warm abyssal role
+      // color; the lamps keep a little emissive brightness
       const toned = toneRovMaterial(base, emissive);
       const display = toned.color.clone().add(toned.emissive);
-      // 雾里略抬亮，但仍压在地形暖棕体系内（不再偏蓝）
+      // Lifted a little so it reads through the fog, but kept inside the
+      // terrain's warm brown family (no longer leaning blue)
       display.r = Math.min(1, display.r * 1.18 + 0.04);
       display.g = Math.min(1, display.g * 1.12 + 0.03);
       display.b = Math.min(1, display.b * 1.05 + 0.02);
@@ -157,7 +172,7 @@ async function loadRovAgentGeometry() {
 
       if (geom.attributes.normal) geom.deleteAttribute('normal');
       if (geom.attributes.uv) geom.deleteAttribute('uv');
-      // 清掉 groups，避免 merge 后残留
+      // Clear the groups so nothing is left over after the merge
       geom.clearGroups();
       parts.push(geom);
     }
@@ -169,7 +184,7 @@ async function loadRovAgentGeometry() {
   parts.forEach((g) => g.dispose());
   if (!merged) throw new Error('failed to merge ROV geometries');
 
-  // +X 前向 → +Z 前向
+  // +X forward → +Z forward
   merged.rotateY(-Math.PI / 2);
   merged.computeBoundingBox();
   const center = new THREE.Vector3();
@@ -179,7 +194,9 @@ async function loadRovAgentGeometry() {
   merged.computeBoundingBox();
   const size = new THREE.Vector3();
   merged.boundingBox.getSize(size);
-  // 长轴对齐 bodyLength；ROV 比纺锤鱼"胖"，用 Z 长而非对角线，避免缩太小
+  // Match the long axis to bodyLength. The ROV is fatter than the spindle
+  // fish, so the Z extent is used rather than the diagonal, otherwise it
+  // ends up scaled down too far.
   const s = AGENT.bodyLength / Math.max(size.z, 1e-6);
   merged.scale(s, s, s);
   merged.computeVertexNormals();
@@ -223,26 +240,30 @@ function buildCreatureGeometry() {
   return merged;
 }
 
-// 把低模红鱼烘焙成单个 BufferGeometry，供捕食者 Mesh 使用。
-// - 原模型 +X 朝前（吻侧在 +X，尾鳍在 -X）；项目约定 +Z 朝前 → 绕 Y -90°
-// - 顶点色保留壳体分区，并叠一层暗红 emissive 亮度，方便雾里仍能读出轮廓
+// Bakes the low-poly red fish into a single BufferGeometry for the predator
+// Mesh.
+// - the original model faces +X (snout at +X, tail fin at -X); this
+//   project's convention is +Z forward → rotate -90 degrees about Y
+// - vertex colors keep the material zones and add a dark red emissive
+//   brightness, so the silhouette still reads through the fog
 function tonePredatorMaterial(base) {
   const sum = base.r + base.g + base.b;
-  // 近黑眼窝：留一点暗红自发光，像深渊里的瞳孔
+  // Near-black eye socket: keep a little dark red emission, like a pupil in
+  // the abyss
   if (sum < 0.08) {
     return {
       color: new THREE.Color('#120303'),
       emissive: new THREE.Color('#4a0808'),
     };
   }
-  // 较亮腹侧 / 鳍缘 → 更热的暗红
+  // Brighter belly / fin edges → a hotter dark red
   if (base.r > 0.55) {
     return {
       color: new THREE.Color('#6e1610'),
       emissive: new THREE.Color('#5a0e0a'),
     };
   }
-  // 主壳体：沉暗红
+  // Main shell: deep dark red
   return {
     color: new THREE.Color('#3a0f0c'),
     emissive: new THREE.Color('#2a0806'),
@@ -277,7 +298,8 @@ async function loadPredatorGeometry() {
       const mat = mats[group.materialIndex || 0] || mats[0] || {};
       const base = mat.color ? mat.color.clone() : new THREE.Color(0x3a1210);
       const toned = tonePredatorMaterial(base);
-      // display = albedo + 一部分 emissive，Instanced/单 Mesh 都能读出"带红光"
+      // display = albedo + part of the emissive, so both an InstancedMesh
+      // and a single Mesh read as carrying a red glow
       const display = toned.color.clone().add(toned.emissive.clone().multiplyScalar(0.85));
       display.r = Math.min(1, display.r * 1.12 + 0.03);
       display.g = Math.min(1, display.g * 0.95);
@@ -305,7 +327,7 @@ async function loadPredatorGeometry() {
   parts.forEach((g) => g.dispose());
   if (!merged) throw new Error('failed to merge predator geometries');
 
-  // +X 前向 → +Z 前向
+  // +X forward → +Z forward
   merged.rotateY(-Math.PI / 2);
   merged.computeBoundingBox();
   const center = new THREE.Vector3();
@@ -323,13 +345,16 @@ async function loadPredatorGeometry() {
 }
 
 
-// ── 海沟地形 ───────────────────────────────────────────────────
-// 结构是"高原上的一道槽"，不是一个填满的盒子。
+// ── Trench terrain ─────────────────────────────────────────────────────────
+// The structure is a groove cut into a plateau, not a filled box.
 //
-// 这个区别不是美术偏好 —— 如果岩体一直填到包围盒顶，近侧沟壁会从任何
-// 斜俯视角度把沟里整个挡住，看不见的东西等于没做。真实海沟本来也是
-// 海床高原被切开一道，上方是开阔水体。集群正是从那片开阔水体下潜进来的。
-const BED_TOP = -TANK.height / 2 + TANK.height * 0.5; // 海床台面高度
+// That distinction is not an art preference -- if the rock filled all the
+// way up to the top of the bounding box, the near wall would hide the whole
+// inside of the trench from any oblique plan view, and something nobody can
+// see might as well not have been built. A real trench is also a cut
+// through a seabed plateau with open water above it, and the swarm descends
+// into it from exactly that open water.
+const BED_TOP = -TANK.height / 2 + TANK.height * 0.5; // seabed plateau height
 
 function buildTrench() {
   const specs = [];
@@ -337,7 +362,7 @@ function buildTrench() {
   const halfH = TANK.height / 2;
   const halfD = TANK.depth / 2;
   const LEVELS = 8;
-  const SEGMENTS = 18; // 沿 x 切段，每段的通道中心不同
+  const SEGMENTS = 18; // sliced along x; each slice has its own channel center
   const bedH = BED_TOP - -halfH;
   const levelH = bedH / LEVELS;
   const segW = TANK.width / SEGMENTS;
@@ -345,13 +370,14 @@ function buildTrench() {
   for (let s = 0; s < SEGMENTS; s += 1) {
     const x0 = -halfW + s * segW;
     const cx = x0 + segW / 2;
-    // 通道中心的横向摆动 + 宽度起伏 —— 没有它就是一条笔直的走廊
+    // Lateral drift of the channel center plus a variation in width --
+    // without it the trench is a straight corridor
     const drift = Math.sin(cx * 0.048) * halfD * 0.2 + Math.sin(cx * 0.11) * halfD * 0.06;
     const widen = 1 + Math.sin(cx * 0.085 + 1.7) * 0.22;
 
     for (let l = 0; l < LEVELS; l += 1) {
       const yLow = -halfH + l * levelH;
-      // 通道半宽：底层最窄，向上张开成 V 形
+      // Channel half-width: narrowest at the bottom, opening upward into a V
       const t = (l + 0.5) / LEVELS;
       const channel = halfD * (0.2 + 0.46 * t * t) * widen;
       const left = drift - channel;
@@ -366,32 +392,39 @@ function buildTrench() {
     }
   }
 
-  // ── 海床地板 ──
+  // ── Seabed floor ──
   //
-  // 沟道底部原本【没有实体】—— 靠的是任务包围盒内壁。
-  // 边界不再进地图之后（它是我们画的框，不是地形），底面就整个消失了：
-  // 点云悬空，Mesh 没有底，按 xz 列统计覆盖率时大片列永远是零。
-  // 所以要一层真地板。薄一点，只是给射线一个可命中的实体。
+  // The bottom of the channel originally had no solid body at all: it relied
+  // on the inner wall of the mission bounding box. Once the bounds stopped
+  // going into the map (they are a frame we drew, not terrain), the floor
+  // disappeared entirely: the point cloud floated, the mesh had no bottom,
+  // and when coverage was counted per xz column, whole bands of columns were
+  // permanently zero. So there has to be a real floor. Thin, just something
+  // solid for the rays to hit.
   specs.push({
     min: [-halfW, -halfH, -halfD],
     max: [halfW, -halfH + 1.2, halfD],
   });
 
-  // ── 沟中山峰 ──
+  // ── Spires in the trench ──
   //
-  // 平坦的沟底没什么可测的，点云出来就是一张平板。山峰给的是【垂直结构】：
-  // 它在点云里最出效果，而且峰与沟壁之间的窄缝会形成真正的遮挡 ——
-  // 集群必须绕进去才测得到，覆盖率这才第一次成为一个真问题。
+  // A flat trench floor has little to measure; the point cloud comes out as
+  // a flat slab. The spires are what supply vertical structure: they show
+  // best of all in the point cloud, and the narrow gaps between a spire and
+  // the trench wall create real occlusion -- the swarm has to work its way
+  // in before it can measure there, and only then does coverage become a
+  // real problem.
   //
-  // 逐层收窄的盒体堆叠，与阶梯沟壁同一种语言：低多边形 + 硬边。
+  // Boxes stacked and narrowing layer by layer, the same language as the
+  // stepped walls: low poly with hard edges.
   const spire = (sx, szOff, height, baseW, baseD, layers = 5) => {
     const drift = Math.sin(sx * 0.048) * halfD * 0.2 + szOff;
     const layerH = height / layers;
     for (let l = 0; l < layers; l += 1) {
-      const t = 1 - l / layers; // 自下而上收窄
+      const t = 1 - l / layers; // narrowing from the bottom up
       const w = baseW * (0.28 + 0.72 * t);
       const d = baseD * (0.28 + 0.72 * t);
-      // 每层轻微错位，避免堆成一座完美的金字塔
+      // A slight offset per layer, so it does not stack into a perfect pyramid
       const jx = Math.sin(sx * 0.7 + l * 1.9) * baseW * 0.08;
       const jz = Math.cos(sx * 0.5 + l * 2.3) * baseD * 0.08;
       specs.push({
@@ -401,8 +434,9 @@ function buildTrench() {
     }
   };
 
-  // 高度参差：有的几乎顶到沟沿，有的只是矮丘 —— 高的那些会把沟切成几段，
-  // 集群得绕过去，这正是要给终端出的题。
+  // Uneven heights: some almost reach the rim of the trench, others are only
+  // low mounds -- the tall ones cut the trench into sections the swarm has
+  // to go around, which is exactly the problem we want to set the terminal.
   spire(-56, 2, bedH * 0.86, 13, 12);
   spire(-40, -9, bedH * 0.42, 10, 11, 4);
   spire(-22, 5, bedH * 0.95, 15, 13, 6);
@@ -412,7 +446,8 @@ function buildTrench() {
   spire(46, 6, bedH * 0.9, 13, 12, 6);
   spire(62, -7, bedH * 0.5, 11, 12, 4);
 
-  // 沟底散石：小尺度细节，让点云不至于只有大块面
+  // Loose rocks on the floor: small-scale detail, so the point cloud is not
+  // made of large flat faces alone
   const rocks = [
     [-48, 6, 7, 5, 6], [-30, -3, 9, 4, 7], [-12, 8, 6, 6, 5],
     [4, -8, 8, 5, 8], [22, 3, 7, 7, 6], [38, -6, 9, 4, 7],
@@ -451,20 +486,24 @@ export function createScene(container) {
   controls.minDistance = 8;
   controls.target.set(0, -TANK.height * 0.12, 0);
 
-  // 环境光压低、主光提高：环境光开太大会把所有面照成同一个亮度，
-  // 阶梯与山峰的体积感全部消失，整块地形糊成一片均匀的棕色。
+  // Ambient light kept low and the key light raised: with too much ambient,
+  // every face is lit to the same brightness, the steps and spires lose all
+  // sense of volume, and the whole terrain smears into one even brown.
   scene.add(new THREE.AmbientLight(PALETTE.ambient, 1.12));
-  // 主光从上方偏斜射入 —— 深海里唯一的光只可能来自上面
+  // The key light comes in obliquely from above -- in the deep sea the only
+  // light there can be comes from up there
   const key = new THREE.DirectionalLight(PALETTE.keyLight, 2.45);
   key.position.set(30, 90, 40);
   scene.add(key);
-  // 补光从下方打，把沟底从纯黑里提出来。物理上不合理（海底没有下方光源），
-  // 但没有它沟底就是一片死黑，而沟底恰好是要给人看的地方。
+  // The fill light comes from below, to lift the trench floor out of pure
+  // black. Physically it makes no sense (there is no light source under the
+  // seabed), but without it the floor is dead black, and the floor is
+  // exactly what we want people to look at.
   const rim = new THREE.DirectionalLight(PALETTE.rimLight, 1.25);
   rim.position.set(-40, -30, -30);
   scene.add(rim);
 
-  // ── 任务包围盒（探测区边界）──
+  // ── Mission bounding box (survey area limits) ──
   const boundsGeo = new THREE.BoxGeometry(TANK.width, TANK.height, TANK.depth);
   scene.add(
     new THREE.LineSegments(
@@ -475,7 +514,7 @@ export function createScene(container) {
     )
   );
 
-  // ── 海沟 ──
+  // ── Trench ──
   const obstacles = [];
   const terrainMat = new THREE.MeshStandardMaterial({
     color: PALETTE.terrain, roughness: 0.95, metalness: 0.02, flatShading: true,
@@ -500,13 +539,15 @@ export function createScene(container) {
       max: new THREE.Vector3(spec.max[0], spec.max[1], spec.max[2]),
     });
   }
-  // 几百个盒体合并成一个 mesh：draw call 从几百降到 1
+  // Hundreds of boxes merged into a single mesh: draw calls drop from
+  // hundreds to one
   const terrainGeo = BufferGeometryUtils.mergeGeometries(parts, false);
   scene.add(new THREE.Mesh(terrainGeo, terrainMat));
   scene.add(new THREE.LineSegments(new THREE.EdgesGeometry(terrainGeo, 40), edgeMat));
 
-  // ── 集群（ROV 模型 + 机体附近假光）──
-  // 先用程序化纺锤体占位，GLB 就绪后热替换几何，避免首屏卡在加载上。
+  // ── Swarm (ROV model + fake light near the body) ──
+  // A procedural spindle stands in first and the geometry is hot-swapped
+  // once the GLB is ready, so the first frame is not blocked on loading.
   let agentGeo = buildAgentGeometry();
   let agentUsesVertexColors = false;
   let flockMesh = null;
@@ -518,7 +559,8 @@ export function createScene(container) {
   function disposeInstanced(mesh) {
     if (!mesh) return;
     scene.remove(mesh);
-    // 几何可能被 ROV/占位共享，不在这里 dispose geometry
+    // The geometry may be shared with the ROV or the placeholder, so it is
+    // not disposed here
     if (mesh.material) mesh.material.dispose();
     mesh.dispose();
   }
@@ -533,7 +575,8 @@ export function createScene(container) {
       roughness: agentUsesVertexColors ? 0.42 : 0.55,
       metalness: agentUsesVertexColors ? 0.28 : 0.05,
       vertexColors: agentUsesVertexColors,
-      // 轻微自发光：深海里机身自己"带一点亮度"，假光再在外围扩一圈
+      // A little emission: in the deep sea the body carries some brightness
+      // of its own, and the fake light then spreads a ring around it
       emissive: new THREE.Color(agentUsesVertexColors ? '#2a2218' : '#000000'),
       emissiveIntensity: agentUsesVertexColors ? 0.34 : 0.0,
     });
@@ -544,7 +587,9 @@ export function createScene(container) {
     flockMesh.frustumCulled = false;
     scene.add(flockMesh);
 
-    // 双层 billboard 光斑：芯亮、晕散。用平面 + additive，比真灯便宜两个数量级。
+    // Two-layer billboard glow: a bright core and a diffuse halo. A plane
+    // plus additive blending is two orders of magnitude cheaper than a real
+    // light.
     const mkGlowMat = (opacity) => new THREE.MeshBasicMaterial({
       map: glowTexture,
       color: 0xffffff,
@@ -569,20 +614,23 @@ export function createScene(container) {
     return flockMesh;
   }
 
-  // 异步替换为工业深海 ROV；失败时静默保留纺锤占位，不阻断仿真。
+  // Swap in the industrial deep-sea ROV asynchronously; on failure the
+  // spindle placeholder is kept silently and the simulation is not blocked.
   loadRovAgentGeometry().then((geo) => {
     const old = agentGeo;
     agentGeo = geo;
     agentUsesVertexColors = true;
     if (flockMesh) buildFlockMesh(flockMesh.count);
-    // 占位几何可释放；ROV 几何交给后续 flockMesh 共用
+    // The placeholder geometry can be released; the ROV geometry is shared
+    // by every later flockMesh
     if (old && old !== geo) old.dispose();
   }).catch((err) => {
     console.warn('[scene] ROV model load failed, keeping procedural agents', err);
   });
 
-  // ── 大型生物（低模红鱼 + 暗红假光）──
-  // 先用程序化纺锤体占位，GLB 就绪后热替换几何。
+  // ── Large creature (low-poly red fish + dark red fake light) ──
+  // A procedural spindle stands in first; the geometry is hot-swapped once
+  // the GLB is ready.
   let creatureGeo = buildCreatureGeometry();
   let creatureUsesModel = false;
   let creatureMat = new THREE.MeshStandardMaterial({
@@ -643,7 +691,7 @@ export function createScene(container) {
       const halo = new THREE.Mesh(glowPlane, makeCreatureGlowMat(CREATURE_GLOW.haloOpacity));
       for (const g of [core, halo]) {
         g.renderOrder = 2;
-        g.raycast = () => {}; // 光晕不抢拾取
+        g.raycast = () => {}; // the glow must not steal picking
         scene.add(g);
       }
       core.material.color.copy(_creatureGlowCore);
@@ -665,7 +713,8 @@ export function createScene(container) {
       roughness: 0.48,
       metalness: 0.18,
       vertexColors: true,
-      // 机身自带暗红底光，外围再叠一层 billboard 假光
+      // The body carries its own dark red underglow, with a billboard fake
+      // light layered around the outside
       emissive: new THREE.Color('#2a0806'),
       emissiveIntensity: 0.72,
     });
@@ -710,10 +759,11 @@ export function createScene(container) {
   function syncFlock(flock) {
     if (!flockMesh || flockMesh.count !== flock.count) buildFlockMesh(flock.count);
 
-    // 光晕面向相机：用相机位姿做 billboard，避免加色光斑侧看成一条线
+    // The glow faces the camera: billboarding off the camera's orientation
+    // keeps an additive spot from collapsing into a line when seen edge-on
     camera.getWorldQuaternion(_q);
 
-    // 召回完成：整群隐藏（离场）
+    // Recall complete: the whole swarm is hidden (it has left)
     if (flock.departed) {
       const hide = new THREE.Matrix4().makeScale(0, 0, 0);
       for (let i = 0; i < flock.count; i += 1) {
@@ -730,7 +780,9 @@ export function createScene(container) {
     for (let i = 0; i < flock.count; i += 1) {
       const o = i * 3;
       _pos.set(flock.positions[o], flock.positions[o + 1], flock.positions[o + 2]);
-      // 列阵静止时 velocity=0；用独立 heading 定向，避免默认朝向/噪声狂转
+      // When the formation is holding still velocity is 0, so a separate
+      // heading is used for orientation; otherwise they snap to the default
+      // direction or spin wildly on noise
       if (flock.headings) {
         orient(flock.headings[o], flock.headings[o + 1], flock.headings[o + 2], _m);
       } else {
@@ -739,8 +791,10 @@ export function createScene(container) {
       _m.setPosition(_pos.x, _pos.y, _pos.z);
       flockMesh.setMatrixAt(i, _m);
 
-      // 配色曲线而非线性：实测被传染的鱼恐慌值常在 0.2–0.5 区间，
-      // 线性映射下几乎看不出变色，涟漪就白做了。sqrt 让 0.25 就已明显发赭。
+      // A curve rather than a linear ramp: measured panic values for a fish
+      // that caught it from a neighbor usually sit between 0.2 and 0.5, and
+      // under a linear mapping the color barely changes, which wastes the
+      // ripple entirely. With sqrt, 0.25 already turns clearly ochre.
       const heat = Math.min(1, Math.sqrt(Math.max(0, flock.panic[i])) * 1.15);
       _mix.copy(_calm).lerp(_afraid, heat);
       flockMesh.setColorAt(i, _mix);
@@ -750,7 +804,8 @@ export function createScene(container) {
       const core = AGENT.bodyLength * GLOW.coreScale * pulse;
       const halo = AGENT.bodyLength * GLOW.haloScale * pulse;
 
-      // billboard 矩阵：旋转取相机，缩放分芯/晕，位置=机体
+      // Billboard matrix: rotation from the camera, scale per core/halo,
+      // position at the body
       _m.compose(_pos, _q, _scale.set(core, core, core));
       glowCoreMesh.setMatrixAt(i, _m);
       glowCoreMesh.setColorAt(i, _glowMix);
@@ -775,7 +830,8 @@ export function createScene(container) {
       const mesh = creatureMeshes[i];
       mesh.position.set(c.position.x, c.position.y, c.position.z);
       orient(c.velocity.x, c.velocity.y, c.velocity.z, _m);
-      // 鱼身朝速度方向；光晕单独面向相机
+      // The body points along its velocity; the glow faces the camera
+      // separately
       _bodyQ.setFromRotationMatrix(_m);
       mesh.quaternion.copy(_bodyQ);
 
@@ -794,16 +850,19 @@ export function createScene(container) {
     });
   }
 
-  // ── 相机：总览（轨道）/ 跟随（点击个体切入，Esc 退出）──
+  // ── Camera: overview (orbit) / follow (click an agent, Esc to exit) ──
   let followIndex = -1;
   const raycaster = new THREE.Raycaster();
   const pointer = new THREE.Vector2();
 
-  // 返回 { kind:'agent'|'creature', index } 或 null。
-  // 大型生物优先：它体积大得多，重叠时人想点的多半是它。
+  // Returns { kind:'agent'|'creature', index } or null.
+  // The large creature wins: it is far bigger, so when the two overlap it is
+  // almost certainly what the user meant to click.
   function pick(clientX, clientY) {
-    // 用画布自身的矩形而不是 window.innerWidth：画布未必铺满窗口，
-    // 而且窗口尺寸为 0 时会除出 NaN，射线静默失效、查不出原因。
+    // Use the canvas's own rect rather than window.innerWidth: the canvas
+    // does not necessarily fill the window, and when the window size is 0
+    // the division yields NaN, so the ray silently fails with no way to see
+    // why.
     const r = renderer.domElement.getBoundingClientRect();
     if (r.width < 1 || r.height < 1) return null;
     pointer.x = ((clientX - r.left) / r.width) * 2 - 1;
@@ -840,7 +899,8 @@ export function createScene(container) {
       .set(flock.positions[o], flock.positions[o + 1], flock.positions[o + 2])
       .addScaledVector(_dir, -CAMERA.followBack)
       .addScaledVector(UP, CAMERA.followUp);
-    // 指数滞后而非硬跟随，否则恐慌时的急转会把画面甩晕
+    // Exponential lag rather than hard following; otherwise the sharp turns
+    // during panic throw the view around
     camera.position.lerp(_camTarget, 1 - Math.exp(-CAMERA.followLag * dt));
     _lookAt
       .set(flock.positions[o], flock.positions[o + 1], flock.positions[o + 2])
@@ -848,8 +908,9 @@ export function createScene(container) {
     camera.lookAt(_lookAt);
   }
 
-  // ── 画中画：大型生物的第一人称视角 ────────────────────────────
-  // 同一个场景用第二个相机再渲一遍，靠 scissor 把它裁进一个 DOM 方框里。
+  // ── Picture-in-picture: the creature's first-person view ─────────────────
+  // The same scene is rendered again with a second camera, clipped into a
+  // DOM box with a scissor rect.
   const previewCamera = new THREE.PerspectiveCamera(72, 1, 0.05, 900);
   const _pvFwd = new THREE.Vector3();
   const _pvEye = new THREE.Vector3();
@@ -860,13 +921,15 @@ export function createScene(container) {
     const c = renderer.domElement.getBoundingClientRect();
     if (r.width <= 1 || r.height <= 1) return;
 
-    // 朝向优先用驾驶者的视线；无人驾驶时退回它自己的速度方向
+    // The heading comes from the pilot's line of sight when there is one;
+    // with nobody driving it falls back to the creature's own velocity
     if (pilot && pilot.active) pilot.forward(_pvFwd);
     else _pvFwd.set(creature.velocity.x, creature.velocity.y, creature.velocity.z);
     if (_pvFwd.lengthSq() < 1e-8) _pvFwd.set(0, 0, 1);
     _pvFwd.normalize();
 
-    // 眼点稍微前移出体外，否则会看见自己身体的内壁
+    // The eye point is pushed slightly forward, outside the body, or it
+    // sees the inside of its own shell
     _pvEye
       .set(creature.position.x, creature.position.y, creature.position.z)
       .addScaledVector(_pvFwd, CREATURE.bodyLength * 0.55);
@@ -877,8 +940,9 @@ export function createScene(container) {
     previewCamera.aspect = r.width / r.height;
     previewCamera.updateProjectionMatrix();
 
-    // setViewport/setScissor 收的是【逻辑像素】，three 内部会自己乘 DPR。
-    // 在这里再乘一次会双重缩放，小窗会溢出主画面。
+    // setViewport/setScissor take logical pixels; three multiplies by the
+    // DPR internally. Multiplying again here scales twice and the inset
+    // window overflows the main view.
     const x = r.left - c.left;
     const y = c.bottom - r.bottom;
 

@@ -1,12 +1,16 @@
-// 猎物鱼群：Boid 三规则 + 恐慌传染。
+// prey school: the three boid rules plus panic contagion.
 //
-// 恐慌系统整体移植自 heritage-or-evolution-lab-advx2026 的
-// experiment-simulation.js（闩锁 / 不应期 / 脉冲信号 / 应急对齐 / 接收方增益），
-// 逻辑未改，唯一改动是【威胁源】：原来遍历 NPC 捕食者鱼群，现在读玩家实时坐标。
+// the panic system was ported wholesale from experiment-simulation.js in
+// heritage-or-evolution-lab-advx2026 (latch / refractory period / pulse
+// signal / emergency alignment / receiver gain). the logic is unchanged; the
+// only change is the threat source: it used to iterate over the NPC predator
+// school, and now it reads the player's live coordinates.
 //
-// 按任务书要求，以下两项未迁移：
-//   - 体型/角色切换阈值（所有鱼同尺寸，无角色分支）
-//   - 双层捕食者聚合（只有玩家一个捕食者，不存在协同）
+// per the brief, these two were not ported:
+//   - body-size / role switching thresholds (all fish are the same size,
+//     with no role branching)
+//   - two-tier predator aggregation (the player is the only predator, so
+//     there is no coordination)
 
 import { FLOCK, PANIC, TANK, AGENT, ALTITUDE, PLAN, SENSOR, RECALL } from './params.js';
 import { RaySensor } from './sensor.js';
@@ -20,8 +24,10 @@ function normalize3(x, y, z) {
   return [x / length, y / length, z / length, length];
 }
 
-// 期望方向 → 转向力：先归一化成期望速度，减当前速度，再钳到 maxForce。
-// 这一步是原项目"力的量纲统一"，保证各规则权重之间可比。
+// desired direction -> steering force: normalize into a desired velocity,
+// subtract the current velocity, then clamp to maxForce. this step is the
+// original project's "unification of the dimensions of force", which keeps
+// the per-rule weights comparable with each other.
 function steerToward(dx, dy, dz, vx, vy, vz, maxSpeed, maxForce, out) {
   const desired = normalize3(dx, dy, dz);
   if (desired[3] < EPSILON) {
@@ -53,21 +59,26 @@ function approach(current, target, rate, dt) {
 const STEER = [0, 0, 0];
 
 export class Flock {
-  // bus 可为 null —— 算法侧因此能脱离 UI 独立跑（headless），
-  // 这是三模式对照实验能自动跑完、不用人肉点三遍的前提。
+  // bus may be null, so the algorithm side can run independently of the UI
+  // (headless). that is the precondition for the three-mode comparison
+  // experiment being able to run to completion on its own, instead of
+  // someone clicking through it three times by hand.
   constructor(obstacles = [], bus = null) {
     this.obstacles = obstacles;
     this.bus = bus;
     this.time = 0;
-    // 缸壁也要被测到，否则地图上只有几个盒子悬在空中，没有海床没有沟壁
+    // the tank walls have to be measured too, otherwise the map is just a
+    // few boxes hanging in mid-air with no seabed and no trench walls
     const half = {
       min: { x: -TANK.width / 2, y: -TANK.height / 2, z: -TANK.depth / 2 },
       max: { x: TANK.width / 2, y: TANK.height / 2, z: TANK.depth / 2 },
     };
     this.sensor = new RaySensor(obstacles, half);
-    // 硬碰撞世界：与传感器共用同一份障碍描述。换场景时换 collider 后端即可。
+    // hard-collision world: shares the same obstacle description as the
+    // sensor. for another scene, just swap the collider backend.
     this.collider = createAabbCollider(obstacles);
-    // 终端下发的行为包（M2-lite）。null = 关闭前沿，boid 用原权重。
+    // behavior packet pushed down by the terminal (M2-lite). null = frontier
+    // off, boid uses its original weights.
     this.terminal = null;
     this.setCount(FLOCK.count);
   }
@@ -91,11 +102,11 @@ export class Flock {
     this.alignCounts = new Uint16Array(n);
     this.cohesionCounts = new Uint16Array(n);
 
-    // —— 恐慌状态 ——
+    // —— panic state ——
     this.panic = new Float32Array(n);
-    this.alarm = new Float32Array(n); // 离散脉冲，会衰减到零
-    this.threatLevel = new Float32Array(n); // 本帧直接感知强度
-    this.heardSignal = new Float32Array(n); // 本帧收到的社会信号
+    this.alarm = new Float32Array(n); // discrete pulse, decays to zero
+    this.threatLevel = new Float32Array(n); // direct sensing strength this frame
+    this.heardSignal = new Float32Array(n); // social signal received this frame
     this.neighborPanic = new Float32Array(n);
     this.directLatch = new Uint8Array(n);
     this.panicHold = new Float32Array(n);
@@ -104,14 +115,17 @@ export class Flock {
     this.emergencyAlign = new Float32Array(n * 3);
     this.emergencyUrgency = new Float32Array(n);
 
-    // 子群编号。前沿探索时终端给每个子群【各自的目标】——
-    // 全群共用一个目标点等于把 260 个探测器变成 1 个：实测群半径从 42.4
-    // 塌到 14.5，点云产出反而掉 24%。
+    // subgroup id. during frontier exploration the terminal gives each
+    // subgroup its own target. one shared target point for the whole swarm
+    // turns 260 probes into 1: measured swarm radius collapsed from 42.4 to
+    // 14.5, and point-cloud output actually dropped 24%.
     this.group = new Uint8Array(n);
 
     this.wanderPhase = new Float32Array(n);
     this.wanderRate = new Float32Array(n);
-    // 朝向与速度解耦：列阵速度→0 时若仍用 velocity 定向，数值噪声会让鱼原地疯转
+    // heading decoupled from velocity: when formation speed goes to 0, still
+    // deriving the heading from velocity lets numerical noise spin the fish
+    // wildly in place
     this.headings = new Float32Array(n * 3);
 
     this.reset();
@@ -119,16 +133,21 @@ export class Flock {
 
   reset() {
     const n = this.count;
-    // 时间必须一起归零，且传感器节流状态要跟着清 —— 否则残留的时间戳
-    // 落在"未来"，事件流会静默死掉（见 RaySensor.resetThrottle）。
+    // time has to be zeroed along with the rest, and the sensor's throttle
+    // state cleared with it — otherwise leftover timestamps sit in the
+    // "future" and the event stream dies silently (see
+    // RaySensor.resetThrottle).
     this.time = 0;
     this.departed = false;
     if (this.sensor) this.sensor.resetThrottle();
-    // 集群【成团从上方入场】，不再满场散布。
-    // 两个理由：一是真实任务本就是从母船一处投放；二是前沿探索有冷启动
-    // 缺陷 —— 地图全为"未知"时一个前沿都不存在（前沿要求"自由且邻接未知"），
-    // 必须先由集群游动雕出一个自由空间的气泡，前沿才得以出现。
-    // 散布开局等于跳过了这一步，把不成立的初始条件藏起来了。
+    // the swarm enters from above as one clump, instead of being scattered
+    // across the whole tank. two reasons: first, a real mission drops the
+    // devices from a single point on the mother ship; second, frontier
+    // exploration has a cold-start flaw — when the map is entirely "unknown"
+    // not a single frontier exists (a frontier requires "free and adjacent
+    // to unknown"), so the swarm has to swim and carve out a bubble of free
+    // space first before any frontier can appear. a scattered start skips
+    // that step and hides an initial condition that does not hold.
     const spread = FLOCK.cohesionRadius * 2.2;
     const entryY = TANK.height / 2 - FLOCK.wallMargin * 2;
     for (let i = 0; i < n; i += 1) {
@@ -144,8 +163,10 @@ export class Flock {
       this.headings[o] = this.velocities[o] / hlen;
       this.headings[o + 1] = this.velocities[o + 1] / hlen;
       this.headings[o + 2] = this.velocities[o + 2] / hlen;
-      // 轮转分组：出生时子群在空间上是交织的，靠各自的目标飞散开 ——
-      // 这比按初始位置切更稳，不会因为出生点形状不同而分得不均。
+      // round-robin grouping: at spawn the subgroups are spatially
+      // interleaved and pull apart via their own targets. this is steadier
+      // than splitting by initial position, which divides unevenly whenever
+      // the spawn region has a different shape.
       this.group[i] = i % Math.max(1, FLOCK.groupCount);
       this.wanderPhase[i] = Math.random() * Math.PI * 2;
       this.wanderRate[i] = 0.6 + Math.random() * 0.9;
@@ -157,7 +178,7 @@ export class Flock {
     this.refractory.fill(0);
   }
 
-  // ── 感知：邻居配对 + 恐慌信号传播 ─────────────────────────────
+  // ── sensing: neighbor pairing + panic signal spread ────────────────────
   _pairPass() {
     const n = this.count;
     const pos = this.positions;
@@ -194,13 +215,13 @@ export class Flock {
         const distance = Math.sqrt(d2);
         const inv = 1 / distance;
 
-        // 视锥：i 能否看见 j（-Δ 是 i→j 方向）
+        // view cone: can i see j (-Δ is the direction from i to j)
         const fi = normalize3(vel[io], vel[io + 1], vel[io + 2]);
         const fj = normalize3(vel[jo], vel[jo + 1], vel[jo + 2]);
         const seeIJ = (-dx * fi[0] - dy * fi[1] - dz * fi[2]) * inv >= cosFov;
         const seeJI = (dx * fj[0] + dy * fj[1] + dz * fj[2]) * inv >= cosFov;
 
-        // —— 分离：1/d² 斥力，近距离远强于线性 ——
+        // —— separation: 1/d² repulsion, far stronger up close than linear ——
         if (d2 < sepR2) {
           const scale = 1 / d2;
           this.separation[io] += dx * scale;
@@ -211,8 +232,9 @@ export class Flock {
           this.separation[jo + 2] -= dz * scale;
         }
 
-        // —— 应急对齐：恐慌航向走独立通道 ——
-        // 它不会被大量镇定邻居平均掉，这是惊扰波真正的载体。
+        // —— emergency alignment: panic headings get their own channel ——
+        // it does not get averaged away by a crowd of calm neighbors, and it
+        // is what actually carries the startle wave.
         const emitEmergency = (receiver, sender, canSee) => {
           if (!canSee || d2 >= signalR2) return false;
           const urgency = this.panic[sender];
@@ -236,7 +258,7 @@ export class Flock {
         const emergencyIJ = emitEmergency(i, j, seeIJ);
         const emergencyJI = emitEmergency(j, i, seeJI);
 
-        // —— 对齐：应急通道接管时不再走普通对齐 ——
+        // —— alignment: skipped once the emergency channel takes over ——
         if (d2 < aliR2) {
           if (seeIJ && !emergencyIJ) {
             this.alignment[io] += vel[jo];
@@ -252,11 +274,14 @@ export class Flock {
           }
         }
 
-        // —— 聚合 + 惊扰波传播 ——
+        // —— cohesion + startle wave propagation ——
         //
-        // 聚合【只在同组内】生效：不然子群刚被派往不同前沿，就会被跨组的
-        // 聚合力拉回来，拆分等于白做。分离保持全局（不同组之间也不能撞），
-        // 惊扰波同样保持全局 —— 危险不分组。
+        // cohesion only applies within the same group: otherwise subgroups
+        // that were just sent off to different frontiers get pulled straight
+        // back by cross-group cohesion, and the split was for nothing.
+        // separation stays global (devices in different groups must not
+        // collide either), and the startle wave stays global too — danger
+        // does not respect groups.
         const sameGroup = this.group[i] === this.group[j];
         if (d2 < cohR2) {
           if (seeIJ && sameGroup) {
@@ -264,8 +289,9 @@ export class Flock {
             this.cohesion[io + 1] += pos[jo + 1];
             this.cohesion[io + 2] += pos[jo + 2];
             this.cohesionCounts[i] += 1;
-            // 社会信号传的是 alarm【脉冲】，不是 panic 值 ——
-            // 脉冲会衰减到零，不会像连续值那样在鱼群里无限回响。
+            // the social signal carries the alarm pulse, not the panic
+            // value — a pulse decays to zero, instead of echoing around the
+            // school forever the way a continuous value would.
             const signal = this.alarm[j] * (1 - distance / cohR);
             if (signal > this.heardSignal[i]) this.heardSignal[i] = signal;
             if (this.panic[j] > this.neighborPanic[i]) {
@@ -290,7 +316,7 @@ export class Flock {
     }
   }
 
-  // ── 威胁源：玩家（原项目此处遍历 NPC 捕食者鱼群）───────────────
+  // ── threat source: the player (originally an NPC predator school) ──────
   _senseThreat(threat) {
     const n = this.count;
     this.threatLevel.fill(0);
@@ -300,9 +326,10 @@ export class Flock {
     const radius = PANIC.panicRadius;
     const radius2 = radius * radius;
     const lead = PANIC.escapePredictionTime;
-    // 支持多个威胁源。每条鱼只对【最近的那一头】反应 —— 而不是对所有
-    // 威胁的平均位置反应。平均是错的：两头一左一右时，平均值落在鱼身上，
-    // 逃逸方向会变成零。
+    // multiple threat sources are supported. each fish reacts only to the
+    // nearest one, rather than to the average position of all threats.
+    // averaging is wrong: with one threat on each side the average lands on
+    // the fish itself, and the escape direction comes out zero.
     const sources = threat.members || [threat];
 
     for (let i = 0; i < n; i += 1) {
@@ -317,11 +344,13 @@ export class Flock {
         const d2 = dx * dx + dy * dy + dz * dz;
         if (d2 > radius2) continue;
         const distance = Math.sqrt(Math.max(d2, EPSILON));
-        // 距离衰减：贴脸的捕食者和边缘的捕食者不该产生同样的恐慌。
+        // distance falloff: a predator right in your face and one at the
+        // edge of the radius should not produce the same panic.
         const level = 1 - distance / radius;
         if (level <= bestLevel) continue;
         bestLevel = level;
-        // 逃向捕食者【预测位置】的反方向，而不是它此刻在哪
+        // flee away from the predator's predicted position, not from where
+        // it happens to be at this instant
         bx = dx - s.velocity.x * lead;
         by = dy - s.velocity.y * lead;
         bz = dz - s.velocity.z * lead;
@@ -352,7 +381,7 @@ export class Flock {
   }
 
   step(dt, threat) {
-    this.time += dt; // 事件时间戳与发射保护时间都用它
+    this.time += dt; // event timestamps and the emission guard window both use it
     this._pairPass();
     this._senseThreat(threat);
 
@@ -370,16 +399,17 @@ export class Flock {
       const vy = vel[o + 1];
       const vz = vel[o + 2];
 
-      // 召回离场后：停在原处，不再更新（场景层会隐藏）
+      // after departing on recall: stop in place and stop updating (the
+      // scene layer hides them)
       if (this.departed) {
         vel[o] = vel[o + 1] = vel[o + 2] = 0;
         continue;
       }
 
-      // ══ 恐慌状态机（闩锁 + 不应期 + 脉冲）══════════════════
+      // ══ panic state machine (latch + refractory + pulse) ═══════════════
       const threatValue = this.threatLevel[i];
       const wasLatched = this.directLatch[i] === 1;
-      // 滞回：越过 directOn 才闩上，掉到 directOff 以下才松开
+      // hysteresis: latches only past directOn, releases only below directOff
       if (!wasLatched && threatValue >= PANIC.directOn) {
         this.directLatch[i] = 1;
       } else if (wasLatched && threatValue < PANIC.directOff) {
@@ -391,8 +421,10 @@ export class Flock {
       this.panicHold[i] = Math.max(0, this.panicHold[i] - dt);
       this.refractory[i] = Math.max(0, this.refractory[i] - dt);
 
-      // 社会触发：信号够强、自己没被直接威胁闩住、且不在不应期内。
-      // 不应期是关键 —— 没有它，脉冲会在鱼群里来回反射永不停止。
+      // social trigger: the signal is strong enough, the fish is not latched
+      // by a direct threat, and it is not inside its refractory period. the
+      // refractory period is the key part — without it the pulse reflects
+      // back and forth through the school and never stops.
       let emitPulse = enteredDirect;
       if (
         !latched &&
@@ -407,7 +439,8 @@ export class Flock {
         this.refractory[i] = Math.max(this.refractory[i], PANIC.refractoryTime);
       }
 
-      // 惊吓期间恐慌被【钉在满值】，这才有四散而逃
+      // during the startle window panic is pinned at full value, which is
+      // what produces the scatter
       const panicTarget = Math.max(
         latched ? threatValue : 0,
         this.panicHold[i] > 0 ? 1 : 0
@@ -424,11 +457,13 @@ export class Flock {
         : this.alarm[i] * Math.exp(-dt / Math.max(PANIC.signalDecayTime, 1e-6));
       const panic = this.panic[i];
 
-      // ══ 力的合成 ═══════════════════════════════════════════
+      // ══ force composition ══════════════════════════════════════════════
       const term = this.terminal;
       const recallMode = term && term.mode === 'recall';
-      // 召回途中速度可接近常态；列阵后（近阵/到位）再减速。
-      // 遇捕食/恐慌才允许恐慌提速逃跑。
+      // on the way back during recall the speed may stay near normal; it
+      // only slows down once in formation (near the slot / in place). the
+      // panic speed boost for fleeing is only allowed when a predator or
+      // panic is involved.
       const predatorDodge = recallMode && (panic > 0.2 || threatValue > 0.15);
       const maxSpeed = FLOCK.maxSpeed * (1 + (predatorDodge ? panic * PANIC.speedBoost : 0));
       const maxForce = FLOCK.maxForce;
@@ -445,7 +480,8 @@ export class Flock {
       const guided = term && (term.mode === 'plan' || term.mode === 'frontier' || recallMode) && (term.seekWeight > 0 || recallMode);
       const planMode = term && term.mode === 'plan';
       const maxPitch = planMode ? planMaxPitch : baseMaxPitch;
-      // 列阵：弱化 boid，避免互相拉扯导致阵型一直晃
+      // formation: weaken the boid rules, so they do not tug at each other
+      // and leave the formation wobbling
       const sepScale = recallMode ? 0.12 : guided ? term.separationScale : 1;
       const cohScale = recallMode ? 0.08 : guided ? term.cohesionScale : 1;
       const aliScale = recallMode ? 0.15 : guided ? term.alignmentScale : 1;
@@ -457,7 +493,7 @@ export class Flock {
         FLOCK.separationWeight * sepScale
       );
 
-      // 受惊时凝聚力下降 —— flash expansion
+      // cohesion drops when startled — flash expansion
       const cohesionWeight =
         FLOCK.cohesionWeight * cohScale * Math.max(0, 1 - panic * PANIC.cohesionDrop);
       if (this.cohesionCounts[i] > 0) {
@@ -470,7 +506,8 @@ export class Flock {
         );
       }
 
-      // 接收方增益：自己越慌，越会去听邻居 —— 波才能一层层推下去
+      // receiver gain: the more panicked a fish is, the more it listens to
+      // its neighbors — that is how the wave pushes outward layer by layer
       const receiverBoost = Math.min(
         1 + PANIC.alignmentReceiverBoost * this.neighborPanic[i],
         PANIC.alignmentReceiverMax
@@ -485,7 +522,8 @@ export class Flock {
         );
       }
 
-      // 应急对齐：一条鱼看见危险，它的航向会压过二十条镇定邻居的平均值
+      // emergency alignment: when one fish sees danger, its heading
+      // outweighs the average of twenty calm neighbors
       if (this.emergencyUrgency[i] > 0) {
         applyRule(
           this.emergencyAlign[o],
@@ -495,8 +533,10 @@ export class Flock {
         );
       }
 
-      // 几何逃逸向量【只给直接看见玩家的鱼】。
-      // 社会性恐慌的鱼只知道邻居航向，不知道玩家在哪 —— 否则等于全知。
+      // the geometric escape vector goes only to fish that can see the
+      // player directly. socially panicked fish know only their neighbors'
+      // headings, not where the player is — otherwise they would be
+      // omniscient.
       if (threatValue > 0) {
         applyRule(
           this.escapeDir[o],
@@ -506,7 +546,9 @@ export class Flock {
         );
       }
 
-      // 边界（召回列阵贴近盒顶，软边界会一直下推导致永远刹不住，故大幅削弱）
+      // boundary (the recall formation sits close to the top of the box,
+      // where the soft boundary keeps pushing down and the swarm never
+      // brakes to a stop, so it is weakened a lot)
       this._boundaryForce(i, boundary);
       const boundaryUrgency = Math.min(
         1,
@@ -524,8 +566,10 @@ export class Flock {
         );
       }
 
-      // 障碍物 —— 射线扇。方向由五根射线合成，命中点同时作为事件发出。
-      // 这是本项目的核心：测绘数据【就是】避障已经算出来的中间产物。
+      // obstacles — the ray fan. the direction is composed from five rays,
+      // and each hit point is emitted as an event at the same time. this is
+      // the core of the project: the mapping data is exactly the intermediate
+      // product that obstacle avoidance has already computed.
       const senseProfile = (term && term.mode === 'plan')
         ? {
             fanHalfAngleDeg: PLAN.sensorFanHalfDeg ?? SENSOR.fanHalfAngleDeg,
@@ -550,25 +594,32 @@ export class Flock {
         );
       }
 
-      // 高度策略：
-      // - ALTITUDE 开：虚拟天花板/任务底软墙 + 弱负浮力（不预知沟深）
-      // - 否则可用旧 workingDepth 定深（对照）
-      // TANK 缸壁是任务区边界，不是客观地形；真正的底靠射线避障 + 硬碰撞。
+      // altitude strategy:
+      // - ALTITUDE on: virtual ceiling / mission-floor soft walls plus weak
+      //   negative buoyancy (no advance knowledge of the trench depth)
+      // - otherwise the old fixed workingDepth can be used (control case)
+      // the TANK walls are the mission-area boundary, not real terrain; the
+      // actual floor comes from ray-based obstacle avoidance plus hard
+      // collision.
       if (ALTITUDE.enabled && !recallMode) {
         const y = pos[o + 1];
         const m = ALTITUDE.softMargin;
         const w = ALTITUDE.softWeight;
-        // 软墙：只在贴边时推。默认 yMin 接近任务盒底，主要作用是天花板。
+        // soft wall: only pushes near the edge. by default yMin sits close
+        // to the bottom of the mission box, so this mainly acts as a ceiling.
         if (m > 0 && w > 0) {
           const up = y - (ALTITUDE.yMax - m);
           if (up > 0) applyRule(0, -1, 0, w * Math.min(1, up / m));
           const dn = (ALTITUDE.yMin + m) - y;
           if (dn > 0) applyRule(0, 1, 0, w * Math.min(1, dn / m));
         }
-        // 弱负浮力：持续轻微下探动机。真实底由障碍射线顶住，不会“钉死到某一深度”。
+        // weak negative buoyancy: a steady mild incentive to descend. the
+        // real floor is held up by the obstacle rays, so it never “pins
+        // itself to one fixed depth”.
         const sink = ALTITUDE.sinkWeight || 0;
         if (sink > 0) applyRule(0, -1, 0, sink);
-        // 带宽中线吸引默认 0；保留作失败方案对照
+        // attraction to the mid-line of the band defaults to 0; kept as a
+        // control for the approach that failed
         const cw = ALTITUDE.centerWeight || 0;
         if (cw > 0) {
           const mid = 0.5 * (ALTITUDE.yMin + ALTITUDE.yMax);
@@ -586,8 +637,10 @@ export class Flock {
         }
       }
 
-      // 终端目标 / 召回列阵
-      // 召回语义：到位后硬静止，关掉巡游；只有捕食/恐慌才破静止逃跑，逃完再回阵。
+      // terminal target / recall formation
+      // recall semantics: once in place it goes hard-static and wandering is
+      // switched off; only a predator or panic breaks that stillness to flee,
+      // and afterwards it returns to its slot.
       let recallHolding = false;
       let recallSlot = null;
       let recallDist = 0;
@@ -599,16 +652,19 @@ export class Flock {
         recallDist = Math.hypot(sdx, sdy, sdz);
         const holdR = RECALL.holdRadius || 1.35;
         const settleR = RECALL.settleRadius || Math.max(holdR * 3, 4.5);
-        // 只认捕食相关威胁；普通障碍/边界不再把阵型搅成“还在游”
+        // only predator-related threats count; ordinary obstacles and
+        // boundaries no longer stir the formation back into “still swimming”
         const dodging = predatorDodge;
         if (!dodging && recallDist <= holdR) {
           recallHolding = true;
-          // 清空本帧力，后面积分直接钉死
+          // clear this frame's force; the integration below pins it in place
           fx = fy = fz = 0;
         } else if (!dodging && recallDist <= settleR) {
-          // 近阵：强刹车 + 弱归位，不再用巡航感的 seek
+          // near the slot: hard braking plus a weak pull home, no longer the
+          // cruise-flavored seek
           applyRule(sdx, sdy, sdz, (term.seekWeight || 2.2) * 0.55);
-          // 反向阻尼当前速度，避免到位后仍滑行
+          // damp the current velocity in reverse, so it does not keep
+          // coasting after arriving
           applyRule(-vx, -vy, -vz, RECALL.brakeWeight || 8);
         } else {
           const w = dodging
@@ -616,7 +672,8 @@ export class Flock {
             : (term.seekWeight || 2.2);
           applyRule(sdx, sdy, sdz, w);
           if (!dodging) {
-            // 途中也稍微抑速，防止“巡游式”冲阵
+            // hold the speed down a little on the way in as well, to avoid
+            // a “cruising” charge into the formation
             applyRule(-vx, -vy, -vz, (RECALL.brakeWeight || 8) * 0.25);
           }
         }
@@ -641,7 +698,7 @@ export class Flock {
         }
       }
 
-      // 游走噪声：列阵静止时关闭
+      // wander noise: switched off while holding formation
       this.wanderPhase[i] += dt * this.wanderRate[i];
       const phase = this.wanderPhase[i];
       const wScale = recallHolding ? 0 : recallMode ? 0.05 : 1;
@@ -649,7 +706,7 @@ export class Flock {
       fy += Math.sin(phase * 1.73 + 2.1) * FLOCK.wanderWeight * 0.4 * wScale;
       fz += Math.cos(phase * 1.17) * FLOCK.wanderWeight * wScale;
 
-      // ══ 积分：转向限速 + 俯仰钳制 + 速度钳制 ═══════════════
+      // ══ integration: turn rate limit + pitch clamp + speed clamp ═══════
       const force = normalize3(fx, fy, fz);
       const magnitude = Math.min(maxForce, force[3]);
       let nvx = vx + force[0] * magnitude * dt;
@@ -663,21 +720,25 @@ export class Flock {
         Math.min(1, oldDir[0] * newDir[0] + oldDir[1] * newDir[1] + oldDir[2] * newDir[2])
       );
       const angle = Math.acos(dot);
-      // 恐慌时转向能力提升；列阵后还要锁角速度（线速度慢但乱转 = 原地陀螺）
+      // turning ability rises with panic; in formation the angular rate also
+      // has to be locked (slow linear speed plus wild turning = a top
+      // spinning in place)
       let turnSpeed = FLOCK.turnSpeed * (1 + panic * PANIC.panicTurnBoost);
       if (recallMode && !predatorDodge) {
         const holdR = RECALL.holdRadius || 1.2;
         const settleR = RECALL.settleRadius || 3.5;
         const holdTurn = RECALL.holdTurnScale ?? 0;
         if (recallHolding || (recallSlot && recallDist <= holdR)) {
-          turnSpeed = 0; // 到位：朝向完全冻结
+          turnSpeed = 0; // in place: heading completely frozen
         } else if (recallSlot && recallDist <= settleR) {
-          // 近阵：线速度在降，角速度同步压到几乎不能转
+          // near the slot: linear speed is dropping, so squeeze the angular
+          // rate down in step until it can barely turn
           const t = Math.max(0, (recallDist - holdR) / Math.max(1e-6, settleR - holdR));
           turnSpeed *= Math.max(holdTurn, 0.05) * t * t;
         }
       }
-      // 当前线速度很低时也限制转向，避免 v≈0 时方向向量噪声导致疯转
+      // also limit turning when the current linear speed is very low, to
+      // avoid noise in the direction vector at v≈0 causing wild spinning
       const curSpd = Math.hypot(vx, vy, vz);
       if (!predatorDodge && curSpd < FLOCK.cruiseSpeed * 0.2) {
         turnSpeed *= Math.max(0.02, curSpd / Math.max(1e-6, FLOCK.cruiseSpeed * 0.2));
@@ -688,13 +749,14 @@ export class Flock {
         oldDir[1] * (1 - alpha) + newDir[1] * alpha,
         oldDir[2] * (1 - alpha) + newDir[2] * alpha
       );
-      // 速度/力都近零时 keep 旧朝向，不要用零向量
+      // when both velocity and force are near zero, keep the old heading
+      // rather than using a zero vector
       if (turned[3] < EPSILON) {
         turned = normalize3(this.headings[o], this.headings[o + 1], this.headings[o + 2]);
         if (turned[3] < EPSILON) turned = [1, 0, 0, 1];
       }
 
-      // 俯仰钳制：鱼不像潜艇那样垂直上下游
+      // pitch clamp: fish do not swim straight up and down like a submarine
       const horizontal = Math.hypot(turned[0], turned[2]);
       const pitch = Math.atan2(turned[1], Math.max(horizontal, EPSILON));
       if (Math.abs(pitch) > maxPitch) {
@@ -705,16 +767,18 @@ export class Flock {
         );
       }
 
-      // 列阵硬静止：位置钉死、线速度清零，但 headings 保留（渲染用）
+      // formation hard-static: pin the position, zero the linear velocity,
+      // but keep headings (the renderer uses them)
       if (recallHolding && recallSlot) {
         pos[o] = recallSlot[0];
         pos[o + 1] = recallSlot[1];
         pos[o + 2] = recallSlot[2];
         vel[o] = vel[o + 1] = vel[o + 2] = 0;
-        // 朝向冻结：不写回 turned
+        // heading frozen: turned is not written back
       } else {
         let speed = newDir[3];
-        // 非召回才维持 cruiseSpeed；召回途中允许接近常态速度
+        // cruiseSpeed is only maintained outside recall; on the way back
+        // during recall the speed may stay near normal
         if (!recallMode && speed < FLOCK.cruiseSpeed) {
           speed = approach(speed, FLOCK.cruiseSpeed, 0.35, dt);
         }
@@ -722,16 +786,18 @@ export class Flock {
           const holdR = RECALL.holdRadius || 1.2;
           const settleR = RECALL.settleRadius || 3.5;
           if (predatorDodge) {
-            // 遇捕食：正常恐慌速度
+            // predator encountered: normal panic speed
             speed = Math.min(speed, maxSpeed);
           } else if (recallSlot && recallDist <= settleR) {
-            // 列阵后：线速度压低；hold 内目标 0
+            // in formation: hold the linear speed down; inside hold the
+            // target is 0
             const t = Math.max(0, (recallDist - holdR) / Math.max(1e-6, settleR - holdR));
             const cap = (RECALL.approachSpeed || FLOCK.cruiseSpeed * 0.3) * t * t;
             if (force[3] < 1e-4) speed = approach(speed, 0, 0.12, dt);
             speed = Math.min(speed, cap);
           } else {
-            // 召回途中：速度保持常态巡航，不提前慢动作
+            // on the way back during recall: keep normal cruising speed, no
+            // early slow motion
             if (speed < FLOCK.cruiseSpeed) {
               speed = approach(speed, FLOCK.cruiseSpeed, 0.35, dt);
             }
@@ -748,7 +814,8 @@ export class Flock {
         pos[o + 1] += vel[o + 1] * dt;
         pos[o + 2] += vel[o + 2] * dt;
 
-        // 有实际位移速度时才更新朝向；慢速/列阵时 turned 已被限角
+        // only update the heading when there is real movement speed; at low
+        // speed or in formation, turned has already been angle-limited
         if (speed > 1e-4) {
           this.headings[o] = turned[0];
           this.headings[o + 1] = turned[1];
@@ -756,9 +823,12 @@ export class Flock {
         }
       }
 
-      // 硬碰撞：积分之后把球壳从实体里推出去。
-      // 软射线避障仍负责提前转向；这里负责 separation/panic 把鱼挤进墙后的兜底。
-      // 没有这一步，进墙后 rayAABB 会把当前盒子当成透明，点云就会在墙内生成。
+      // hard collision: after integration, push the body sphere back out of
+      // any solid. the soft ray-based avoidance still handles turning early;
+      // this is the fallback for when separation or panic squeezes a device
+      // into a wall. without this step, once inside a wall rayAABB treats the
+      // current box as transparent and the point cloud gets generated inside
+      // the wall.
       if (this.collider) {
         const fixed = this.collider.resolve(
           pos[o], pos[o + 1], pos[o + 2],
@@ -772,7 +842,7 @@ export class Flock {
         vel[o + 1] = fixed.vy;
         vel[o + 2] = fixed.vz;
       } else {
-        // 无 collider 时退回旧的包围盒硬边界
+        // with no collider, fall back to the old bounding-box hard boundary
         const hx = TANK.width / 2 - FLOCK.wallMargin;
         const hy = TANK.height / 2 - FLOCK.wallMargin;
         const hz = TANK.depth / 2 - FLOCK.wallMargin;
@@ -790,7 +860,8 @@ export class Flock {
         }
       }
 
-      // 虚拟高度带硬墙：天花板/地板，不是持续力
+      // hard walls for the virtual altitude band: ceiling and floor, not a
+      // continuous force
       if (ALTITUDE.enabled && ALTITUDE.hard) {
         const r = AGENT.bodyRadius;
         const yLo = ALTITUDE.yMin + r;
@@ -804,8 +875,11 @@ export class Flock {
         }
       }
 
-      // 碰撞/边界推挤后仍要钉回阵位，否则下一帧又被判定“未到位”重新加速
-      // 注意：只清线速度，不清 headings —— 否则渲染会回落到默认朝向乱转
+      // after collision or boundary pushes it still has to be pinned back to
+      // the slot, otherwise the next frame judges it “not in place” and
+      // accelerates again. note: only the linear velocity is cleared, not
+      // headings — otherwise the renderer falls back to the default heading
+      // and spins.
       if (recallHolding && recallSlot && !predatorDodge) {
         pos[o] = recallSlot[0];
         pos[o + 1] = recallSlot[1];
@@ -815,7 +889,7 @@ export class Flock {
     }
   }
 
-  // 供 HUD 显示：平均恐慌 + 有多少鱼处于恐慌
+  // for the HUD: average panic plus how many fish are panicking
   metrics() {
     let sum = 0;
     let panicking = 0;

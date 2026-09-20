@@ -1,10 +1,12 @@
-// 点云地图窗口 —— 终端看到的东西。
+// Point cloud map window -- what the terminal sees.
 //
-// 这是整个项目的核心画面：一开始全黑，随集群巡游一点一点长出地形。
-// 这张地图从来没有被任何一台相机拍到过，它完全是由"险些撞上"反推出来的。
+// This is the central image of the whole project: black at the start, the
+// terrain growing bit by bit as the swarm patrols. No camera ever
+// photographed this map; it is inferred entirely from near-misses.
 //
-// 独立的 scene + camera，用 scissor 裁进一个 DOM 方框 —— 与主画面共用
-// 同一块画布，不额外开 WebGL 上下文。
+// It has its own scene and camera, clipped into a DOM box with a scissor
+// rect -- it shares the main canvas rather than opening a second WebGL
+// context.
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
@@ -27,7 +29,8 @@ export function createMapView(grid, renderer, hostEl) {
   controls.maxDistance = TANK.width * 3;
   controls.target.set(0, -TANK.height * 0.15, 0);
 
-  // 任务包围盒：给点云一个参照，否则悬空的点看不出尺度
+  // Mission bounding box: it gives the point cloud a reference, otherwise
+  // points hanging in space have no readable scale
   scene.add(
     new THREE.LineSegments(
       new THREE.EdgesGeometry(
@@ -39,9 +42,11 @@ export function createMapView(grid, renderer, hostEl) {
     )
   );
 
-  // ── 点云 ──
-  // 位置缓冲一次性开满，靠 drawRange 控制画多少 —— 每帧重建 BufferGeometry
-  // 会把主线程拖死，而增量写入只碰新增的那几个槽位。
+  // ── Point cloud ──
+  // The position buffer is allocated at full size once and drawRange
+  // controls how much of it is drawn -- rebuilding the BufferGeometry every
+  // frame grinds the main thread to a halt, while incremental writes only
+  // touch the few slots that are new.
   const positions = new Float32Array(MAP.maxPoints * 3);
   const colors = new Float32Array(MAP.maxPoints * 3);
   const geometry = new THREE.BufferGeometry();
@@ -52,7 +57,8 @@ export function createMapView(grid, renderer, hostEl) {
   geometry.setAttribute('position', posAttr);
   geometry.setAttribute('color', colAttr);
   geometry.setDrawRange(0, 0);
-  // 关掉视锥剔除：包围球是按初始（空）几何算的，不关会整片消失
+  // Frustum culling off: the bounding sphere is computed from the initial
+  // (empty) geometry, so with culling on the whole cloud disappears
   const points = new THREE.Points(
     geometry,
     new THREE.PointsMaterial({
@@ -74,7 +80,7 @@ export function createMapView(grid, renderer, hostEl) {
   const cold = new THREE.Color('#6f624d');
   const _mix = new THREE.Color();
 
-  let written = 0; // 已写进缓冲的槽位数
+  let written = 0; // slots already written into the buffer
 
   function paint(slot) {
     const idx = grid.occupied[slot];
@@ -83,12 +89,16 @@ export function createMapView(grid, renderer, hostEl) {
     positions[o] = _c[0];
     positions[o + 1] = _c[1];
     positions[o + 2] = _c[2];
-    // 观测越多越亮。用 sqrt 而不是线性：低观测区（刚探到的边缘）
-    // 在线性映射下几乎是黑的，看不出"地图正在长"。
+    // More observations means brighter. sqrt rather than linear: areas with
+    // few observations (the frontier that was just reached) are almost black
+    // under a linear mapping, and you cannot see the map growing.
     //
-    // 但增益也不能太大：×2.6 时证据到 76 就已经封顶，跑两分钟后满屏都是
-    // 最亮色，整片点云糊成一块白板，观测密度的差异完全看不出来。
-    // 现在让曲线铺满整个证据范围，暗处保留可见的底色。
+    // But the gain must not be too large either: at ×2.6 the color already
+    // saturated once the evidence reached 76, so after two minutes of
+    // running the screen was all at the brightest color, the whole cloud
+    // smeared into a white slab and the differences in observation density
+    // were invisible. The curve now spans the full evidence range, keeping a
+    // visible base tone in the dark areas.
     const e = grid.evidence[idx];
     const k = Math.min(1, Math.sqrt(Math.max(0, e) / MAP.evidenceMax) * 1.15);
     _mix.copy(cold).lerp(calm, k);
@@ -98,7 +108,8 @@ export function createMapView(grid, renderer, hostEl) {
     colors[o + 2] = _mix.b;
   }
 
-  // 每帧调用：只写新增的点，再顺带刷新一小批老点的颜色
+  // Called every frame: it writes only the new points, then refreshes the
+  // color of a small batch of older ones along the way
   let refreshCursor = 0;
   function sync() {
     if (grid.dirtySlots.length) {
@@ -107,8 +118,10 @@ export function createMapView(grid, renderer, hostEl) {
       }
       grid.dirtySlots.length = 0;
     }
-    // 老点的证据还在涨，颜色要跟上；但每帧全刷 40 万点太贵，
-    // 所以轮转刷新一小批 —— 亮度变化本来就是渐进的，看不出延迟。
+    // Evidence for old points keeps rising and the color has to follow, but
+    // refreshing all 400,000 points every frame is too expensive, so a small
+    // batch is refreshed round-robin -- the brightness changes gradually
+    // anyway, so the delay is invisible.
     const budget = Math.min(3000, grid.occupiedCount);
     for (let n = 0; n < budget; n += 1) {
       if (grid.occupiedCount === 0) break;
@@ -134,8 +147,9 @@ export function createMapView(grid, renderer, hostEl) {
     camera.aspect = r.width / r.height;
     camera.updateProjectionMatrix();
 
-    // setViewport/setScissor 收的是逻辑像素，three 内部会自己乘 DPR。
-    // 在这里再乘一次会双重缩放，窗口会溢出主画面。
+    // setViewport/setScissor take logical pixels; three multiplies by the
+    // DPR internally. Multiplying again here scales twice and the window
+    // overflows the main view.
     const x = r.left - c.left;
     const y = c.bottom - r.bottom;
     const oldViewport = renderer.getViewport(new THREE.Vector4());

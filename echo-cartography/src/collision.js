@@ -1,25 +1,30 @@
-// 场景无关的硬碰撞接口。
+// scene-independent hard-collision interface.
 //
-// 软避障（射线）负责"提前躲开"；硬碰撞负责"进都进不去"。
-// 两者分工不同：没有硬碰撞时，separation/panic 仍可把个体挤进墙里，
-// 而 rayAABB 在起点已在盒内时直接 return -1，墙变透明，点云就会在墙内生成。
+// soft avoidance (rays) handles "dodge in advance"; hard collision handles
+// "you cannot get in at all". the two have different jobs: without hard
+// collision, separation and panic can still squeeze a device into a wall,
+// and rayAABB returns -1 outright when the origin is already inside a box,
+// so the wall turns transparent and the point cloud gets generated inside
+// the wall.
 //
-// 多场景约定：
-//   场景只需要提供一个 collider，暴露：
+// multi-scene contract:
+//   a scene only has to supply one collider, exposing:
 //     resolve(x,y,z, radius, vx,vy,vz) -> {x,y,z, vx,vy,vz, hit}
-//   当前深海沟是 AABB 汤；以后曲面场景可换成三角网格 / SDF 后端，
-//   flock 侧不用改。
+//   the current deep-sea trench is a soup of AABBs; a later curved-surface
+//   scene can swap in a triangle-mesh / SDF backend, with no change needed
+//   on the flock side.
 
 import { TANK } from './params.js';
 
 /**
- * 从 AABB 列表构建碰撞世界（当前场景用这个）。
+ * build a collision world from a list of AABBs (what the current scene uses).
  * boxes: [{min:{x,y,z}, max:{x,y,z}}]
  */
 export function createAabbCollider(boxes = []) {
   const world = {
     boxes: [],
-    // 均匀网格：盒子登记到覆盖的每个 cell，查询只看 3x3x3
+    // uniform grid: each box is registered in every cell it covers, and a
+    // query only looks at 3x3x3
     cell: 4,
     origin: [0, 0, 0],
     dim: [1, 1, 1],
@@ -50,7 +55,7 @@ export function createAabbCollider(boxes = []) {
       if (b.maxy > hi[1]) hi[1] = b.maxy;
       if (b.maxz > hi[2]) hi[2] = b.maxz;
     }
-    // 略扩一圈，避免贴边查询漏
+    // pad out by one ring, so queries right at the edge do not miss
     const pad = 2;
     lo = [lo[0] - pad, lo[1] - pad, lo[2] - pad];
     hi = [hi[0] + pad, hi[1] + pad, hi[2] + pad];
@@ -122,10 +127,11 @@ export function createAabbCollider(boxes = []) {
     return n;
   }
 
-  // 球 vs AABB：若穿透，沿最短分离轴推出，返回是否命中。
-  // 写出 nx,ny,nz = 指向自由空间的单位法向（推出方向）。
+  // sphere vs AABB: on penetration, push out along the shortest separating
+  // axis and return whether it hit. writes nx,ny,nz = the unit normal
+  // pointing into free space (the push-out direction).
   function separateOne(x, y, z, r, b, outN) {
-    // 最近点在盒上
+    // the closest point on the box
     const cx = Math.max(b.minx, Math.min(x, b.maxx));
     const cy = Math.max(b.miny, Math.min(y, b.maxy));
     const cz = Math.max(b.minz, Math.min(z, b.maxz));
@@ -135,17 +141,18 @@ export function createAabbCollider(boxes = []) {
     const d2 = dx * dx + dy * dy + dz * dz;
 
     if (d2 > 1e-12) {
-      // 球心在盒外（或恰在表面）
+      // sphere center is outside the box (or exactly on its surface)
       const dist = Math.sqrt(d2);
       if (dist >= r) return 0;
       const push = (r - dist) / dist;
       outN[0] = dx / dist;
       outN[1] = dy / dist;
       outN[2] = dz / dist;
-      return push * dist; // 推出距离
+      return push * dist; // push-out distance
     }
 
-    // 球心在盒内：沿穿透最浅的轴推出
+    // sphere center is inside the box: push out along the axis with the
+    // shallowest penetration
     const px = Math.min(x - b.minx, b.maxx - x);
     const py = Math.min(y - b.miny, b.maxy - y);
     const pz = Math.min(z - b.minz, b.maxz - z);
@@ -170,8 +177,10 @@ export function createAabbCollider(boxes = []) {
   const _n = [0, 0, 0];
 
   /**
-   * 把一个球体从所有障碍中推出去，并去掉速度的内向分量（贴面滑走，不弹飞）。
-   * 迭代数次：台阶夹角里一次可能只离开一个盒子又进另一个。
+   * push a sphere out of every obstacle, and remove the inward component of
+   * its velocity (slide along the surface rather than bouncing off).
+   * iterate a few times: in the corner of a step, one pass may only leave one
+   * box and enter another.
    */
   function resolve(x, y, z, radius, vx, vy, vz) {
     const r = Math.max(0, radius);
@@ -179,7 +188,7 @@ export function createAabbCollider(boxes = []) {
     for (let iter = 0; iter < 4; iter += 1) {
       const count = gather(x, y, z);
       let moved = false;
-      // 无网格时退回全量
+      // with no grid, fall back to checking all of them
       const nBox = world.boxes.length;
       const useGrid = world.grid && count > 0;
       const total = useGrid ? count : nBox;
@@ -191,7 +200,8 @@ export function createAabbCollider(boxes = []) {
         x += _n[0] * depth;
         y += _n[1] * depth;
         z += _n[2] * depth;
-        // 去掉朝实体内的速度，保留切向滑动
+        // remove the velocity heading into the solid, keep the tangential
+        // slide
         const vn = vx * _n[0] + vy * _n[1] + vz * _n[2];
         if (vn < 0) {
           vx -= _n[0] * vn;
@@ -204,7 +214,9 @@ export function createAabbCollider(boxes = []) {
       if (!moved) break;
     }
 
-    // 任务探测盒内壁硬钳制（TANK 是任务区，不是客观地形；只防游出仿真范围）
+    // hard clamp to the inner walls of the mission survey box (TANK is the
+    // mission area, not real terrain; this only stops devices swimming out
+    // of the simulated range)
     const hx = TANK.width / 2 - r;
     const hy = TANK.height / 2 - r;
     const hz = TANK.depth / 2 - r;
@@ -227,17 +239,19 @@ export function createAabbCollider(boxes = []) {
 }
 
 /**
- * 曲面/网格场景以后走这里（先占位，接口对齐）。
- * 实现思路：
- *   - 三角网格 + BVH：球 vs 三角形，推到三角面外
- *   - 或 SDF：pos -= grad * (radius - dist)
- * flock 只认 resolve()，不关心后端。
+ * curved-surface / mesh scenes will go through here later (a placeholder for
+ * now, with the interface already lined up).
+ * implementation sketch:
+ *   - triangle mesh + BVH: sphere vs triangle, pushed outside the triangle
+ *   - or SDF: pos -= grad * (radius - dist)
+ * flock only knows about resolve() and does not care about the backend.
  */
 export function createMeshCollider(/* mesh */) {
   return {
     kind: 'mesh',
     resolve(x, y, z, radius, vx, vy, vz) {
-      // 未接入前原样返回；场景换网格时再填
+      // returns its input unchanged until this is wired up; fill it in when
+      // the scene switches to a mesh
       return { x, y, z, vx, vy, vz, hit: false };
     },
   };

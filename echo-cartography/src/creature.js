@@ -1,13 +1,19 @@
-// 大型生物 —— 自主游弋的动态威胁源，取代原来的玩家。
+// large creatures — autonomously swimming dynamic threats, replacing the
+// former player.
 //
-// 换掉玩家不只是"少一个操作模式"。本项目要证明的是集群在【无人干预】下
-// 完成测绘 —— 手里握着一条鱼，整个论点就变成了表演。
+// replacing the player is not just "one control mode fewer". what this
+// project has to demonstrate is the swarm completing the survey with no
+// human intervention — hold a fish in your hand and the whole argument
+// turns into a performance.
 //
-// 它同时是建图算法的对手：这东西会动，所以它在点云里留下的痕迹必须能被
-// 自由空间雕刻抹掉。没有它，"区分静态几何与动态目标"这件事无从验证。
+// it is at the same time the adversary of the mapping algorithm: this thing
+// moves, so the traces it leaves in the point cloud have to be erasable by
+// free-space carving. without it there is no way to verify "telling static
+// geometry from dynamic targets".
 //
-// 对 Flock 只暴露 { position, velocity } —— 与原来的玩家接口一致。
-// 本文件不 import three.js。
+// only { position, velocity } is exposed to Flock — the same interface the
+// player used to have.
+// this file does not import three.js.
 
 import { CREATURE, TANK } from './params.js';
 
@@ -15,12 +21,15 @@ class Vec3 {
   constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z; }
 }
 
-// 盒体避让 —— 取盒上最近点求外推方向。
+// box avoidance — take the nearest point on the box to get a push-out
+// direction.
 //
-// 这里【故意不用射线扇】：射线扇的产物是测量数据，那是集群设备才有的能力。
-// 一条鱼不应该产生测绘事件，它只需要不撞墙。用两套机制反而更诚实。
+// deliberately not a ray fan here: what a ray fan produces is measurement
+// data, and that is a capability only the swarm devices have. a fish should
+// not generate survey events, it only needs to not hit walls. using two
+// separate mechanisms is in fact more honest.
 //
-// 返回紧迫度 [0,1]，外推方向写进 out。
+// returns urgency in [0,1], and writes the push-out direction into out.
 function boxAvoid(x, y, z, boxes, softness, out) {
   out[0] = out[1] = out[2] = 0;
   let urgency = 0;
@@ -33,8 +42,10 @@ function boxAvoid(x, y, z, boxes, softness, out) {
     if (dist > softness) continue;
 
     if (dist < 1e-6) {
-      // 已经陷在盒体内部：沿【穿透最浅的那个轴】推出去。
-      // 固定往上推是错的 —— 陷进侧壁时会被顶着往上蹭，蹭出一路穿模。
+      // already stuck inside the box: push out along the axis with the
+      // shallowest penetration. always pushing up is wrong — stuck in a
+      // side wall it gets scraped upwards and clips through geometry the
+      // whole way.
       const px = Math.min(x - b.min.x, b.max.x - x);
       const py = Math.min(y - b.min.y, b.max.y - y);
       const pz = Math.min(z - b.min.z, b.max.z - z);
@@ -61,8 +72,9 @@ export class Creature {
     this.velocity = new Vec3();
     this.obstacles = obstacles;
     this.phase = seed * 2.7 + 0.3;
-    // 被人接管时，自主游走整段跳过 —— 速度由 Pilot 写入，
-    // 但避障【仍然生效】：驾驶时也不该穿墙。
+    // when a human takes over, the whole autonomous-wander section is
+    // skipped — the velocity is written by the pilot, but obstacle
+    // avoidance still applies: driving should not go through walls either.
     this.piloted = false;
     this._avoid = [0, 0, 0];
     this.reset(seed);
@@ -72,8 +84,9 @@ export class Creature {
     const hx = TANK.width / 2 - CREATURE.margin;
     const hz = TANK.depth / 2 - CREATURE.margin;
     this.position.x = (seed % 2 === 0 ? -1 : 1) * hx * 0.6;
-    // 出生在沟沿之上的开阔水域，不要落在山峰丛里 ——
-    // 从岩体内部起步会让它第一帧就在解穿透，看起来像被弹出来
+    // spawn in the open water above the trench rim, not down among the
+    // peaks — starting from inside the rock means it spends the first frame
+    // resolving penetration, which looks like being flung out
     this.position.y = TANK.height * 0.12;
     this.position.z = (seed % 2 === 0 ? 1 : -1) * hz * 0.4;
     this.velocity.x = seed % 2 === 0 ? CREATURE.speed : -CREATURE.speed;
@@ -83,8 +96,9 @@ export class Creature {
 
   step(dt) {
     const speed = CREATURE.speed;
-    // 地形避让对【自主与驾驶两种模式都生效】—— 驾驶时也不该穿墙。
-    // 之前漏了这一步，大鱼是直接从岩体里穿过去的。
+    // terrain avoidance applies in both autonomous and piloted mode —
+    // driving should not go through walls either. this step was missing
+    // before, and the creatures went straight through the rock.
     const clearance = CREATURE.bodyRadius + CREATURE.avoidMargin;
     const urgency = boxAvoid(
       this.position.x, this.position.y, this.position.z,
@@ -95,13 +109,15 @@ export class Creature {
       this.phase += dt * CREATURE.turnRate;
       const p = this.phase;
 
-      // 三个不同周期的正弦叠加 —— 互质的频率不会短周期内重复，
-      // 看起来像在漫游而不是在跑固定路线。
+      // three sines with different periods summed — mutually prime
+      // frequencies do not repeat over a short cycle, so it looks like
+      // wandering rather than running a fixed route.
       let dx = Math.cos(p * 1.0);
       let dy = Math.sin(p * 0.37) * 0.35;
       let dz = Math.sin(p * 0.73);
 
-      // 撞壁前转向：越靠近壁面，反向分量越强
+      // turn before hitting a wall: the closer to the wall, the stronger
+      // the opposing component
       const hx = TANK.width / 2 - CREATURE.margin;
       const hy = TANK.height / 2 - CREATURE.margin;
       const hz = TANK.depth / 2 - CREATURE.margin;
@@ -114,23 +130,27 @@ export class Creature {
       dy += push(this.position.y, hy) * 3;
       dz += push(this.position.z, hz) * 3;
 
-      // 地形避让权重最大 —— 它得压过游走噪声，否则会顺着岩壁一路蹭进去
+      // terrain avoidance carries the largest weight — it has to overpower
+      // the wander noise, otherwise it scrapes its way along the rock face
+      // and straight into it
       const w = CREATURE.avoidWeight * urgency;
       dx += this._avoid[0] * w;
       dy += this._avoid[1] * w;
       dz += this._avoid[2] * w;
 
       const len = Math.hypot(dx, dy, dz) || 1;
-      // 平滑转向而非瞬间换向，否则鱼群的逃逸预测（escapePredictionTime）
-      // 会指向一个下一帧就不存在的方向
+      // turn smoothly rather than snapping direction, otherwise the
+      // swarm's escape prediction (escapePredictionTime) points at a
+      // direction that will not exist by the next frame
       const blend = Math.min(1, dt * 2.2);
       this.velocity.x += ((dx / len) * speed - this.velocity.x) * blend;
       this.velocity.y += ((dy / len) * speed - this.velocity.y) * blend;
       this.velocity.z += ((dz / len) * speed - this.velocity.z) * blend;
     } else if (urgency > 0) {
-      // 驾驶模式：不夺走操控，只叠一个外推速度。
-      // 直接改写 velocity 会让手感变成"撞墙后被弹开"，很难受；
-      // 叠加则表现为"贴着墙滑过去"。
+      // piloted mode: do not take control away, just add a push-out
+      // velocity. overwriting velocity directly makes it feel like
+      // "bouncing off after hitting the wall", which is unpleasant; adding
+      // it instead reads as "sliding along the wall".
       const w = speed * urgency;
       this.velocity.x += this._avoid[0] * w * dt * 6;
       this.velocity.y += this._avoid[1] * w * dt * 6;
@@ -141,29 +161,33 @@ export class Creature {
     this.position.y += this.velocity.y * dt;
     this.position.z += this.velocity.z * dt;
 
-    // 硬解算兜底：转向是软的，高速时仍可能一帧内插进岩体。
+    // hard-resolve fallback: the turning is soft, so at high speed it can
+    // still end up inside the rock within a single frame.
     //
-    // 必须【迭代】。地形从 5 个盒子变成 333 个山峰阶梯之后，一次外推经常
-    // 只是把它从一个盒子推进相邻那个 —— 实测两头大鱼都会永久嵌死在夹角里。
-    // 每次推完重新求解，直到脱离或用完次数。
+    // this has to iterate. after the terrain went from 5 boxes to 333 peak
+    // steps, a single push-out often just moved it from one box into the
+    // neighbouring one — in testing both creatures ended up permanently
+    // wedged in a corner. re-solve after each push, until it is clear or
+    // the attempts run out.
     for (let iter = 0; iter < 4; iter += 1) {
       const u = boxAvoid(
         this.position.x, this.position.y, this.position.z,
         this.obstacles, clearance, this._avoid
       );
-      if (u < 0.999) break; // 只有真正陷在体内才硬推
+      if (u < 0.999) break; // only hard-push when genuinely stuck inside
       const l = Math.hypot(this._avoid[0], this._avoid[1], this._avoid[2]) || 1;
       const outStep = clearance * 0.8;
       this.position.x += (this._avoid[0] / l) * outStep;
       this.position.y += (this._avoid[1] / l) * outStep;
       this.position.z += (this._avoid[2] / l) * outStep;
-      // 速度也要跟着改向，否则下一帧又原方向撞回去，来回抖
+      // the velocity has to turn with it, otherwise the next frame drives
+      // back in the same direction and it jitters back and forth
       this.velocity.x = (this._avoid[0] / l) * speed;
       this.velocity.y = (this._avoid[1] / l) * speed;
       this.velocity.z = (this._avoid[2] / l) * speed;
     }
 
-    // 包围盒硬钳制
+    // hard clamp to the bounding box
     const clamp = (v, half) => Math.max(-half, Math.min(half, v));
     this.position.x = clamp(this.position.x, TANK.width / 2 - 1);
     this.position.y = clamp(this.position.y, TANK.height / 2 - 1);
@@ -171,7 +195,8 @@ export class Creature {
   }
 }
 
-// 多头生物。Flock._senseThreat 认 `.members`，每条鱼对最近的那一头反应。
+// multiple creatures. Flock._senseThreat looks for `.members`, and each
+// device reacts to the nearest one.
 export class CreaturePack {
   constructor(obstacles = [], n = CREATURE.count) {
     this.members = [];

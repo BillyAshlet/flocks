@@ -1,11 +1,15 @@
-// M2：探索阶段机 + 前沿提取 + 虚拟高度。
+// M2: exploration phase machine + frontier extraction + virtual altitude.
 //
-// 阶段：ROAM → PLAN → FRONTIER → RECALL
-//   ROAM     自由巡游；粗俯视覆盖停滞/达标 → PLAN
-//   PLAN     细俯视虚区补扫（不认柱/坑）；细覆盖停滞/达标/超时 → FRONTIER
-//   FRONTIER 粗格自由∩未知；可派簇耗尽 → RECALL
+// phases: ROAM → PLAN → FRONTIER → RECALL
+//   ROAM     free roam; coarse plan-view coverage stalls or hits its
+//            target → PLAN
+//   PLAN     fill the gaps in the fine plan view (columns and pits are not
+//            distinguished); fine coverage stalls, hits its target, or
+//            times out → FRONTIER
+//   FRONTIER coarse cells that are free ∩ unknown; assignable clusters
+//            exhausted → RECALL
 //
-// 本文件不 import three.js。
+// this file does not import three.js.
 
 import { FRONTIER, PLAN, MAP, ALTITUDE, FLOCK, RECALL, TANK } from './params.js';
 
@@ -15,7 +19,7 @@ const NEI = [
   [0, 1, 0], [0, -1, 0],
   [0, 0, 1], [0, 0, -1],
 ];
-// 俯视 4-邻接（xz 平面，在 plan map 的线性下标上走）
+// plan-view 4-connectivity (xz plane, walked on the plan map's linear index)
 const NEI4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 
 export class Terminal {
@@ -90,7 +94,8 @@ export class Terminal {
     this.phase = 'roam';
     this.phaseEnteredAt = 0;
     this.phaseNote = '';
-    // 自动管线从 ROAM 重来；手动开着 FRONTIER.enabled 则直接前沿
+    // the automatic pipeline restarts from ROAM; with FRONTIER.enabled
+    // left on manually it goes straight to frontier
     if (FRONTIER.autoStart) FRONTIER.enabled = false;
     this.params = null;
   }
@@ -148,7 +153,7 @@ export class Terminal {
     );
   }
 
-  // 细俯视覆盖 + 虚区列表（map 值 0 = 虚）
+  // fine plan-view coverage + list of gaps (map value 0 = gap)
   _updateFine() {
     const plan = this.grid.fillPlanMap(this._planMap, PLAN.bin);
     this._planMap = plan.map;
@@ -159,8 +164,11 @@ export class Terminal {
     return plan;
   }
 
-  // 俯视 B：虚区连通块 → 目标取【块质心】（进洞），不是离群最近外缘。
-  // 评分：大块优先、贴已有实体优先、太远降权。
+  // plan view B: connected components of gaps → the target is the
+  // component centroid (go into the hole), not the nearest outer edge to
+  // the swarm.
+  // scoring: bigger components first, components touching existing solid
+  // first, ones that are too far away penalised.
   _planClusters(plan, flock) {
     const map = plan.map;
     const W = plan.width;
@@ -220,7 +228,8 @@ export class Terminal {
           if (nx < 0 || nz < 0 || nx >= W || nz >= H) continue;
           const j = nz * W + nx;
           const kind = map[j];
-          // 贴着已占据柱 = 更像顶/坑边，而不是任务盒外缘虚空
+          // touching an occupied column = more like a top or a pit edge
+          // than the empty space outside the mission box
           if (kind === 2) touchOcc += 1;
           if (visited[j] === stamp) continue;
           if (kind !== 0) continue;
@@ -235,8 +244,8 @@ export class Terminal {
       const dz = z - fz;
       const dist2 = dx * dx + dz * dz;
       const dist = Math.sqrt(dist2);
-      if (dist > maxD) continue; // 太远先不派
-      // score: 大块 × 贴实体加成 / 距离软惩罚
+      if (dist > maxD) continue; // too far away, do not assign it yet
+      // score: size × solid-adjacency bonus / soft distance penalty
       let score = Math.pow(count, sizePow) / (1 + dist / soft);
       if (touchOcc > 0) score *= occBonus * (1 + Math.min(touchOcc, 24) * 0.02);
       clusters.push({
@@ -252,14 +261,16 @@ export class Terminal {
     return clusters;
   }
 
-  // 俯视专用挑选：先高分（大/近/贴实体），再空间分散
+  // plan-view-specific picking: highest combined score first (big / near /
+  // touching solid), then spatial spread
   _pickPlanTargets(clusters, flock) {
     const G = Math.max(1, FLOCK.groupCount);
     const targets = [];
     if (!clusters.length) return { best: null, targets };
 
     const pool = clusters.slice().sort((a, b) => b.score - a.score);
-    // 第一个：综合分最高（不是纯最近外缘）
+    // first pick: the highest combined score (not simply the nearest outer
+    // edge)
     const picked = [pool.shift()];
 
     while (picked.length < G && pool.length) {
@@ -272,7 +283,7 @@ export class Terminal {
           const d = (c.x - q.x) ** 2 + (c.z - q.z) ** 2;
           if (d < minD) minD = d;
         }
-        // 分散 × 原综合分
+        // spread × original combined score
         const score = Math.sqrt(minD) * (0.35 + c.score);
         if (score > bScore) {
           bScore = score;
@@ -287,7 +298,8 @@ export class Terminal {
     for (let gi = 0; gi < G; gi += 1) {
       const c = picked[gi % picked.length];
       let y = c.y;
-      // 子群一半偏上、一半偏下：到虚区内部后上下探
+      // half the subgroups biased up, half down: probe up and down once
+      // inside the gap
       if (spread > 0) y += (gi % 2 === 0 ? 1 : -1) * spread;
       if (bandOn) y = this._clampY(y);
       targets.push([c.x, y, c.z]);
@@ -460,14 +472,17 @@ export class Terminal {
       clusters.push({ x: bx, y: by, z: bz, size: count, dist2: bestLocalD });
     }
     this.clusterCount = clusters.length;
-    // 召回不再要求前沿==0（不可达噪声会卡死）。
-    // 真正判定在 update 里用「前沿数量停滞」；这里只标记「完全耗尽」捷径。
+    // recall no longer requires frontier == 0 (unreachable noise would
+    // stall it forever). the real decision is made in update from "the
+    // frontier count has stalled"; this only flags the "completely
+    // exhausted" shortcut.
     this._frontierEmpty = clusters.length === 0;
     return clusters;
   }
 
 
-  // 上空阵列：近似方形网格，中心在群质心 xz，高度接近盒顶
+  // holding array overhead: a roughly square grid, centred on the swarm
+  // centroid in xz, at a height near the top of the box
   _buildFormation(flock) {
     const n = flock.count;
     const slots = new Array(n);
@@ -486,7 +501,8 @@ export class Terminal {
     return slots;
   }
 
-  // UI 点击「确认召回」：列阵悬浮后再真正离场隐藏
+  // UI click on "confirm recall": hold the formation in place first, and
+  // only then actually depart and hide
   confirmDepart() {
     if (this.phase !== 'recall') return false;
     if (!this.formationReady) return false;
@@ -500,15 +516,16 @@ export class Terminal {
 
     const periodDue = time - this.lastUpdate >= FRONTIER.period;
 
-    // 覆盖率持续更新（HUD 不能冻住）
+    // keep coverage updating (the HUD must not freeze)
     if (periodDue) {
       this.columnCoverage = this.grid.columnCoverage();
       this._updateFine();
     }
 
-    // 手动强制前沿：跳过 ROAM/PLAN
+    // manually forcing frontier: skip ROAM/PLAN
     if (FRONTIER.enabled && (this.phase === 'roam' || this.phase === 'plan')) {
-      // 手动开前沿可跳过 PLAN；自动管线在 ROAM 时不会把 enabled 置 true
+      // turning frontier on by hand can skip PLAN; the automatic pipeline
+      // never sets enabled to true while in ROAM
       if (this.phase !== 'frontier') {
         this.phase = 'frontier';
         this.phaseEnteredAt = time;
@@ -516,7 +533,7 @@ export class Terminal {
       }
     }
 
-    // ── ROAM → PLAN（粗俯视）──
+    // ── ROAM → PLAN (coarse plan view) ──
     if (this.phase === 'roam' && FRONTIER.autoStart && periodDue) {
       this._coarseHist = this._pushHist(
         this._coarseHist,
@@ -540,9 +557,11 @@ export class Terminal {
       }
     }
 
-    // ── PLAN → FRONTIER（细俯视 / 水平补扫）──
-    // 前沿负责竖直墙面；俯视负责水平铺开。
-    // 主退出：细覆盖「不再怎么涨」（停滞）；虚区耗尽/近满/超时为辅。
+    // ── PLAN → FRONTIER (fine plan view / horizontal fill) ──
+    // frontier handles the vertical wall faces; the plan view handles
+    // spreading out horizontally.
+    // main exit: fine coverage "stops rising much" (stall); gaps exhausted,
+    // nearly full, and timeout are secondary.
     if (this.phase === 'plan' && periodDue) {
       this._fineHist = this._pushHist(
         this._fineHist,
@@ -558,18 +577,20 @@ export class Terminal {
         this.fineCoverage
       );
       const timedOut = lived >= PLAN.maxDuration;
-      // clusterCount 是上一周期的；本周期末尾会重算。用 pending 标记在 plan 分支里再判一次。
+      // clusterCount is from the previous period and gets recomputed at
+      // the end of this one. mark it pending and test it again in the plan
+      // branch.
       this._planExitCheck = { stalled, timedOut, lived };
     }
 
-    // 非周期：只回灌上次 params
+    // off-period: just feed back the previous params
     if (!periodDue) {
       if (flock && flock.setTerminalParams) flock.setTerminalParams(this.params);
       return this.params;
     }
     this.lastUpdate = time;
 
-    // ── 按阶段产出目标 ──
+    // ── produce targets per phase ──
     if (this.phase === 'roam') {
       this.frontierCount = 0;
       this.clusterCount = 0;
@@ -584,7 +605,7 @@ export class Terminal {
     if (this.phase === 'plan') {
       const plan = this.grid.fillPlanMap(this._planMap, PLAN.bin);
       this._planMap = plan.map;
-      // 同步细覆盖（与虚区同一张图）
+      // sync fine coverage (from the same map as the gaps)
       {
         const n = plan.width * plan.height;
         let known = 0;
@@ -595,19 +616,20 @@ export class Terminal {
       this.clusterCount = clusters.length;
       this.frontierCount = 0;
 
-      // 退出（水平俯视榨干了再交给前沿补竖直面）：
-      //  1) 细覆盖停滞（主路径：不再怎么增加）
-      //  2) 虚区簇耗尽
-      //  3) 近乎铺满
-      //  4) 超时兜底
+      // exit (squeeze the horizontal plan view dry, then hand the vertical
+      // faces over to frontier):
+      //  1) fine coverage stalls (main path: it stops increasing much)
+      //  2) gap clusters exhausted
+      //  3) nearly fully covered
+      //  4) timeout as a fallback
       const chk = this._planExitCheck || {};
       const noGaps = clusters.length === 0;
       const covered = this.fineCoverage >= PLAN.autoStartCoverage;
-      const stalledOut = !!chk.stalled; // 已含 stallMinCoverage 下限
+      const stalledOut = !!chk.stalled; // already includes stallMinCoverage
       if (stalledOut || noGaps || covered || chk.timedOut) {
         this.phase = 'frontier';
         this.phaseEnteredAt = time;
-        this._frontHist = null; // 前沿停滞窗口从头计
+        this._frontHist = null; // restart the frontier stall window
         this._planHoldUntil = -Infinity;
         this._planHoldTargets = null;
         this._planHoldBest = null;
@@ -622,9 +644,10 @@ export class Terminal {
               : 'fine-threshold';
         this.phaseNote = this.autoStartReason;
         this._planExitCheck = null;
-        // 落入下面 frontier 分支
+        // falls through into the frontier branch below
       } else {
-        // 驻留：到虚区后上下扫一会儿再换块，避免只在外缘蹭一下
+        // dwell: once at a gap, sweep up and down for a while before
+        // switching components, so it does not just brush the outer edge
         const dwell = PLAN.dwellSeconds || 0;
         let best = this._planHoldBest;
         let targets = this._planHoldTargets;
@@ -641,7 +664,8 @@ export class Terminal {
           this._planHoldTargets = targets;
           this._planHoldUntil = time + dwell;
         }
-        // 驻留期间对目标高度做慢上下扫（不换 xz）
+        // during the dwell, sweep the target height slowly up and down
+        // (xz stays put)
         if (targets && targets.length && (PLAN.probeAmplitude || 0) > 0) {
           const amp = PLAN.probeAmplitude;
           const per = Math.max(0.5, PLAN.probePeriod || 3);
@@ -684,10 +708,11 @@ export class Terminal {
     // frontier or recall
     const clusters = this._runFrontier(flock);
 
-    // ── 召回判定（折中）────────────────────────────────────
-    // 1) 可派簇 == 0 → 经典耗尽
-    // 2) 只剩 ≤softMax 个簇，且前沿数短窗口走平 → 近似耗尽（不等清零）
-    // 3) 前沿阶段超时 → 强制收工
+    // ── recall decision (a compromise) ─────────────────────────────────
+    // 1) assignable clusters == 0 → classic exhaustion
+    // 2) only ≤softMax clusters left and the frontier count flat over a
+    //    short window → approximate exhaustion (without waiting for zero)
+    // 3) the frontier phase times out → forced wrap-up
     if (this.phase !== 'recall') {
       const livedF = time - (this.phaseEnteredAt || time);
       const win = RECALL.frontierStallWindow || 12;
@@ -696,7 +721,7 @@ export class Terminal {
         this.frontierCount,
         win
       );
-      // 同步看可派簇数量趋势
+      // also track the trend in the number of assignable clusters
       this._clusterHist = this._pushHist(
         this._clusterHist,
         this.clusterCount,
@@ -727,7 +752,8 @@ export class Terminal {
     }
 
     if (this.recalled || this.phase === 'recall') {
-      // 召回分两步：① 上空列阵悬浮  ② 用户点确认后才隐藏离场
+      // recall has two steps: (1) form up and hold overhead, (2) only
+      // hide and depart once the user clicks confirm
       if (this.phase !== 'recall') {
         this.phase = 'recall';
         this.phaseEnteredAt = time;
@@ -743,13 +769,14 @@ export class Terminal {
         this._formation = this._buildFormation(flock);
       }
       this.frontierCount = this.frontierCount; // keep last known for HUD if any
-      // 列阵阶段不再刷前沿数（保持进入时语义）
+      // the formation phase stops refreshing the frontier count (it keeps
+      // the meaning it had on entry)
       const lived = time - (this.phaseEnteredAt || time);
       if (!this.formationReady && lived >= (RECALL.formSeconds || 6)) {
         this.formationReady = true;
         this.phaseNote = 'formation-ready';
       }
-      // 未点确认前绝不自动 departed
+      // never set departed automatically before confirm has been clicked
       if (!this.departed) {
         this.params = this._pack({
           mode: 'recall',

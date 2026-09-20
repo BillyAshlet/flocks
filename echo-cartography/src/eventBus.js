@@ -1,66 +1,81 @@
-// 事件总线 —— L2 层。集群往这里发，终端从这里读。
+// event bus -- layer L2. the swarm emits into it, the terminal reads from it.
 //
-// 它同时是【带宽的度量点】：整个项目的核心主张是"传事件比传原始数据便宜
-// 一到两个数量级"，那么这个数字就必须是【算出来的】，不是文档里写死的。
-// 所以这里的字节数按字段逐项累加，不是拍一个常数。
+// it is also the point where bandwidth is measured: the central claim of
+// the whole project is that "sending events is one to two orders of
+// magnitude cheaper than sending raw data", so that number has to be
+// computed, not written down as a constant in a document. that is why the
+// byte counts here are accumulated field by field instead of being a
+// single fixed number.
 //
-// 本文件不 import three.js。
+// this file does not import three.js.
 
 import { buildFan, decodeFace } from './sensor.js';
 
-// ── 字节预算（按真实打包尺寸算，不含 JSON 之类的传输封装）──────────
+// ── byte budget (real packed sizes, no transport wrapper such as JSON) ──
 //
-// 一次发射（ping）= 一条事件，而不是每根射线一条：
-//   origin 3×f32(12) + 航向 3×f32(12) + 半角 u8(1) + 命中掩码 u8(1)
-//   + t f32(4) + id u16(2)                                  = 32 字节定长
-//   + 【只有命中的射线】各占一个 f32                          + 4 × 命中数
+// one emission (ping) = one event, rather than one event per ray:
+//   origin 3xf32(12) + heading 3xf32(12) + half-angle u8(1) + hit mask u8(1)
+//   + t f32(4) + id u16(2)                                  = 32 bytes fixed
+//   + one f32 for each ray that actually hit                + 4 x hit count
 //
-// 漏检的射线不占浮点：掩码已经说明它漏检，而漏检的长度就是探测距离，
-// 是已知量。
+// rays that missed cost no float: the mask already says they missed, and
+// the length of a miss is the sensor range, which is a known quantity.
 //
-// 【实测结论，与最初的估计不符，记在这里以免以后又算错】
-//   平均每次发射只有 1.22 根命中（不是五根全中），另外 3.78 根是漏检。
-//   打包后平均 36.9 字节；同样这些命中若拆开各发一条是 39.1 字节。
-//   所以打包在【字节上只省 1.06×】—— 最初按"五根全中"估的 3.1× 是错的。
+// [measured result, which did not match the first estimate; written down
+//  here so it does not get miscalculated again]
+//   on average only 1.22 rays per emission hit (not all five); the other
+//   3.78 are misses.
+//   packed, that averages 36.9 bytes; the same hits sent as one event each
+//   would be 39.1 bytes.
+//   so packing only saves 1.06x in bytes -- the original 3.1x estimate,
+//   which assumed all five rays hit, was wrong.
 //
-// 那它为什么仍然值得做：拆开发时，漏检的射线【整个被丢掉了】。
-// 打包版用几乎同样的字节，额外带上了每次发射 3.78 条自由空间证据 ——
-// 而自由空间雕刻正是区分静态几何与动态目标的唯一手段。
-//   → 同样的带宽，信息量是原来的数倍。
+// why it is still worth doing: when the rays are sent separately, the
+// misses are thrown away entirely. the packed version spends almost the
+// same bytes and additionally carries 3.78 pieces of free-space evidence
+// per emission -- and free-space carving is the only way to tell static
+// geometry from dynamic targets.
+//   → the same bandwidth, several times the information.
 //
-// 省下来的那部分不是压缩技巧，是【冗余】：五根射线共用同一个 origin，
-// 方向又由航向加扇面几何完全决定 —— 可推导的东西不必上传。
-// 真实声呐也是一个 ping 发一包波束，不是一束一包。
+// what is saved is not a compression trick, it is redundancy: the five
+// rays share one origin, and their directions are fully determined by the
+// heading plus the fan geometry -- anything derivable does not need to be
+// uploaded. a real sonar also sends one packet of beams per ping, not one
+// packet per beam.
 //
-// 真正的大头削减要靠空间去重（贴壁平飞不重复发射），那是 M1 的事。
+// the real large cut still has to come from spatial deduplication (no
+// repeated emissions while flying flat along a wall); that is M1's job.
 //
-// 恐慌事件  pos(12) + intensity(4) + t(4) + id(2) + type(1) = 23 → 24
+// panic event  pos(12) + intensity(4) + t(4) + id(2) + type(1) = 23 → 24
 //
-// 对照基线（纯集中式全量位姿）
-//           pos(12) + vel(12) + quat(16) + t(4) = 44，且要 60 Hz 发
+// baseline for comparison (fully centralised, all poses)
+//           pos(12) + vel(12) + quat(16) + t(4) = 44, and it has to be sent
+//           at 60 Hz
 export const BYTES = { panic: 24, pose: 44 };
 
 export function pingBytes(hitCount) {
   return 32 + 4 * hitCount;
 }
 
-// 解码用的方向缓冲，按射线数缓存，避免每条事件都新建数组
+// direction buffer used for decoding, cached by ray count so that every
+// event does not allocate a new array
 let _dirsCache = null;
 function _decodeDirs(n) {
   if (!_dirsCache || _dirsCache.length !== n * 3) _dirsCache = new Float32Array(n * 3);
   return _dirsCache;
 }
 
-const MAX_LOG = 200000; // 约 20 分钟 @ 典型事件率；满了丢最旧的
+const MAX_LOG = 200000; // ~20 min at typical event rates; drops oldest when full
 
 export class EventBus {
   constructor() {
     this.log = [];
-    this.frame = []; // 本帧新产生的事件，终端每帧消费
+    this.frame = []; // events new this frame; the terminal consumes them each frame
     this.subscribers = [];
 
-    // 滚动 1 秒窗口统计。用时间戳队列而不是"每秒清零"，
-    // 否则读数会跟着清零时刻上下跳，看起来像 bug。
+    // rolling one-second window of statistics. it uses a queue of
+    // timestamps rather than "zero the counters every second", otherwise
+    // the reading jumps around at each reset and looks like a bug.
     this._window = [];
     this.eventsPerSec = 0;
     this.bytesPerSec = 0;
@@ -79,8 +94,9 @@ export class EventBus {
     for (const fn of this.subscribers) fn(e);
   }
 
-  // 一次发射。ts 是各射线的命中距离（−1 = 未命中），会被拷贝一份 ——
-  // 传进来的是传感器每帧复用的临时数组，不拷贝就会被下一台设备覆盖掉。
+  // one emission. ts holds the hit distance of each ray (-1 = miss) and a
+  // copy is taken -- what comes in is the scratch array the sensor reuses
+  // every frame, and without the copy the next device would overwrite it.
   ping(ox, oy, oz, dx, dy, dz, halfAngleDeg, ts, faces, bnd, rayCount, range, t, id, vertHalfAngleDeg) {
     const copy = new Float32Array(rayCount);
     const faceCopy = new Uint8Array(rayCount);
@@ -93,15 +109,19 @@ export class EventBus {
       if (ts[k] >= 0) {
         mask |= 1 << k;
         hitCount += 1;
-        // 打中任务边界的那几根：仍然携带真实距离（自由空间要雕到墙根），
-        // 但标出来，终端不把它们当地形沉积。
+        // the rays that hit the mission boundary still carry their real
+        // distance (free space has to be carved right up to the wall), but
+        // they are flagged so the terminal does not deposit them as terrain.
         if (bnd && bnd[k]) bmask |= 1 << k;
       }
     }
-    // 内存里仍存全部 N 个距离（解码方便），但【计费只算命中的那几个】——
-    // 漏检的射线在真实打包里根本不占浮点，掩码就够了。
-    // 带宽是本项目的核心主张，这个数字必须反映真实上传量。
-    // face 每命中 1 字节：只编码 6 个轴对齐方向，几乎不增带宽。
+    // all N distances are still kept in memory (it makes decoding easy),
+    // but only the rays that hit are billed -- in a real packed message the
+    // rays that missed take no float at all, the mask is enough.
+    // bandwidth is the central claim of this project, so this number has to
+    // reflect what is really uploaded.
+    // face costs 1 byte per hit: it encodes only 6 axis-aligned directions,
+    // so it adds almost no bandwidth.
     this._push(
       { type: 'ping', ox, oy, oz, dx, dy, dz, halfAngleDeg, vertHalfAngleDeg: vertHalfAngleDeg == null ? halfAngleDeg : vertHalfAngleDeg, ts: copy, faces: faceCopy, mask, bmask, range, t, id },
       pingBytes(hitCount) + hitCount
@@ -112,15 +132,19 @@ export class EventBus {
     this._push({ type: 'panic', x, y, z, intensity, t, id }, BYTES.panic);
   }
 
-  // ── 解码 ────────────────────────────────────────────────────
+  // ── decoding ────────────────────────────────────────────────
   //
-  // 终端拿到的是紧凑的 ping，但建图那边要的是一条条射线。这个函数把
-  // 打包还原成射线，让 L3 完全不必知道扇面几何 —— 上传省带宽是 L2 的事，
-  // L3 的接口保持"一条射线"这种最朴素的形式。
+  // what the terminal receives is a compact ping, but the map builder wants
+  // individual rays. this function unpacks the emission back into rays, so
+  // that L3 never has to know anything about the fan geometry -- saving
+  // bandwidth on the uplink is L2's business, and L3's interface stays in
+  // the plainest possible form, one ray at a time.
   //
-  // 对每根射线回调 (ox,oy,oz, hx,hy,hz, hit, nx,ny,nz)：
-  //   hit=true  → 端点占据，origin→hit 沿途自由；n* 为指向自由空间的表面法向
-  //   hit=false → 整条 origin→端点 都是自由（无回波也是测量）
+  // the callback is invoked per ray as (ox,oy,oz, hx,hy,hz, hit, nx,ny,nz):
+  //   hit=true  → the endpoint is occupied and origin→hit is free along the
+  //               way; n* is the surface normal pointing into free space
+  //   hit=false → the whole origin→endpoint segment is free (no echo is a
+  //               measurement too)
   forEachRay(e, cb) {
     if (e.type !== 'ping') return;
     const n = e.ts.length;
@@ -129,9 +153,10 @@ export class EventBus {
     for (let k = 0; k < n; k += 1) {
       const t = e.ts[k];
       const reached = t >= 0;
-      // 打中任务包围盒的射线：长度用【真实距离】（自由空间要一直雕到墙根），
-      // 但 hit=false —— 那面墙不是地形，不该在图上留下点。
-      // 实测它曾占点云的 28.4%。
+      // rays that hit the mission bounds: the length used is the real
+      // distance (free space has to be carved all the way to the wall), but
+      // hit=false -- that wall is not terrain and should leave no point on
+      // the map. measured, it once made up 28.4% of the point cloud.
       const isBoundary = reached && !!((e.bmask || 0) & (1 << k));
       const hit = reached && !isBoundary;
       const len = reached ? t : e.range;
@@ -158,7 +183,7 @@ export class EventBus {
     };
   }
 
-  // 每帧末尾调用：滚动统计窗口、清空本帧队列
+  // called at the end of each frame: roll the stats window, clear the frame queue
   tick(time) {
     const cutoff = time - 1;
     while (this._window.length && this._window[0].t < cutoff) {
@@ -171,7 +196,8 @@ export class EventBus {
     this.frame.length = 0;
   }
 
-  // 对照基线：同样这些设备，如果改成每帧全量位姿上传，要多少带宽
+  // baseline for comparison: how much bandwidth these same devices would
+  // need if they switched to uploading full poses every frame
   centralizedBytesPerSec(agentCount, hz = 60) {
     return agentCount * hz * BYTES.pose;
   }

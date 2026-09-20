@@ -1,26 +1,34 @@
 import { PLAN } from './params.js';
-// 终端面板 —— 集中式决策层被看见的地方。
+// Terminal panel -- where the centralized decision layer becomes visible.
 //
-// 它和参数面板是两种东西，不该混在一起：
-//   参数面板 = 开发工具，调参用的旋钮
-//   终端面板 = 【作品的一部分】。本项目是分布式 + 集中式的混合智能，
-//              个体那半边在三维场景里看得见（集群在游、在避障、在恐慌），
-//              集中式那半边如果不显示出来，观众只会看到一群鱼。
+// It and the parameter panel are two different things and should not be
+// mixed together:
+//   parameter panel = a development tool, the knobs used for tuning
+//   terminal panel  = part of the work itself. This project is a hybrid of
+//                     distributed and centralized intelligence; the
+//                     individual half is visible in the 3d scene (the swarm
+//                     swimming, avoiding obstacles, panicking), and if the
+//                     centralized half is not displayed, the audience only
+//                     sees a school of fish.
 //
-// 所以这里显示的是终端【知道什么、决定了什么】：
-// 重建出的地图、俯视覆盖到哪了、还剩几块没探、正在派谁去哪、上行占了多少带宽。
+// So what is shown here is what the terminal knows and what it has decided:
+// the reconstructed map, how far plan-view coverage has got, how many
+// patches are still unexplored, who is being sent where, and how much
+// bandwidth the uplink is taking.
 //
-// 本文件只碰 DOM，不碰 three.js（点云仍由 mapView 用 scissor 画进 #map）。
+// This file only touches the DOM, never three.js (the point cloud is still
+// drawn into #map by mapView with a scissor rect).
 
 const STORE = 'echo-terminal-ui-v2';
 
 export function createTerminalPanel({ root, i18n, grid, terminal, bus, flock, mapView, frontier }) {
-  // 折叠状态存本地：调完一次面板，刷新后不该又全弹回来
+  // Fold state is kept in local storage: once the panel has been arranged,
+  // a reload should not pop every section open again
   let ui = { min: false, map: true, cover: true, front: true, link: true };
   try {
     const saved = JSON.parse(localStorage.getItem(STORE) || 'null');
     if (saved) ui = { ...ui, ...saved };
-  } catch { /* 存坏了就用默认值，不值得为此报错 */ }
+  } catch { /* a corrupt value just means defaults; not worth an error */ }
   const save = () => {
     try {
       localStorage.setItem(STORE, JSON.stringify(ui));
@@ -43,7 +51,8 @@ export function createTerminalPanel({ root, i18n, grid, terminal, bus, flock, ma
     save();
   }
 
-  // 每个小节的标题栏点一下折叠。整块面板右上角的按钮最小化。
+  // Clicking a section's header bar folds it. The button in the top right
+  // corner of the panel minimizes the whole thing.
   for (const k in sections) {
     sections[k].el.querySelector('.tp-h').addEventListener('click', () => {
       ui[k] = !ui[k];
@@ -64,13 +73,14 @@ export function createTerminalPanel({ root, i18n, grid, terminal, bus, flock, ma
     el.querySelector('.tp-num').textContent = label ?? pct.toFixed(1) + '%';
   };
 
-  // ── 俯视热力图 ────────────────────────────────────────────
+  // ── Plan-view heat map ───────────────────────────────────────────────────
   const planCanvas = $('#tp-plan');
   const planCtx = planCanvas.getContext('2d', { alpha: false });
   let columnMap = null;
   let planImage = null;
   let lastPlanDraw = -Infinity;
-  // 颜色：未知 / 自由柱 / 占据柱（俯视覆盖命中）
+  // Colors: unknown / free column / occupied column (hit by plan-view
+  // coverage)
   // flocks: light page colors (unknown = page line, free = pale blue,
   // occupied = rock brown, target = gold, swarm = blue).
   const COL_UNK = [226, 220, 207];
@@ -89,13 +99,14 @@ export function createTerminalPanel({ root, i18n, grid, terminal, bus, flock, ma
   }
 
   function drawPlan(now) {
-    // 折叠或最小化时不画，省 CPU
+    // Nothing is drawn while folded or minimized, to save CPU
     if (ui.min || !ui.cover) return;
-    // 热力底图 8Hz 够用
+    // 8 Hz is enough for the heat map underlay
     if (now - lastPlanDraw < 0.12) return;
     lastPlanDraw = now;
 
-    // 热力图分辨率随阶段变细：roam 粗 → plan/frontier 细
+    // The heat map resolution gets finer with the phase: coarse during roam
+    // → finer during plan/frontier
     const phase = terminal.phase || 'roam';
     const bins = PLAN.displayBin || {};
     const bin = bins[phase] || PLAN.bin || 1;
@@ -127,7 +138,7 @@ export function createTerminalPanel({ root, i18n, grid, terminal, bus, flock, ma
 
     const w = nx;
     const h = nz;
-    // 更细的网格上标记稍大一点，才看得见
+    // On a finer grid the markers have to be a bit larger to stay visible
     const markR = Math.max(1, Math.round(Math.min(nx, nz) / 80));
     const mark = (x, z, rgb, r) => {
       const [px, py] = worldToPlan(x, z, w, h);
@@ -137,7 +148,7 @@ export function createTerminalPanel({ root, i18n, grid, terminal, bus, flock, ma
       planCtx.fillRect(ix - r, iy - r, r * 2 + 1, r * 2 + 1);
     };
 
-    // 集群质心（分布式那半边在地图上的位置）
+    // Swarm centroid (where the distributed half sits on the map)
     if (flock && flock.count > 0) {
       let sx = 0;
       let sz = 0;
@@ -151,7 +162,7 @@ export function createTerminalPanel({ root, i18n, grid, terminal, bus, flock, ma
       mark(sx / n, sz / n, COL_SWARM, markR);
     }
 
-    // 终端下发的前沿目标（集中式决策）
+    // Frontier targets issued by the terminal (the centralized decision)
     const targets = terminal.targets || (terminal.target
       ? [[terminal.target.x, terminal.target.y, terminal.target.z]]
       : []);
@@ -243,10 +254,12 @@ export function createTerminalPanel({ root, i18n, grid, terminal, bus, flock, ma
       }
     }
 
-    // 只保留俯视覆盖：任务开始只知道平面任务区，不假装知道纵深完成度。
+    // Only plan-view coverage is kept: at the start of a mission all we know
+    // is the flat mission area, so we do not pretend to know how complete
+    // the depth is.
     bar($('#tp-cover-a'), terminal.columnCoverage);
     bar($('#tp-cover-fine'), terminal.fineCoverage);
-    // 当前热力图格距（随阶段变）
+    // Current heat map cell spacing (it varies with the phase)
     {
       const ph = terminal.phase || 'roam';
       const b = (PLAN.displayBin && PLAN.displayBin[ph]) || PLAN.bin || 1;
@@ -266,7 +279,8 @@ export function createTerminalPanel({ root, i18n, grid, terminal, bus, flock, ma
     const kb = bus.bytesPerSec / 1024;
     const ckb = bus.centralizedBytesPerSec(flock.count) / 1024;
     elUp.textContent = kb.toFixed(1) + ' KB/s';
-    // 样本太少时比值会趋于无穷，显示"70000×"只会误导人
+    // With too few samples the ratio runs off toward infinity, and showing
+    // "70000×" would only mislead
     elRatio.textContent = bus.eventsPerSec >= 20 ? (ckb / kb).toFixed(1) + '×' : '—';
     elPts.textContent = grid.occupiedCount.toLocaleString();
 

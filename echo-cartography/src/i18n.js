@@ -1,8 +1,9 @@
-// 中英切换。
+// Chinese/English switching.
 //
-// 面板标签不做"英文在前中文在后"的拼接 —— 那样每个标签都变两倍长，
-// Tweakpane 的标签列会被挤爆，两种语言都变得难读。
-// 做成切换：一次只显示一种，谁都不将就。
+// panel labels are not concatenated as "English first, Chinese second" —
+// that would double the length of every label, blow out Tweakpane's label
+// column and make both languages hard to read.
+// so it is a switch: one language at a time, neither one compromised.
 
 export const LANGS = ['zh', 'en'];
 
@@ -263,7 +264,7 @@ export class I18n {
     this.listeners = [];
   }
 
-  // t('range') 取字符串；t('hintFollow', 3) 取带参数的
+  // t('range') gets a string; t('hintFollow', 3) gets a parameterised one
   t(key, ...args) {
     const v = DICT[this.lang][key];
     return typeof v === 'function' ? v(...args) : (v ?? key);
