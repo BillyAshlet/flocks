@@ -44,9 +44,10 @@ function place(simulation, index, x, y = 0, z = 0) {
 test('headless simulation does not require a THREE.Scene adapter', () => {
   const simulation = smallSimulation();
   const school = simulation.metrics().population[0];
-  // The engine draws nothing: meshes belong to SchoolRenderer.
+  // The engine draws nothing: meshes and effects belong to SchoolRenderer.
   assert.equal(simulation.mesh, undefined);
-  assert.equal(simulation.captureVfx, null);
+  assert.equal(simulation.captureVfx, undefined);
+  assert.deepEqual(simulation.events, []);
   assert.equal(school.cohesionRadius, school.neighborRadius);
   // Classic boids proportions: alignment neighborhood is wider than separation.
   assert.ok(school.separationRadius < school.alignmentRadius);
@@ -356,7 +357,12 @@ test('predation mode captures at visual distance and death stays permanent', () 
   simulation.pursuitTargets[predator] = prey;
   simulation._capture(1 / 60);
   assert.equal(simulation.alive[prey], 0);
-  assert.ok(simulation.captureVfx.particles.length > 0);
+  // The capture is recorded for the renderer instead of drawn here.
+  assert.ok(
+    simulation.events.some(
+      (event) => event.kind === 'capture' && event.vx !== undefined
+    )
+  );
   assert.equal('pendingRespawns' in simulation, false);
   simulation.elapsed += 30;
   simulation._capture(30);
@@ -434,11 +440,6 @@ test('ecology starvation is real death and sole survivor is terminal', () => {
   simulation._updateEcology(1);
   assert.equal(simulation.alive[0], 0);
   assert.equal(simulation.deathCounts[0].starved, 1);
-  if (simulation.captureVfx) {
-    assert.ok(
-      simulation.captureVfx.particles.some((p) => p.style === 'starvation')
-    );
-  }
 
   for (let schoolIndex = 1; schoolIndex < 3; schoolIndex += 1) {
     const range = simulation.schoolRanges[schoolIndex];

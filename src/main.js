@@ -285,7 +285,11 @@ async function bootstrap() {
     },
   });
 
-  debug = createExperimentDebug({ controller, simulation });
+  debug = createExperimentDebug({
+    controller,
+    simulation,
+    vfxStats: () => schoolRenderer.vfxStats(),
+  });
 
   const labReset = document.getElementById('lab-reset');
   const tierSteps = document.getElementById('tier-steps');

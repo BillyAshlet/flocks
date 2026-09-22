@@ -6,6 +6,7 @@
  */
 import * as THREE from 'three';
 import { SeededRng, metabolicRate } from './experiment-model.js';
+import { CaptureVfx } from './capture-vfx.js';
 
 const EPSILON = 1e-8;
 const REFERENCE_STEP = 1 / 60; // Banking was tuned against one 1/60 s step.
@@ -60,6 +61,10 @@ export class SchoolRenderer {
     this.schoolColors = [];
     this.corpseColor = new THREE.Color('#6b6f74');
     this._instanceColorDirty = false;
+    this.vfx = scene?.add ? new CaptureVfx(scene) : null;
+    this._capturePosition = new THREE.Vector3();
+    this._captureVelocity = new THREE.Vector3();
+    this._captureGlow = new THREE.Vector3();
   }
 
   /** New fish count, new schools or a new tank: build the meshes again. */
@@ -71,11 +76,22 @@ export class SchoolRenderer {
     this.schoolColors = view.config.schools.map((school) => new THREE.Color(school.color));
     this._buildFish(view);
     this._buildPlankton(view);
+    this.vfx?.reset();
+    this.applyConfig(view);
     this.update(view);
   }
 
   /** Live edits that only change how the school looks. */
   applyConfig(view) {
+    if (this.vfx) {
+      this.vfx.params = view.config.captureVfx;
+      this.vfx.starvationParams = view.config.starvationVfx;
+      this.vfx.setBounds?.([
+        view.config.tank.width / 2,
+        view.config.tank.height / 2,
+        view.config.tank.depth / 2,
+      ]);
+    }
     this.schoolColors = view.config.schools.map((school) => new THREE.Color(school.color));
     if (!this.mesh) return;
     this.mesh.material.opacity = view.config.visual.opacity;
@@ -94,11 +110,46 @@ export class SchoolRenderer {
    * time scale. Per update it would depend on both.
    */
   update(view, dt = REFERENCE_STEP) {
-    this._updateFish(view, Math.min(0.1, Math.max(1e-4, dt)));
+    const step = Math.min(0.1, Math.max(1e-4, dt));
+    this._updateFish(view, step);
     this._syncPlankton(view);
+    this._playEvents(view);
+    if (!view.locomotionPreview) this.vfx?.step(step);
+  }
+
+  /** Bites and captures the engine recorded since the last frame. */
+  _playEvents(view) {
+    const events = view.events;
+    if (!events?.length) return;
+    if (this.vfx) {
+      for (const event of events) {
+        if (event.kind === 'feed') {
+          this.vfx.emitFeed?.(event.x, event.y, event.z);
+        } else if (event.kind === 'capture') {
+          this._capturePosition.set(event.x, event.y, event.z);
+          this._captureVelocity.set(event.vx, event.vy, event.vz);
+          this._captureGlow.set(event.ax, event.ay, event.az);
+          this.vfx.emit(
+            this._capturePosition,
+            this._captureVelocity,
+            this._captureGlow
+          );
+        }
+      }
+    }
+    events.length = 0;
+  }
+
+  /** Readouts the dashboard shows but only the renderer knows. */
+  vfxStats() {
+    return {
+      particles: this.vfx?.particles.length ?? 0,
+      corpses: this.vfx?.starvationCount?.() ?? 0,
+    };
   }
 
   dispose() {
+    this.vfx?.reset();
     for (const key of ['mesh', 'shadowMesh', 'planktonMesh']) {
       const object = this[key];
       if (!object) continue;

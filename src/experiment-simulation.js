@@ -17,9 +17,9 @@ import {
   tankVolume,
 } from './experiment-model.js';
 import { castRay, sceneClearance } from './distance-field.js';
-import { CaptureVfx } from './capture-vfx.js';
 
 const EPSILON = 1e-8;
+const EVENT_LIMIT = 512; // Unread visual events are dropped, never queued forever.
 const CHAMBER_EASE_RATE = 4;
 const CHAMBER_STOP_EPSILON = 0.02;
 const FORWARD = new THREE.Vector3(0, 0, 1);
@@ -142,7 +142,8 @@ export class ExperimentSimulation {
     this.hash = new SpatialHash3D(1);
     this.hiddenFish = -1;
     this.locomotionPreview = false;
-    this.captureVfx = null;
+    // Things worth drawing that happened this step; the renderer drains them.
+    this.events = [];
     this.metricsState = {
       frameMs: 0,
       fps: 0,
@@ -153,8 +154,7 @@ export class ExperimentSimulation {
   }
 
   dispose() {
-    this.captureVfx?.dispose();
-    this.captureVfx = null;
+    this.events.length = 0;
   }
 
   rebuild(config = this.config) {
@@ -256,13 +256,6 @@ export class ExperimentSimulation {
       this.schoolRanges.push({ start, end: cursor });
       this.schoolIds.fill(schoolIndex, start, cursor);
     }
-    if (this.scene?.add) {
-      this.captureVfx = new CaptureVfx(
-        this.scene,
-        this.config.captureVfx,
-        this.config.starvationVfx
-      );
-    }
     this.reset(config.runtime.seed);
   }
 
@@ -299,7 +292,7 @@ export class ExperimentSimulation {
     );
     this.planktonConsumed = 0;
     this.ecologyStatus = { state: 'running', winnerIndex: null };
-    this.captureVfx?.reset();
+    this.events.length = 0;
     this.alive.fill(1);
     this.panic.fill(0);
     this.lockedTargets.fill(-1);
@@ -500,16 +493,11 @@ export class ExperimentSimulation {
       }
     }
     this.hash.cellSize = Math.max(EPSILON, this.derived.cellSize);
-    this._syncVfxBounds();
     return this;
   }
 
   setConfig(config, mode = 'live') {
     this.config = config;
-    if (this.captureVfx) {
-      this.captureVfx.params = config.captureVfx;
-      this.captureVfx.starvationParams = config.starvationVfx;
-    }
     this.derived = deriveExperiment(config);
     this.hash.cellSize = Math.max(EPSILON, this.derived.cellSize);
     this.relationMatrix = this.relations.update(
@@ -572,12 +560,29 @@ export class ExperimentSimulation {
     this.velocities.set(visibleMotion.velocities);
   }
 
-  _syncVfxBounds() {
-    this.captureVfx?.setBounds?.([
-      this.config.tank.width / 2,
-      this.config.tank.height / 2,
-      this.config.tank.depth / 2,
-    ]);
+  /**
+   * Record something worth drawing, as plain numbers so the list can be sent
+   * to another thread. `offset` is where it happens; `actorOffset`, for a
+   * capture, is the predator, whose velocity and position aim the effect.
+   * The cap keeps a headless run from queueing events nobody drains.
+   */
+  _record(kind, offset, actorOffset = -1) {
+    if (this.events.length >= EVENT_LIMIT) return;
+    const event = {
+      kind,
+      x: this.positions[offset],
+      y: this.positions[offset + 1],
+      z: this.positions[offset + 2],
+    };
+    if (actorOffset >= 0) {
+      event.vx = this.velocities[actorOffset];
+      event.vy = this.velocities[actorOffset + 1];
+      event.vz = this.velocities[actorOffset + 2];
+      event.ax = this.positions[actorOffset];
+      event.ay = this.positions[actorOffset + 1];
+      event.az = this.positions[actorOffset + 2];
+    }
+    this.events.push(event);
   }
 
   _clearAccumulators() {
@@ -2139,11 +2144,7 @@ export class ExperimentSimulation {
 
       if (!ate || gain <= 0) continue;
       this._shareMeal(index, gain);
-      this.captureVfx?.emitFeed?.(
-        this.positions[offset],
-        this.positions[offset + 1],
-        this.positions[offset + 2]
-      );
+      this._record('feed', offset);
     }
 
     // Distribute each school's pool evenly among its living fish. Energy above
@@ -2387,23 +2388,7 @@ export class ExperimentSimulation {
         this.config.schools[preySchool]
       );
       if (distance > radius) continue;
-      this.captureVfx?.emit(
-        new THREE.Vector3(
-          this.positions[qo],
-          this.positions[qo + 1],
-          this.positions[qo + 2]
-        ),
-        new THREE.Vector3(
-          this.velocities[po],
-          this.velocities[po + 1],
-          this.velocities[po + 2]
-        ),
-        new THREE.Vector3(
-          this.positions[po],
-          this.positions[po + 1],
-          this.positions[po + 2]
-        )
-      );
+      this._record('capture', qo, po);
       this._finishChase(predator, prey, true);
       this._killFish(prey, 'captured');
       this.metricsState.captures += 1;
@@ -2487,7 +2472,6 @@ export class ExperimentSimulation {
       this.metricsState.frameMs > 0
         ? Math.min(999, 1000 / this.metricsState.frameMs)
         : 0;
-    if (!this.locomotionPreview) this.captureVfx?.step(dt);
   }
 
   averageNeighbors(schoolIndex) {
@@ -2688,7 +2672,6 @@ export class ExperimentSimulation {
       relationMatrix: this.relationMatrix,
       pairCount: this.metricsState.pairCount,
       captures: this.metricsState.captures,
-      captureParticles: this.captureVfx?.particles.length ?? 0,
       simulationMs: this.metricsState.frameMs,
       simulationFps: this.metricsState.fps,
       renderFps: this.metricsState.renderFps ?? 0,
@@ -2698,9 +2681,8 @@ export class ExperimentSimulation {
         winnerId: ecologyWinner?.id ?? null,
         winnerName: ecologyWinner?.name ?? null,
         plankton: {
-          // Field names are historical: level = starvation corpses currently
-          // shown, consumed = plankton bites eaten so far.
-          level: this.captureVfx?.starvationCount?.() ?? 0,
+          // Field name is historical: consumed = plankton bites eaten so far.
+          level: 0,
           capacity: 0,
           fraction: 0,
           consumed: this.planktonConsumed,

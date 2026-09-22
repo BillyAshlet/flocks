@@ -192,6 +192,8 @@ function groupVisible(project, group) {
 export function createExperimentDebug({
   controller,
   simulation,
+  // Effect counts live in the renderer; the engine no longer draws.
+  vfxStats = () => ({ particles: 0, corpses: 0 }),
 }) {
   let pane = null;
   // The open school editor, so a color edit can retint it without a rebuild.
@@ -1051,6 +1053,7 @@ export function createExperimentDebug({
     if (nowMs - lastUpdate < 120) return;
     lastUpdate = nowMs;
     const metrics = simulation.metrics();
+    const fx = vfxStats();
     const meta = PROJECTS[metrics.project] ?? PROJECTS.aquarium;
     const ecologyOn = controller.current.ecology.enabled !== false;
     const predationOn = controller.current.relations.enabled !== false;
@@ -1109,7 +1112,7 @@ export function createExperimentDebug({
         ecologyOn
           ? `
 
-corpses=${metrics.ecology.plankton.level.toFixed(0)} plankton bites=${metrics.ecology.plankton.consumed.toFixed(0)}` +
+corpses=${fx.corpses} plankton bites=${metrics.ecology.plankton.consumed.toFixed(0)}` +
             (metrics.project === 'ecology'
               ? `
 outcome=${metrics.ecology.state}${metrics.ecology.winnerName ? ` winner=${metrics.ecology.winnerName}` : ''}`
@@ -1118,7 +1121,7 @@ outcome=${metrics.ecology.state}${metrics.ecology.winnerName ? ` winner=${metric
       }` +
       `\npairs=${metrics.pairCount} sim=${metrics.simulationMs.toFixed(1)}ms render=${metrics.renderFps.toFixed(0)}fps` +
       (predationOn
-        ? `\ncaptures=${metrics.captures} fx=${metrics.captureParticles} deaths=permanent`
+        ? `\ncaptures=${metrics.captures} fx=${fx.particles} deaths=permanent`
         : '') +
       `${metrics.warnings.length ? `\nwarning: ${metrics.warnings.join(' · ')}` : ''}`;
   }
