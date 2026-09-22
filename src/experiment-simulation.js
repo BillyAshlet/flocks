@@ -1,4 +1,3 @@
-import * as THREE from 'three';
 import { SpatialPlanktonField } from './plankton-field.js';
 import {
   RelationMatrix,
@@ -22,8 +21,6 @@ const EPSILON = 1e-8;
 const EVENT_LIMIT = 512; // Unread visual events are dropped, never queued forever.
 const CHAMBER_EASE_RATE = 4;
 const CHAMBER_STOP_EPSILON = 0.02;
-const FORWARD = new THREE.Vector3(0, 0, 1);
-const UP = new THREE.Vector3(0, 1, 0);
 const LOCOMOTION = Object.freeze({
   CRUISE: 0,
   BURST: 1,
