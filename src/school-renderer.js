@@ -8,6 +8,7 @@ import * as THREE from 'three';
 import { SeededRng, metabolicRate } from './experiment-model.js';
 
 const EPSILON = 1e-8;
+const REFERENCE_STEP = 1 / 60; // Banking was tuned against one 1/60 s step.
 const FORWARD = new THREE.Vector3(0, 0, 1);
 const UP = new THREE.Vector3(0, 1, 0);
 
@@ -87,9 +88,13 @@ export class SchoolRenderer {
     this.mesh.instanceColor.needsUpdate = true;
   }
 
-  /** One frame: fish matrices and colors, shadows, plankton points. */
-  update(view) {
-    this._updateFish(view);
+  /**
+   * One frame. `dt` is real seconds since the last frame: banking follows
+   * wall-clock time, so it looks the same at 30, 60 or 120 fps and at any
+   * time scale. Per update it would depend on both.
+   */
+  update(view, dt = REFERENCE_STEP) {
+    this._updateFish(view, Math.min(0.1, Math.max(1e-4, dt)));
     this._syncPlankton(view);
   }
 
@@ -297,7 +302,7 @@ export class SchoolRenderer {
   }
 
 
-  _updateFish(view) {
+  _updateFish(view, dt) {
     if (!this.mesh) return;
     const matrix = new THREE.Matrix4();
     const position = new THREE.Vector3();
@@ -316,6 +321,12 @@ export class SchoolRenderer {
     const bodyLength =
       view.config.visual.bodyLength + 2 * view.config.visual.bodyRadius;
     const bodyWidth = 2 * view.config.visual.bodyRadius;
+    // The turn rate below is measured between two frames; scale it to the
+    // reference step so bankingGain keeps its meaning, and convert the
+    // per-step smoothing into the same fraction of time.
+    const steps = dt / REFERENCE_STEP;
+    const turnScale = 1 / steps;
+    const smoothing = 1 - (1 - view.config.visual.bankingSmoothing) ** steps;
     for (let index = 0; index < view.count; index += 1) {
       let castsShadow = false;
       const offset = index * 3;
@@ -403,10 +414,14 @@ export class SchoolRenderer {
         if (px !== 0 || py !== 0 || pz !== 0) {
           const yawRate = pz * direction.x - px * direction.z;
           const maxRoll = (visual.maxRollDegrees * Math.PI) / 180;
-          targetRoll = clamp(yawRate * visual.bankingGain, -maxRoll, maxRoll);
+          targetRoll = clamp(
+            yawRate * turnScale * visual.bankingGain,
+            -maxRoll,
+            maxRoll
+          );
         }
         this.rollAngles[index] +=
-          (targetRoll - this.rollAngles[index]) * visual.bankingSmoothing;
+          (targetRoll - this.rollAngles[index]) * smoothing;
         this.prevHeadings[offset] = direction.x;
         this.prevHeadings[offset + 1] = direction.y;
         this.prevHeadings[offset + 2] = direction.z;

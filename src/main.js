@@ -556,7 +556,7 @@ async function bootstrap() {
     world.step(nowMs);
     // Drawing is per frame, not per simulation step: at 8x the school is
     // stepped eight times but drawn once.
-    schoolRenderer.update(simulation);
+    schoolRenderer.update(simulation, realDt);
     cameraController.update(realDt);
     renderer.render(scene, camera);
     cameraController.renderPreview();
