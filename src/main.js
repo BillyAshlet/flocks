@@ -9,7 +9,7 @@
  */
 import * as THREE from 'three';
 import '@fontsource-variable/source-serif-4';
-import { World, TANK, notifyTankChange } from './world.js';
+import { TANK, notifyTankChange } from './world.js';
 import { createScene, SCENE_BACKGROUND } from './scene.js';
 import {
   createDefaultConfig,
@@ -18,10 +18,8 @@ import {
   importConfigJson,
   validateConfig,
 } from './experiment-config.js';
-import { DistanceField3D } from './distance-field.js';
-import { ExperimentSimulation } from './experiment-simulation.js';
+import { LocalSimClient } from './sim-client.js';
 import { SchoolRenderer } from './school-renderer.js';
-import { viewOf } from './simulation-view.js';
 import { ExperimentCameraController } from './experiment-camera.js';
 import { createExperimentDebug } from './experiment-debug.js';
 import { TimeShortcutController } from './time-shortcuts.js';
@@ -117,7 +115,6 @@ function applyTankPreset(stage) {
 
 async function bootstrap() {
   setStartup('Starting simulation…');
-  const world = new World();
   let route = parseRoute(window.location.pathname);
   // The tier whose configuration a route runs: the overview, outlook and home
   // run the full ecosystem.
@@ -137,18 +134,12 @@ async function bootstrap() {
   );
   scene.children.at(-1).position.set(1.5, 2.2, 2.4);
 
-  let distanceField = new DistanceField3D(current);
-  const simulation = new ExperimentSimulation({
-    scene,
-    config: current,
-    distanceField,
-  });
+  const sim = new LocalSimClient(current);
   // The engine only computes; this draws what it computed, once per frame.
   // `view` is that step seen from outside: the readers never touch the engine.
-  let view = viewOf(simulation);
+  let view = sim.view;
   const schoolRenderer = new SchoolRenderer(scene);
   schoolRenderer.rebuild(view);
-  world.systems.push(simulation);
   const cameraController = new ExperimentCameraController({
     camera,
     renderer,
@@ -156,7 +147,7 @@ async function bootstrap() {
     scene,
     view,
     pickMesh: () => schoolRenderer.mesh,
-    setHiddenFish: (index) => simulation.setHiddenFish(index),
+    setHiddenFish: (index) => sim.setHiddenFish(index),
   });
   let debug = null;
   let timeShortcuts = null;
@@ -169,7 +160,7 @@ async function bootstrap() {
     app.dataset.project = current.runtime.project;
     app.dataset.developer = onTier ? '1' : '';
     app.dataset.timeKeys = onTier ? '1' : '';
-    simulation.setLocomotionPreview(false);
+    sim.setLocomotionPreview(false);
     scene.background?.set?.(SCENE_BACKGROUND);
     presentation.setTankChambers(null);
     cameraController.setInteractionEnabled(onTier);
@@ -197,31 +188,16 @@ async function bootstrap() {
       const result = validateConfig(stage);
       if (!result.valid) throw new Error(result.errors.join('\n'));
       current = deepClone(stage);
-      if (mode === 'live') {
-        distanceField.config = current;
-        simulation.setConfig(current, 'live');
-        view = viewOf(simulation);
-        schoolRenderer.applyConfig(view);
-      } else if (mode === 'reset') {
-        distanceField.config = current;
-        simulation.setConfig(current, 'reset');
-      } else if (mode === 'rebuildField') {
-        syncTank(current);
-        distanceField.rebuild(current);
-        simulation.distanceField = distanceField;
-        simulation.setConfig(current, 'reset');
-        view = viewOf(simulation);
-        schoolRenderer.applyConfig(view);
-        cameraController.exitView(true);
-      } else {
-        syncTank(current);
-        distanceField = new DistanceField3D(current);
-        simulation.distanceField = distanceField;
-        simulation.rebuild(current);
-        view = viewOf(simulation);
+      if (mode !== 'live' && mode !== 'reset') syncTank(current);
+      const effect = sim.applyConfig(current, mode);
+      view = sim.view;
+      if (effect === 'rebuild') {
         schoolRenderer.rebuild(view);
         cameraController.onSimulationRebuilt(view);
+      } else {
+        schoolRenderer.applyConfig(view);
       }
+      if (mode === 'rebuildField') cameraController.exitView(true);
       if (result.warnings.length) {
         console.warn('[flocks config]', ...result.warnings);
       }
@@ -229,9 +205,10 @@ async function bootstrap() {
       return { config: current, warnings: result.warnings };
     },
     reset() {
-      simulation.reset(current.runtime.seed);
+      sim.reset(current.runtime.seed);
+      view = sim.view;
       cameraController.exitView(true);
-      return simulation.metrics();
+      return sim.metrics();
     },
     // The defaults of the tier on screen. Using the full default config here
     // once turned tier 1 into the whole ecosystem.
@@ -295,7 +272,7 @@ async function bootstrap() {
 
   debug = createExperimentDebug({
     controller,
-    simulation,
+    simulation: sim,
     vfxStats: () => schoolRenderer.vfxStats(),
   });
 
@@ -398,7 +375,7 @@ async function bootstrap() {
   function paperState() {
     const index = Math.min(debug.selectedSchool, current.schools.length - 1);
     const school = current.schools[index];
-    const derived = simulation.derived?.schools?.[index];
+    const derived = sim.view.derived?.schools?.[index];
     return school && derived ? { config: current, school, derived } : null;
   }
 
@@ -449,7 +426,7 @@ async function bootstrap() {
     if (route.page === 'tier') debug.rebuildPane();
     renderChrome();
     if (push) history.pushState(null, '', routePath(route));
-    world.resetTiming(performance.now());
+    sim.resetTiming(performance.now());
   }
 
   // Only tier pages draw overlays; the panel decides which (see the visual
@@ -517,7 +494,7 @@ async function bootstrap() {
   // simulation only and never touches the staged parameters.
   labReset.addEventListener('click', () => {
     controller.reset();
-    world.resetTiming(performance.now());
+    sim.resetTiming(performance.now());
   });
 
   showRoute(route);
@@ -543,7 +520,7 @@ async function bootstrap() {
       return result;
     },
     reset: () => controller.reset(),
-    metrics: () => simulation.metrics(),
+    metrics: () => sim.metrics(),
     goToTier,
     goHome: () => showRoute({ page: 'home' }, { push: true }),
   };
@@ -560,15 +537,15 @@ async function bootstrap() {
     const realDt = Math.min(0.1, Math.max(0, (nowMs - lastFrame) / 1000));
     lastFrame = nowMs;
     smoothedFrameMs += ((realDt * 1000 || 16.7) - smoothedFrameMs) * 0.06;
-    simulation.metricsState.renderFps = 1000 / smoothedFrameMs;
+    sim.setRenderFps(1000 / smoothedFrameMs);
     presentation.updateOrientation();
     presentation.updateCamera();
-    world.timeScale = current.runtime.timeScale;
-    world.fixedDt = current.runtime.fixedDt;
-    world.step(nowMs);
     // Drawing is per frame, not per simulation step: at 8x the school is
     // stepped eight times but drawn once.
-    view = viewOf(simulation);
+    view = sim.step(nowMs, {
+      timeScale: current.runtime.timeScale,
+      fixedDt: current.runtime.fixedDt,
+    });
     // Everyone reads the same step: the renderer, the camera and the visuals.
     cameraController.view = view;
     schoolRenderer.update(view, realDt);
