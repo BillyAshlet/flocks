@@ -108,3 +108,59 @@ export function viewOf(simulation) {
     },
   });
 }
+
+/** Arrays a snapshot carries; each is copied and transferred to the page. */
+const SNAPSHOT_ARRAYS = [
+  'schoolIds',
+  'positions',
+  'velocities',
+  'alive',
+  'corpse',
+  'corpseAge',
+  'energy',
+  'panic',
+  'locomotionStates',
+  'avoidanceDirections',
+  'avoidanceHits',
+  'recenterTimers',
+  'pursuitTargets',
+];
+
+/**
+ * A snapshot of the engine that can cross a thread boundary: copies of the
+ * arrays, plus the small values the readers need. The config is not sent —
+ * the page already has it and hands it back in viewFromSnapshot.
+ */
+export function snapshotOf(simulation, { metrics = null } = {}) {
+  const data = {
+    count: simulation.count,
+    derived: simulation.derived,
+    schoolRanges: simulation.schoolRanges,
+    relationMatrix: simulation.relationMatrix,
+    hiddenFish: simulation.hiddenFish,
+    locomotionPreview: simulation.locomotionPreview,
+    events: simulation.events.slice(),
+    plankton: {
+      count: simulation.food?.count ?? 0,
+      uses: simulation.food?.uses?.slice() ?? null,
+      positions: simulation.food?.positions?.slice() ?? null,
+    },
+    metrics,
+  };
+  simulation.events.length = 0;
+  const transfers = [];
+  for (const key of SNAPSHOT_ARRAYS) {
+    const array = simulation[key];
+    if (!array) continue;
+    data[key] = array.slice();
+    transfers.push(data[key].buffer);
+  }
+  if (data.plankton.uses) transfers.push(data.plankton.uses.buffer);
+  if (data.plankton.positions) transfers.push(data.plankton.positions.buffer);
+  return { data, transfers };
+}
+
+/** The page's side: a snapshot plus the config it already holds. */
+export function viewFromSnapshot(data, config) {
+  return new SimulationView({ ...data, config });
+}

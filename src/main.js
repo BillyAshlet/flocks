@@ -18,7 +18,7 @@ import {
   importConfigJson,
   validateConfig,
 } from './experiment-config.js';
-import { LocalSimClient } from './sim-client.js';
+import { createSimClient } from './sim-client.js';
 import { SchoolRenderer } from './school-renderer.js';
 import { ExperimentCameraController } from './experiment-camera.js';
 import { createExperimentDebug } from './experiment-debug.js';
@@ -134,10 +134,11 @@ async function bootstrap() {
   );
   scene.children.at(-1).position.set(1.5, 2.2, 2.4);
 
-  const sim = new LocalSimClient(current);
+  const sim = createSimClient(current, { search: window.location.search });
+  // The first snapshot says how many fish there are; meshes wait for it.
+  let view = await sim.ready;
   // The engine only computes; this draws what it computed, once per frame.
   // `view` is that step seen from outside: the readers never touch the engine.
-  let view = sim.view;
   const schoolRenderer = new SchoolRenderer(scene);
   schoolRenderer.rebuild(view);
   const cameraController = new ExperimentCameraController({
@@ -190,13 +191,10 @@ async function bootstrap() {
       current = deepClone(stage);
       if (mode !== 'live' && mode !== 'reset') syncTank(current);
       const effect = sim.applyConfig(current, mode);
-      view = sim.view;
-      if (effect === 'rebuild') {
-        schoolRenderer.rebuild(view);
-        cameraController.onSimulationRebuilt(view);
-      } else {
-        schoolRenderer.applyConfig(view);
-      }
+      view = sim.view ?? view;
+      // A rebuild is picked up in the loop, when the first matching step
+      // arrives; until then the page keeps drawing the step it has.
+      if (effect !== 'rebuild') schoolRenderer.applyConfig(view);
       if (mode === 'rebuildField') cameraController.exitView(true);
       if (result.warnings.length) {
         console.warn('[flocks config]', ...result.warnings);
@@ -206,7 +204,7 @@ async function bootstrap() {
     },
     reset() {
       sim.reset(current.runtime.seed);
-      view = sim.view;
+      view = sim.view ?? view;
       cameraController.exitView(true);
       return sim.metrics();
     },
@@ -530,6 +528,7 @@ async function bootstrap() {
   });
   window.experiment = experimentApi;
 
+  let drawnGeneration = view.generation;
   let lastFrame = performance.now();
   let lastPaperUpdate = 0;
   let smoothedFrameMs = 16.7;
@@ -545,7 +544,12 @@ async function bootstrap() {
     view = sim.step(nowMs, {
       timeScale: current.runtime.timeScale,
       fixedDt: current.runtime.fixedDt,
-    });
+    }) ?? view;
+    if (view.generation !== drawnGeneration) {
+      drawnGeneration = view.generation;
+      schoolRenderer.rebuild(view);
+      cameraController.onSimulationRebuilt(view);
+    }
     // Everyone reads the same step: the renderer, the camera and the visuals.
     cameraController.view = view;
     schoolRenderer.update(view, realDt);
