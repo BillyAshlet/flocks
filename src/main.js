@@ -21,6 +21,7 @@ import {
 import { DistanceField3D } from './distance-field.js';
 import { ExperimentSimulation } from './experiment-simulation.js';
 import { SchoolRenderer } from './school-renderer.js';
+import { viewOf } from './simulation-view.js';
 import { ExperimentCameraController } from './experiment-camera.js';
 import { createExperimentDebug } from './experiment-debug.js';
 import { TimeShortcutController } from './time-shortcuts.js';
@@ -143,15 +144,19 @@ async function bootstrap() {
     distanceField,
   });
   // The engine only computes; this draws what it computed, once per frame.
+  // `view` is that step seen from outside: the readers never touch the engine.
+  let view = viewOf(simulation);
   const schoolRenderer = new SchoolRenderer(scene);
-  schoolRenderer.rebuild(simulation);
+  schoolRenderer.rebuild(view);
   world.systems.push(simulation);
   const cameraController = new ExperimentCameraController({
     camera,
     renderer,
     presentation,
-    simulation,
+    scene,
+    view,
     pickMesh: () => schoolRenderer.mesh,
+    setHiddenFish: (index) => simulation.setHiddenFish(index),
   });
   let debug = null;
   let timeShortcuts = null;
@@ -195,7 +200,8 @@ async function bootstrap() {
       if (mode === 'live') {
         distanceField.config = current;
         simulation.setConfig(current, 'live');
-        schoolRenderer.applyConfig(simulation);
+        view = viewOf(simulation);
+        schoolRenderer.applyConfig(view);
       } else if (mode === 'reset') {
         distanceField.config = current;
         simulation.setConfig(current, 'reset');
@@ -204,15 +210,17 @@ async function bootstrap() {
         distanceField.rebuild(current);
         simulation.distanceField = distanceField;
         simulation.setConfig(current, 'reset');
-        schoolRenderer.applyConfig(simulation);
+        view = viewOf(simulation);
+        schoolRenderer.applyConfig(view);
         cameraController.exitView(true);
       } else {
         syncTank(current);
         distanceField = new DistanceField3D(current);
         simulation.distanceField = distanceField;
         simulation.rebuild(current);
-        schoolRenderer.rebuild(simulation);
-        cameraController.onSimulationRebuilt(simulation);
+        view = viewOf(simulation);
+        schoolRenderer.rebuild(view);
+        cameraController.onSimulationRebuilt(view);
       }
       if (result.warnings.length) {
         console.warn('[flocks config]', ...result.warnings);
@@ -560,12 +568,15 @@ async function bootstrap() {
     world.step(nowMs);
     // Drawing is per frame, not per simulation step: at 8x the school is
     // stepped eight times but drawn once.
-    schoolRenderer.update(simulation, realDt);
+    view = viewOf(simulation);
+    // Everyone reads the same step: the renderer, the camera and the visuals.
+    cameraController.view = view;
+    schoolRenderer.update(view, realDt);
     cameraController.update(realDt);
     renderer.render(scene, camera);
     cameraController.renderPreview();
     schoolVisualizer.update(
-      simulation,
+      view,
       current,
       visibleLayers(),
       cameraController.selected

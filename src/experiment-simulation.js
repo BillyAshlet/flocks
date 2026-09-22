@@ -16,6 +16,11 @@ import {
   tankVolume,
 } from './experiment-model.js';
 import { castRay, sceneClearance } from './distance-field.js';
+import {
+  LOCOMOTION_LABEL,
+  fishOf,
+  nearestAliveSameSchoolOf,
+} from './simulation-view.js';
 
 const EPSILON = 1e-8;
 const EVENT_LIMIT = 512; // Unread visual events are dropped, never queued forever.
@@ -26,11 +31,6 @@ const LOCOMOTION = Object.freeze({
   BURST: 1,
   EVADE: 2,
 });
-const LOCOMOTION_LABEL = Object.freeze([
-  'cruise',
-  'burst',
-  'evade',
-]);
 
 // ── Trait legibility: appearance only, never read by any rule ──
 // The trait controller maps weights to multipliers with a flat middle, so a
@@ -2505,54 +2505,11 @@ export class ExperimentSimulation {
   }
 
   fish(index) {
-    if (
-      !Number.isInteger(index) ||
-      index < 0 ||
-      index >= this.count
-    ) {
-      return null;
-    }
-    const offset = index * 3;
-    return {
-      index,
-      alive: Boolean(this.alive[index]),
-      schoolIndex: this.schoolIds[index],
-      school: this.config.schools[this.schoolIds[index]],
-      position: [
-        this.positions[offset],
-        this.positions[offset + 1],
-        this.positions[offset + 2],
-      ],
-      velocity: [
-        this.velocities[offset],
-        this.velocities[offset + 1],
-        this.velocities[offset + 2],
-      ],
-      panic: this.panic[index],
-      energy: this.energy[index],
-      locomotionState: LOCOMOTION_LABEL[this.locomotionStates[index]],
-    };
+    return fishOf(this, index);
   }
 
   nearestAliveSameSchool(index) {
-    const source = this.fish(index);
-    if (!source) return -1;
-    let result = -1;
-    let distance2 = Infinity;
-    const range = this.schoolRanges[source.schoolIndex];
-    for (let other = range.start; other < range.end; other += 1) {
-      if (other === index || !this.alive[other]) continue;
-      const offset = other * 3;
-      const dx = this.positions[offset] - source.position[0];
-      const dy = this.positions[offset + 1] - source.position[1];
-      const dz = this.positions[offset + 2] - source.position[2];
-      const candidate = dx * dx + dy * dy + dz * dz;
-      if (candidate < distance2) {
-        result = other;
-        distance2 = candidate;
-      }
-    }
-    return result;
+    return nearestAliveSameSchoolOf(this, index);
   }
 
   setHiddenFish(index = -1) {

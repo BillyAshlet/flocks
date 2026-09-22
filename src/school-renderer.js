@@ -334,7 +334,7 @@ export class SchoolRenderer {
     let visibleCount = 0;
     if (visible) {
       const array = this.planktonMesh.geometry.attributes.position.array;
-      const field = view.food;
+      const field = view.plankton;
       for (let i = 0; i < field.count; i += 1) {
         if (field.uses[i] === 0) continue;
         const from = i * 3;

@@ -50,13 +50,17 @@ function dampAlpha(rate, dt) {
 }
 
 export class ExperimentCameraController {
-  constructor({ camera, renderer, presentation, simulation, pickMesh }) {
+  constructor({ camera, renderer, presentation, scene, view, pickMesh, setHiddenFish }) {
     this.camera = camera;
     this.renderer = renderer;
     this.presentation = presentation;
-    this.simulation = simulation;
+    this.scene = scene;
+    // One step of the simulation, read only. Replaced every frame.
+    this.view = view;
     // The fish instances belong to the renderer; picking raycasts against them.
-    this.pickMesh = pickMesh ?? (() => this.simulation.mesh);
+    this.pickMesh = pickMesh ?? (() => null);
+    // Hiding the followed fish is a command to the engine, not a read.
+    this.setHiddenFish = setHiddenFish ?? (() => {});
     this.selected = -1;
     this.mode = CAMERA_MODE.GLOBAL;
     this.interactionEnabled = true;
@@ -90,7 +94,7 @@ export class ExperimentCameraController {
     );
     marker.visible = false;
     marker.renderOrder = 10;
-    this.simulation.scene.add(marker);
+    this.scene.add(marker);
     return marker;
   }
 
@@ -245,7 +249,7 @@ export class ExperimentCameraController {
     if (
       !hit ||
       hit.instanceId === undefined ||
-      !this.simulation.alive[hit.instanceId]
+      !this.view.alive[hit.instanceId]
     ) {
       return -1;
     }
@@ -263,7 +267,7 @@ export class ExperimentCameraController {
 
   select(index) {
     if (!this.interactionEnabled) return false;
-    const fish = this.simulation.fish(index);
+    const fish = this.view.fish(index);
     if (!fish?.alive) return false;
     this.selected = index;
     this.app.dataset.selectedFish = String(index);
@@ -295,7 +299,7 @@ export class ExperimentCameraController {
 
   _refreshLabels(fish) {
     const relations =
-      this.simulation.relationMatrix[fish.schoolIndex] ?? [];
+      this.view.relationMatrix[fish.schoolIndex] ?? [];
     const hunts = relations.filter((value) => value === 'pursuit').length;
     const flees = relations.filter((value) => value === 'evade').length;
     const role =
@@ -338,7 +342,7 @@ export class ExperimentCameraController {
           : 'FULLSCREEN · FOLLOW';
     if (mode === CAMERA_MODE.ORBIT) this._seedOrbitFromCamera();
     this.presentation.cameraSettings.orbitEnabled = false;
-    this.simulation.setHiddenFish(-1);
+    this.setHiddenFish(-1);
     return true;
   }
 
@@ -359,13 +363,13 @@ export class ExperimentCameraController {
 
   /** Current focal length; before any wheel input, the configured camera FOV. */
   _orbitFov() {
-    const base = this.simulation.config.camera.fov;
+    const base = this.view.config.camera.fov;
     return clampNumber(this.orbit.fov ?? base, ORBIT_FOV_MIN, ORBIT_FOV_MAX);
   }
 
   // Derive the spherical angles from the current camera so entering ORBIT does not jump.
   _seedOrbitFromCamera() {
-    const fish = this.simulation.fish(this.selected);
+    const fish = this.view.fish(this.selected);
     if (!fish) return;
     const offset = this.camera.position
       .clone()
@@ -401,7 +405,7 @@ export class ExperimentCameraController {
     this.savedPose = null;
     this.viewHud.hidden = true;
     this.presentation.cameraSettings.orbitEnabled = true;
-    this.simulation.setHiddenFish(-1);
+    this.setHiddenFish(-1);
     if (clearSelection) {
       this.clearSelection();
     } else if (this.selected >= 0) {
@@ -411,14 +415,14 @@ export class ExperimentCameraController {
     return true;
   }
 
-  onSimulationRebuilt(simulation) {
+  onSimulationRebuilt(view) {
     this.exitView(true);
-    this.simulation = simulation;
+    this.view = view;
   }
 
   _fallbackIfDead() {
-    if (this.selected < 0 || this.simulation.alive[this.selected]) return;
-    const fallback = this.simulation.nearestAliveSameSchool(this.selected);
+    if (this.selected < 0 || this.view.alive[this.selected]) return;
+    const fallback = this.view.nearestAliveSameSchool(this.selected);
     if (fallback >= 0) {
       this.selected = fallback;
       this.app.dataset.selectedFish = String(fallback);
@@ -439,7 +443,7 @@ export class ExperimentCameraController {
   }
 
   _closeupPose(fish) {
-    const config = this.simulation.config.camera;
+    const config = this.view.config.camera;
     const frame = this._fishFrame(fish);
     const framingScale = Math.max(0.2, fish.school.size);
     const cameraPosition = frame.position
@@ -457,7 +461,7 @@ export class ExperimentCameraController {
   }
 
   _applyPose(targetCamera, pose, dt, fov) {
-    const config = this.simulation.config.camera;
+    const config = this.view.config.camera;
     targetCamera.position.lerp(
       pose.cameraPosition,
       dampAlpha(config.positionDamping, dt)
@@ -481,10 +485,10 @@ export class ExperimentCameraController {
 
   update(dt) {
     this._fallbackIfDead();
-    const fish = this.simulation.fish(this.selected);
+    const fish = this.view.fish(this.selected);
     if (!fish?.alive) return;
     this._refreshLabels(fish);
-    const config = this.simulation.config.camera;
+    const config = this.view.config.camera;
     const frame = this._fishFrame(fish);
     this.marker.position.copy(frame.position);
     this.marker.quaternion.setFromUnitVectors(FORWARD, frame.forward);
@@ -594,7 +598,7 @@ export class ExperimentCameraController {
     this.renderer.setScissorTest(true);
     this.renderer.setClearColor('#e6e0d3', 1);
     this.renderer.clear(true, true, true);
-    this.renderer.render(this.simulation.scene, this.previewCamera);
+    this.renderer.render(this.scene, this.previewCamera);
     this.renderer.setClearColor(oldColor, oldAlpha);
     this.renderer.setViewport(oldViewport);
     this.renderer.setScissor(oldScissor);
