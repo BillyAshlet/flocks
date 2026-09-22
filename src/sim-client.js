@@ -134,6 +134,14 @@ export class WorkerSimClient {
       this._resolveReady = resolve;
     });
     this.worker.onmessage = (event) => this._receive(event.data);
+    this.worker.onerror = (event) => {
+      // Nothing can be drawn without the engine, and the page cannot repair
+      // it; say where the fallback is instead of failing silently.
+      console.error(
+        '[flocks] the simulation worker failed; reload with ?worker=off to run it on the main thread',
+        event.message ?? event
+      );
+    };
     this.worker.postMessage({ type: 'init', config });
   }
 
