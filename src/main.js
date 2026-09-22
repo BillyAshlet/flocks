@@ -20,6 +20,7 @@ import {
 } from './experiment-config.js';
 import { DistanceField3D } from './distance-field.js';
 import { ExperimentSimulation } from './experiment-simulation.js';
+import { SchoolRenderer } from './school-renderer.js';
 import { ExperimentCameraController } from './experiment-camera.js';
 import { createExperimentDebug } from './experiment-debug.js';
 import { TimeShortcutController } from './time-shortcuts.js';
@@ -141,12 +142,16 @@ async function bootstrap() {
     config: current,
     distanceField,
   });
+  // The engine only computes; this draws what it computed, once per frame.
+  const schoolRenderer = new SchoolRenderer(scene);
+  schoolRenderer.rebuild(simulation);
   world.systems.push(simulation);
   const cameraController = new ExperimentCameraController({
     camera,
     renderer,
     presentation,
     simulation,
+    pickMesh: () => schoolRenderer.mesh,
   });
   let debug = null;
   let timeShortcuts = null;
@@ -190,6 +195,7 @@ async function bootstrap() {
       if (mode === 'live') {
         distanceField.config = current;
         simulation.setConfig(current, 'live');
+        schoolRenderer.applyConfig(simulation);
       } else if (mode === 'reset') {
         distanceField.config = current;
         simulation.setConfig(current, 'reset');
@@ -198,12 +204,14 @@ async function bootstrap() {
         distanceField.rebuild(current);
         simulation.distanceField = distanceField;
         simulation.setConfig(current, 'reset');
+        schoolRenderer.applyConfig(simulation);
         cameraController.exitView(true);
       } else {
         syncTank(current);
         distanceField = new DistanceField3D(current);
         simulation.distanceField = distanceField;
         simulation.rebuild(current);
+        schoolRenderer.rebuild(simulation);
         cameraController.onSimulationRebuilt(simulation);
       }
       if (result.warnings.length) {
@@ -546,6 +554,9 @@ async function bootstrap() {
     world.timeScale = current.runtime.timeScale;
     world.fixedDt = current.runtime.fixedDt;
     world.step(nowMs);
+    // Drawing is per frame, not per simulation step: at 8x the school is
+    // stepped eight times but drawn once.
+    schoolRenderer.update(simulation);
     cameraController.update(realDt);
     renderer.render(scene, camera);
     cameraController.renderPreview();

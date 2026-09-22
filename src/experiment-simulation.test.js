@@ -44,7 +44,8 @@ function place(simulation, index, x, y = 0, z = 0) {
 test('headless simulation does not require a THREE.Scene adapter', () => {
   const simulation = smallSimulation();
   const school = simulation.metrics().population[0];
-  assert.equal(simulation.mesh, null);
+  // The engine draws nothing: meshes belong to SchoolRenderer.
+  assert.equal(simulation.mesh, undefined);
   assert.equal(simulation.captureVfx, null);
   assert.equal(school.cohesionRadius, school.neighborRadius);
   // Classic boids proportions: alignment neighborhood is wider than separation.

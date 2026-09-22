@@ -41,36 +41,6 @@ const LOCOMOTION_LABEL = Object.freeze([
 // The constants below amplify the chosen traits visually; all rules keep
 // using the real values. Each can be set to its "off" value.
 
-// Body size: visual size = anchor * (size / anchor) ^ exponent * global.
-// Fish visual length is 0.046 * visual size and plankton points are 0.03, so
-// at exponent 1.8 a small fish (size 0.75) rendered exactly as large as
-// plankton and vanished into the food. Exponent 0.9 looked the same as linear
-// but added a concept. Linear is used because proportions stay exact (twice
-// as large looks twice as large), and visibility comes from the global scale:
-// a 20% change is obvious on a 0.18 m fish but invisible on a 0.03 m one.
-// Capture radius, predation, metabolism and speed all read school.size; only
-// the setMatrixAt scale changes here.
-const VISUAL_SIZE_EXPONENT = 1; // 1 = linear; any other value enables the power mapping
-const VISUAL_SIZE_ANCHOR = 1.5; // Only used when the exponent is not 1.
-const VISUAL_SIZE_GLOBAL = 2.6; // The one knob to tune: global visual scale.
-
-// Per-school multiplier applied after the global scale.
-const VISUAL_SIZE_BOOST = Object.freeze({
-  gold: 1,
-  blue: 1,
-  red: 1,
-});
-
-// Stamina brightness: brightness follows survival time, i.e. current energy
-// divided by metabolic rate per second. Metabolism is inverse to stamina and
-// survival time is inverse to metabolism, so survival time is exactly linear
-// in the stamina multiplier (measured: stamina 0.5/0.75/1.0/1.25/1.5 gives
-// 22.6/33.9/45.2/56.5/67.8 s). Mapping the metabolic multiplier directly
-// would be wrong: maxing speed moves it only to x1.01, while maxing size
-// moves it to x2.66, so brightness would duplicate size and hide speed.
-// While energy is full, brightness shows how long a trait choice lasts;
-// once energy drains, it shows how long the fish has left. 0 strength = off.
-
 // Hunger response: low energy slows fish and loosens the formation.
 // Kept at 0 (off). Measured at strengths 1.0, 0.5 and 0.25, it made outcomes
 // easier rather than harder, because it also slows predators so they stop
@@ -84,18 +54,6 @@ const HUNGER_EXHAUSTED_AT = 0.15; // Energy ratio at which weakness is maximal.
 const HUNGER_MIN_SPEED = 0.38;
 const HUNGER_MIN_ALIGNMENT = 0.35;
 const HUNGER_MIN_COHESION = 0.3;
-
-const STAMINA_TINT_STRENGTH = 0.45;
-const STAMINA_TINT_REFERENCE_SECONDS = 45; // Survival time of balanced traits; neutral brightness.
-const STAMINA_TINT_MIN = 0.35; // Darkest, near starvation.
-const STAMINA_TINT_MAX = 1.45; // Brightest; caps overexposure.
-
-function visualSizeOf(size, schoolId) {
-  const boost = (VISUAL_SIZE_BOOST[schoolId] ?? 1) * VISUAL_SIZE_GLOBAL;
-  if (VISUAL_SIZE_EXPONENT === 1) return size * boost;
-  const ratio = Math.max(EPSILON, size / VISUAL_SIZE_ANCHOR);
-  return VISUAL_SIZE_ANCHOR * ratio ** VISUAL_SIZE_EXPONENT * boost;
-}
 
 // Energy ratio -> multipliers for speed, alignment and cohesion; null when unaffected.
 function hungerResponse(ratio) {
@@ -111,18 +69,6 @@ function hungerResponse(ratio) {
     alignment: 1 - fade * (1 - HUNGER_MIN_ALIGNMENT),
     cohesion: 1 - fade * (1 - HUNGER_MIN_COHESION),
   };
-}
-
-// Survival time -> brightness multiplier.
-function staminaTintFactor(survivalSeconds) {
-  if (STAMINA_TINT_STRENGTH === 0) return 1;
-  if (!Number.isFinite(survivalSeconds)) return STAMINA_TINT_MAX;
-  const relative = survivalSeconds / STAMINA_TINT_REFERENCE_SECONDS;
-  return clamp(
-    1 + STAMINA_TINT_STRENGTH * (relative - 1),
-    STAMINA_TINT_MIN,
-    STAMINA_TINT_MAX
-  );
 }
 
 function clamp(value, min, max) {
@@ -197,7 +143,6 @@ export class ExperimentSimulation {
     this.hiddenFish = -1;
     this.locomotionPreview = false;
     this.captureVfx = null;
-    this.planktonMesh = null;
     this.metricsState = {
       frameMs: 0,
       fps: 0,
@@ -208,24 +153,6 @@ export class ExperimentSimulation {
   }
 
   dispose() {
-    if (this.mesh) {
-      this.mesh.removeFromParent();
-      this.mesh.geometry.dispose();
-      this.mesh.material.dispose();
-      this.mesh = null;
-    }
-    if (this.shadowMesh) {
-      this.shadowMesh.removeFromParent();
-      this.shadowMesh.geometry.dispose();
-      this.shadowMesh.material.dispose();
-      this.shadowMesh = null;
-    }
-    if (this.planktonMesh) {
-      this.planktonMesh.removeFromParent();
-      this.planktonMesh.geometry.dispose();
-      this.planktonMesh.material.dispose();
-      this.planktonMesh = null;
-    }
     this.captureVfx?.dispose();
     this.captureVfx = null;
   }
@@ -278,8 +205,6 @@ export class ExperimentSimulation {
     this.refractory = new Float32Array(this.count);  // Refractory timer.
     this.directLatch = new Uint8Array(this.count);   // Direct-threat latch (hysteresis).
     // Roll: the body banks into turns. Visual only.
-    this.rollAngles = new Float32Array(this.count);
-    this.prevHeadings = new Float32Array(this.count * 3);
     this.energy = new Float32Array(this.count);
     // One shared energy pool per school: part of each meal flows in and is split evenly each step.
     this.energyPools = new Float64Array(config.schools.length);
@@ -301,9 +226,6 @@ export class ExperimentSimulation {
     // Seconds since death; drives color fade, belly-up roll and rise.
     this.corpseAge = new Float32Array(this.count);
     // Last written brightness multiplier, to skip unchanged setColorAt calls.
-    this.tintFactors = new Float32Array(this.count).fill(-1);
-    this.corpseColor = new THREE.Color('#6b6f74');
-    this.schoolColors = config.schools.map((sc) => new THREE.Color(sc.color));
     this.locomotionStates = new Uint8Array(this.count);
     this.wanderPhases = new Float32Array(this.count);
     this.wanderRates = new Float32Array(this.count);
@@ -341,167 +263,7 @@ export class ExperimentSimulation {
         this.config.starvationVfx
       );
     }
-    this._buildMesh();
-    this._buildPlanktonMesh();
     this.reset(config.runtime.seed);
-  }
-
-  _buildMesh() {
-    if (!this.scene?.add) {
-      this.mesh = null;
-      return;
-    }
-    const radialSegments = Math.max(
-      3,
-      Math.round(this.config.visual.radialSegments)
-    );
-    const geometry = new THREE.CapsuleGeometry(
-      this.config.visual.bodyRadius,
-      this.config.visual.bodyLength,
-      2,
-      radialSegments
-    );
-    geometry.rotateX(Math.PI / 2);
-    const material = new THREE.MeshBasicMaterial({
-      color: '#ffffff',
-      transparent: this.config.visual.opacity < 1,
-      opacity: this.config.visual.opacity,
-    });
-    // A little light from above: backs a touch brighter, bellies darker.
-    // Unlit on purpose otherwise, so a school's color stays the color the
-    // panel shows instead of depending on scene lights.
-    material.onBeforeCompile = (shader) => {
-      shader.vertexShader = shader.vertexShader
-        .replace(
-          'void main() {',
-          'varying float vFishLight;\nvoid main() {'
-        )
-        .replace(
-          '#include <begin_vertex>',
-          `#include <begin_vertex>
-          vec3 fishNormal = normal;
-          #ifdef USE_INSTANCING
-            fishNormal = mat3( instanceMatrix ) * fishNormal;
-          #endif
-          fishNormal = normalize( mat3( modelMatrix ) * fishNormal );
-          vFishLight = dot( fishNormal, normalize( vec3( 0.3, 1.0, 0.35 ) ) );`
-        );
-      shader.fragmentShader = shader.fragmentShader
-        .replace(
-          'void main() {',
-          'varying float vFishLight;\nvoid main() {'
-        )
-        .replace(
-          '#include <color_fragment>',
-          `#include <color_fragment>
-          diffuseColor.rgb *= mix( 0.74, 1.1, vFishLight * 0.5 + 0.5 );`
-        );
-    };
-    this.mesh = new THREE.InstancedMesh(geometry, material, this.count);
-    this.mesh.name = 'experiment-fish';
-    this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    for (let index = 0; index < this.count; index += 1) {
-      const school = this.config.schools[this.schoolIds[index]];
-      this.mesh.setColorAt(index, new THREE.Color(school.color));
-    }
-    this.mesh.instanceColor.needsUpdate = true;
-    this.mesh.frustumCulled = false;
-    this.scene.add(this.mesh);
-    this._buildShadowMesh();
-  }
-
-  // A soft oval under every fish on the tank floor. Fainter and wider the
-  // higher the fish swims, so the floor shows where a school is in depth,
-  // which a front view alone cannot.
-  _buildShadowMesh() {
-    const geometry = new THREE.PlaneGeometry(1, 1);
-    geometry.rotateX(-Math.PI / 2);
-    const material = new THREE.MeshBasicMaterial({
-      color: '#4a3f30',
-      transparent: true,
-      depthWrite: false,
-    });
-    // Instance color red carries each shadow's opacity; the oval's soft edge
-    // comes from the vertex position, so no texture is needed.
-    material.onBeforeCompile = (shader) => {
-      shader.vertexShader = shader.vertexShader
-        .replace(
-          'void main() {',
-          'varying vec2 vShadowXZ;\nvarying float vShadowAlpha;\nvoid main() {'
-        )
-        .replace(
-          '#include <begin_vertex>',
-          `#include <begin_vertex>
-          vShadowXZ = position.xz * 2.0;
-          vShadowAlpha = 1.0;
-          #ifdef USE_INSTANCING_COLOR
-            vShadowAlpha = instanceColor.r;
-          #endif`
-        );
-      shader.fragmentShader = shader.fragmentShader
-        .replace(
-          'void main() {',
-          'varying vec2 vShadowXZ;\nvarying float vShadowAlpha;\nvoid main() {'
-        )
-        .replace(
-          '#include <color_fragment>',
-          'diffuseColor.a *= vShadowAlpha * ( 1.0 - smoothstep( 0.15, 1.0, length( vShadowXZ ) ) );'
-        );
-    };
-    this.shadowMesh = new THREE.InstancedMesh(geometry, material, this.count);
-    this.shadowMesh.name = 'experiment-fish-shadows';
-    this.shadowMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    const none = new THREE.Color(0, 0, 0);
-    for (let index = 0; index < this.count; index += 1) {
-      this.shadowMesh.setColorAt(index, none);
-    }
-    this.shadowMesh.frustumCulled = false;
-    this.shadowMesh.renderOrder = -1;
-    this.scene.add(this.shadowMesh);
-  }
-
-  _buildPlanktonMesh() {
-    if (!this.scene?.add || this.config.plankton.visualCount <= 0) {
-      this.planktonMesh = null;
-      return;
-    }
-    const count = Math.max(
-      0,
-      Math.round(this.config.plankton.visualCount)
-    );
-    const geometry = new THREE.BufferGeometry();
-    const positions = new Float32Array(count * 3);
-    const rng = new SeededRng(
-      (Number(this.config.runtime.seed) ^ 0x9e3779b9) >>> 0
-    );
-    const margin = this.config.tank.wallMargin;
-    const half = [
-      Math.max(0, this.config.tank.width / 2 - margin),
-      Math.max(0, this.config.tank.height / 2 - margin),
-      Math.max(0, this.config.tank.depth / 2 - margin),
-    ];
-    for (let index = 0; index < count; index += 1) {
-      const offset = index * 3;
-      positions[offset] = rng.range(-half[0], half[0]);
-      positions[offset + 1] = rng.range(-half[1], half[1]);
-      positions[offset + 2] = rng.range(-half[2], half[2]);
-    }
-    geometry.setAttribute(
-      'position',
-      new THREE.BufferAttribute(positions, 3)
-    );
-    const material = new THREE.PointsMaterial({
-      color: this.config.plankton.color,
-      size: this.config.plankton.pointSize,
-      transparent: true,
-      opacity: this.config.plankton.opacity,
-      depthWrite: false,
-      sizeAttenuation: true,
-    });
-    this.planktonMesh = new THREE.Points(geometry, material);
-    this.planktonMesh.name = 'experiment-plankton';
-    this.planktonMesh.frustumCulled = false;
-    this.scene.add(this.planktonMesh);
   }
 
   reset(seed = undefined) {
@@ -549,8 +311,6 @@ export class ExperimentSimulation {
     this.panicHold.fill(0);
     this.refractory.fill(0);
     this.directLatch.fill(0);
-    this.rollAngles.fill(0);
-    this.prevHeadings.fill(0);
     // Initial energy needs per-fish jitter. Earlier every fish in a school
     // started with the same energy, and metabolism is deterministic
     // (basalRate x size^0.75), so the first wave starved in the same second.
@@ -741,8 +501,6 @@ export class ExperimentSimulation {
     }
     this.hash.cellSize = Math.max(EPSILON, this.derived.cellSize);
     this._syncVfxBounds();
-    this._syncPlanktonVisual();
-    this.updateMesh();
     return this;
   }
 
@@ -763,19 +521,6 @@ export class ExperimentSimulation {
       this.reset(config.runtime.seed);
     } else {
     }
-    if (this.mesh) {
-      this.mesh.material.opacity = config.visual.opacity;
-      this.mesh.material.transparent = config.visual.opacity < 1;
-      // Base colors reset here only; updateMesh applies stamina brightness every frame.
-      for (let index = 0; index < this.count; index += 1) {
-        this.mesh.setColorAt(
-          index,
-          new THREE.Color(config.schools[this.schoolIds[index]].color)
-        );
-      }
-      this.mesh.instanceColor.needsUpdate = true;
-    }
-    this._syncPlanktonVisual();
   }
 
   setLocomotionPreview(enabled) {
@@ -816,8 +561,6 @@ export class ExperimentSimulation {
     const visibleMotion = {
       positions: this.positions.slice(),
       velocities: this.velocities.slice(),
-      rollAngles: this.rollAngles.slice(),
-      prevHeadings: this.prevHeadings.slice(),
     };
     this.locomotionPreview = false;
     // Reset from the submitted config so relation hysteresis,
@@ -827,9 +570,6 @@ export class ExperimentSimulation {
     this.reset(this.config.runtime.seed);
     this.positions.set(visibleMotion.positions);
     this.velocities.set(visibleMotion.velocities);
-    this.rollAngles.set(visibleMotion.rollAngles);
-    this.prevHeadings.set(visibleMotion.prevHeadings);
-    this.updateMesh();
   }
 
   _syncVfxBounds() {
@@ -838,39 +578,6 @@ export class ExperimentSimulation {
       this.config.tank.height / 2,
       this.config.tank.depth / 2,
     ]);
-  }
-
-  _syncPlanktonVisual() {
-    if (!this.planktonMesh) return;
-    const visible =
-      this.config.ecology?.enabled &&
-      this.config.plankton.enabled;
-    this.planktonMesh.visible = visible;
-    // The points are the model: live particles are compacted into the buffer
-    // at their real positions, so what is drawn is exactly the food that
-    // remains. Earlier this showed the first N points of a fixed random cloud
-    // in proportion to total stock, so fish eating at the top of the tank made
-    // points vanish at the bottom. That was a progress bar drawn as dots,
-    // depicting spatial food the model did not have.
-    let visibleCount = 0;
-    if (visible) {
-      const array = this.planktonMesh.geometry.attributes.position.array;
-      const field = this.food;
-      for (let i = 0; i < field.count; i += 1) {
-        if (field.uses[i] === 0) continue;
-        const from = i * 3;
-        const to = visibleCount * 3;
-        array[to] = field.positions[from];
-        array[to + 1] = field.positions[from + 1];
-        array[to + 2] = field.positions[from + 2];
-        visibleCount += 1;
-      }
-      this.planktonMesh.geometry.attributes.position.needsUpdate = true;
-    }
-    this.planktonMesh.geometry.setDrawRange(0, visibleCount);
-    this.planktonMesh.material.size = this.config.plankton.pointSize;
-    this.planktonMesh.material.opacity = this.config.plankton.opacity;
-    this.planktonMesh.material.color.set(this.config.plankton.color);
   }
 
   _clearAccumulators() {
@@ -2538,7 +2245,6 @@ export class ExperimentSimulation {
       );
       this.ecologyStatus = ecologyOutcome(aliveCounts);
     }
-    this._syncPlanktonVisual();
   }
 
   /**
@@ -2741,7 +2447,6 @@ export class ExperimentSimulation {
     }
     this._capture(dt);
     this._updateEcology(dt);
-    this.updateMesh();
   }
 
   _advanceLocomotionPreview(dt) {
@@ -2762,7 +2467,6 @@ export class ExperimentSimulation {
     for (let index = 0; index < this.count; index += 1) {
       this._integrate(index, dt);
     }
-    this.updateMesh();
   }
 
   step(dt) {
@@ -2784,160 +2488,6 @@ export class ExperimentSimulation {
         ? Math.min(999, 1000 / this.metricsState.frameMs)
         : 0;
     if (!this.locomotionPreview) this.captureVfx?.step(dt);
-  }
-
-  updateMesh() {
-    if (!this.mesh) return;
-    const matrix = new THREE.Matrix4();
-    const position = new THREE.Vector3();
-    const quaternion = new THREE.Quaternion();
-    const rollQuaternion = new THREE.Quaternion();
-    const corpseTint = new THREE.Color();
-    const scale = new THREE.Vector3();
-    const direction = new THREE.Vector3();
-    const shadows = this.shadowMesh;
-    const shadowScale = new THREE.Vector3();
-    const shadowPosition = new THREE.Vector3();
-    const shadowTurn = new THREE.Quaternion();
-    const shadowAlpha = new THREE.Color();
-    const floorY = -this.config.tank.height / 2 + 0.002;
-    const tankHeight = Math.max(EPSILON, this.config.tank.height);
-    const bodyLength =
-      this.config.visual.bodyLength + 2 * this.config.visual.bodyRadius;
-    const bodyWidth = 2 * this.config.visual.bodyRadius;
-    for (let index = 0; index < this.count; index += 1) {
-      let castsShadow = false;
-      const offset = index * 3;
-      position.set(
-        this.positions[offset],
-        this.positions[offset + 1],
-        this.positions[offset + 2]
-      );
-      if (index === this.hiddenFish) {
-        scale.setScalar(0);
-        quaternion.identity();
-      } else if (!this.alive[index]) {
-        // Corpse: keep the fish model, belly up, grey.
-        if (this.corpse[index]) {
-          const schoolIndex = this.schoolIds[index];
-          const school = this.config.schools[schoolIndex];
-          // Body size with the same visual scaling, so size does not jump at death.
-          scale.setScalar(visualSizeOf(school.size, school.id));
-          const fade = Math.max(
-            0.01,
-            this.config.ecology.corpseFadeTime ?? 1.6
-          );
-          const t = clamp(this.corpseAge[index] / fade, 0, 1);
-          // Roll gradually from the heading at death to belly up.
-          direction
-            .set(
-              this.prevHeadings[offset],
-              this.prevHeadings[offset + 1],
-              this.prevHeadings[offset + 2]
-            )
-            .normalize();
-          if (direction.lengthSq() <= EPSILON) direction.copy(FORWARD);
-          quaternion.setFromUnitVectors(FORWARD, direction);
-          rollQuaternion.setFromAxisAngle(FORWARD, Math.PI * t);
-          quaternion.multiply(rollQuaternion);
-          // Color fades from the school color to grey.
-          if (this.mesh.instanceColor) {
-            corpseTint
-              .copy(this.schoolColors[schoolIndex])
-              .lerp(this.corpseColor, t);
-            this.mesh.setColorAt(index, corpseTint);
-            this._instanceColorDirty = true;
-          }
-        } else {
-          scale.setScalar(0);
-          quaternion.identity();
-        }
-      } else {
-        const school = this.config.schools[this.schoolIds[index]];
-        // Rules use school.size; rendering uses visualSizeOf.
-        scale.setScalar(visualSizeOf(school.size, school.id));
-        // Stamina brightness follows survival time = energy / metabolic rate.
-        // In the preview energy stays full, so it shows how long the trait
-        // choice lasts; while running it shows how long the fish has left.
-        // Burst cost is excluded, otherwise brightness would flicker.
-        if (this.mesh.instanceColor && STAMINA_TINT_STRENGTH !== 0) {
-          const drain = metabolicRate(this.config, school, false);
-          const seconds =
-            drain > EPSILON ? this.energy[index] / drain : Infinity;
-          const factor = staminaTintFactor(seconds);
-          if (Math.abs(factor - this.tintFactors[index]) > 0.004) {
-            this.tintFactors[index] = factor;
-            corpseTint
-              .copy(this.schoolColors[this.schoolIds[index]])
-              .multiplyScalar(factor);
-            this.mesh.setColorAt(index, corpseTint);
-            this._instanceColorDirty = true;
-          }
-        }
-        direction
-          .set(
-            this.velocities[offset],
-            this.velocities[offset + 1],
-            this.velocities[offset + 2]
-          )
-          .normalize();
-        if (direction.lengthSq() <= EPSILON) direction.copy(FORWARD);
-        // Banking: the turn rate is estimated from the cross product of last and
-        // current heading; its vertical component gives the turn direction.
-        const visual = this.config.visual;
-        const px = this.prevHeadings[offset];
-        const py = this.prevHeadings[offset + 1];
-        const pz = this.prevHeadings[offset + 2];
-        let targetRoll = 0;
-        if (px !== 0 || py !== 0 || pz !== 0) {
-          const yawRate = pz * direction.x - px * direction.z;
-          const maxRoll = (visual.maxRollDegrees * Math.PI) / 180;
-          targetRoll = clamp(yawRate * visual.bankingGain, -maxRoll, maxRoll);
-        }
-        this.rollAngles[index] +=
-          (targetRoll - this.rollAngles[index]) * visual.bankingSmoothing;
-        this.prevHeadings[offset] = direction.x;
-        this.prevHeadings[offset + 1] = direction.y;
-        this.prevHeadings[offset + 2] = direction.z;
-        quaternion.setFromUnitVectors(FORWARD, direction);
-        if (Math.abs(this.rollAngles[index]) > 1e-4) {
-          rollQuaternion.setFromAxisAngle(FORWARD, this.rollAngles[index]);
-          quaternion.multiply(rollQuaternion);
-        }
-        if (shadows) {
-          const height = clamp((position.y - floorY) / tankHeight, 0, 1);
-          const spread = 1 + 1.4 * height;
-          shadowPosition.set(position.x, floorY, position.z);
-          shadowTurn.setFromAxisAngle(UP, Math.atan2(direction.x, direction.z));
-          shadowScale.set(
-            bodyWidth * scale.x * 2.2 * spread,
-            1,
-            bodyLength * scale.x * 1.3 * spread
-          );
-          matrix.compose(shadowPosition, shadowTurn, shadowScale);
-          shadows.setMatrixAt(index, matrix);
-          // Faint: a whole school's shadows overlap into one soft patch.
-          shadowAlpha.setRGB(0.09 * (1 - 0.7 * height), 0, 0);
-          shadows.setColorAt(index, shadowAlpha);
-          castsShadow = true;
-        }
-      }
-      if (shadows && !castsShadow) {
-        matrix.makeScale(0, 0, 0);
-        shadows.setMatrixAt(index, matrix);
-      }
-      matrix.compose(position, quaternion, scale);
-      this.mesh.setMatrixAt(index, matrix);
-    }
-    this.mesh.instanceMatrix.needsUpdate = true;
-    if (shadows) {
-      shadows.instanceMatrix.needsUpdate = true;
-      shadows.instanceColor.needsUpdate = true;
-    }
-    if (this._instanceColorDirty && this.mesh.instanceColor) {
-      this.mesh.instanceColor.needsUpdate = true;
-      this._instanceColorDirty = false;
-    }
   }
 
   averageNeighbors(schoolIndex) {
@@ -3026,7 +2576,6 @@ export class ExperimentSimulation {
 
   setHiddenFish(index = -1) {
     this.hiddenFish = index;
-    this.updateMesh();
   }
 
   metrics() {

@@ -50,11 +50,13 @@ function dampAlpha(rate, dt) {
 }
 
 export class ExperimentCameraController {
-  constructor({ camera, renderer, presentation, simulation }) {
+  constructor({ camera, renderer, presentation, simulation, pickMesh }) {
     this.camera = camera;
     this.renderer = renderer;
     this.presentation = presentation;
     this.simulation = simulation;
+    // The fish instances belong to the renderer; picking raycasts against them.
+    this.pickMesh = pickMesh ?? (() => this.simulation.mesh);
     this.selected = -1;
     this.mode = CAMERA_MODE.GLOBAL;
     this.interactionEnabled = true;
@@ -237,10 +239,9 @@ export class ExperimentCameraController {
     this.pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
     this.pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
     this.raycaster.setFromCamera(this.pointer, this.camera);
-    const hit = this.raycaster.intersectObject(
-      this.simulation.mesh,
-      false
-    )[0];
+    const mesh = this.pickMesh();
+    if (!mesh) return -1;
+    const hit = this.raycaster.intersectObject(mesh, false)[0];
     if (
       !hit ||
       hit.instanceId === undefined ||
