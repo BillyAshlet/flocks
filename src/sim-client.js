@@ -97,6 +97,9 @@ export class LocalSimClient {
     this.world.resetTiming(nowMs);
   }
 
+  /** The render loop already stops when the page is hidden. */
+  setRunning() {}
+
   /** Advance to `nowMs`; returns the view of the step that came out. */
   step(nowMs, { timeScale = 1, fixedDt = 1 / 60 } = {}) {
     this.world.timeScale = timeScale;
@@ -188,6 +191,15 @@ export class WorkerSimClient {
       this.worker.postMessage({ type: 'pacing', timeScale, fixedDt });
     }
     return this.view;
+  }
+
+  /**
+   * The page has its own clock in the render loop, which the browser pauses
+   * when the page is hidden. The worker's clock is its own, so it has to be
+   * told, or a hidden tab keeps a core busy.
+   */
+  setRunning(running) {
+    this.worker.postMessage({ type: 'running', value: Boolean(running) });
   }
 
   dispose() {

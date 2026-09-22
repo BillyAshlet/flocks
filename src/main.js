@@ -528,6 +528,13 @@ async function bootstrap() {
   });
   window.experiment = experimentApi;
 
+  // A hidden page stops its render loop; the engine must stop with it.
+  document.addEventListener('visibilitychange', () => {
+    sim.setRunning(!document.hidden);
+    if (!document.hidden) sim.resetTiming(performance.now());
+  });
+  sim.setRunning(!document.hidden);
+
   let drawnGeneration = view.generation;
   let lastFrame = performance.now();
   let lastPaperUpdate = 0;

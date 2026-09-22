@@ -7,6 +7,7 @@
  * the interface.
  *
  * Messages in:  init | config | reset | hidden | preview | pacing | renderFps
+ *               | running (pause while the page is not visible)
  * Messages out: ready (after init or a rebuild) | snapshot
  */
 import { DistanceField3D } from './distance-field.js';
@@ -120,6 +121,15 @@ self.onmessage = (event) => {
       break;
     case 'resetTiming':
       world.resetTiming(performance.now());
+      break;
+    case 'running':
+      // The page is hidden: stop stepping rather than burn a background CPU.
+      if (message.value) {
+        world.resetTiming(performance.now());
+        start();
+      } else {
+        stop();
+      }
       break;
     case 'stop':
       stop();
