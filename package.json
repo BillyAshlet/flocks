@@ -8,7 +8,8 @@
     "build": "vite build",
     "preview": "vite preview --host",
     "test": "node --test",
-    "fingerprint": "node tools/fingerprint.mjs"
+    "fingerprint": "node tools/fingerprint.mjs",
+    "protocol": "node tools/protocol-check.mjs"
   },
   "dependencies": {
     "@fontsource-variable/source-serif-4": "^5.3.0",
