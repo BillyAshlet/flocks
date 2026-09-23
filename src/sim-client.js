@@ -100,6 +100,10 @@ export class LocalSimClient {
   /** The render loop already stops when the page is hidden. */
   setRunning() {}
 
+  stats() {
+    return { mode: 'main thread', generation: this.generation };
+  }
+
   /** Advance to `nowMs`; returns the view of the step that came out. */
   step(nowMs, { timeScale = 1, fixedDt = 1 / 60 } = {}) {
     this.world.timeScale = timeScale;
@@ -124,6 +128,11 @@ export class WorkerSimClient {
     this.view = null;
     this.lastMetrics = null;
     this.pacing = { timeScale: null, fixedDt: null };
+    // A snapshot has arrived that the page has not drawn yet. The worker
+    // holds the next one until it has, so snapshots cannot pile up.
+    this.undrawn = false;
+    this.lastSnapshotMs = 0;
+    this.snapshots = 0;
     this.worker = new Worker(new URL('./sim-worker.js', import.meta.url), {
       type: 'module',
       name: 'flocks-simulation',
@@ -147,6 +156,9 @@ export class WorkerSimClient {
 
   _receive(message) {
     if (message.type !== 'snapshot') return;
+    this.undrawn = true;
+    this.lastSnapshotMs = performance.now();
+    this.snapshots += 1;
     if (message.data.metrics) this.lastMetrics = message.data.metrics;
     this.view = viewFromSnapshot(message.data, this.config);
     this.view.generation = message.data.generation;
@@ -191,6 +203,10 @@ export class WorkerSimClient {
 
   /** The worker keeps its own clock; the page only sends the pace. */
   step(_nowMs, { timeScale = 1, fixedDt = 1 / 60 } = {}) {
+    if (this.undrawn) {
+      this.undrawn = false;
+      this.worker.postMessage({ type: 'drawn' });
+    }
     if (
       timeScale !== this.pacing.timeScale ||
       fixedDt !== this.pacing.fixedDt
@@ -208,6 +224,17 @@ export class WorkerSimClient {
    */
   setRunning(running) {
     this.worker.postMessage({ type: 'running', value: Boolean(running) });
+  }
+
+  /** For the console when something looks stuck. */
+  stats() {
+    return {
+      mode: 'worker',
+      snapshots: this.snapshots,
+      sinceLastSnapshotMs: Math.round(performance.now() - this.lastSnapshotMs),
+      waitingToDraw: this.undrawn,
+      generation: this.view?.generation ?? null,
+    };
   }
 
   dispose() {

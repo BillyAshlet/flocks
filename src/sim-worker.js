@@ -7,8 +7,14 @@
  * the interface.
  *
  * Messages in:  init | config | reset | hidden | preview | pacing | renderFps
- *               | running (pause while the page is not visible)
+ *               | running (pause while the page is not visible) | drawn
  * Messages out: ready (after init or a rebuild) | snapshot
+ *
+ * Snapshots are sent one at a time: the next one waits until the page says it
+ * has drawn the last ('drawn'). Without that the worker would post 60 a
+ * second whatever the page can take, and a page busy rebuilding its meshes
+ * would fall behind a queue it has to chew through before it feels the next
+ * click. Steps still run on time; only the sending waits.
  */
 import { DistanceField3D } from './distance-field.js';
 import { ExperimentSimulation } from './experiment-simulation.js';
@@ -30,6 +36,8 @@ let ticks = 0;
 let metrics = null;
 // Bumped when the engine is rebuilt: the page rebuilds its meshes to match.
 let generation = 0;
+// True while the page has a snapshot it has not drawn yet.
+let awaitingDrawn = false;
 
 function post(message, transfers = []) {
   self.postMessage(message, transfers);
@@ -45,9 +53,12 @@ function tick() {
   if (ticks % METRICS_EVERY === 0 || metrics === null) {
     metrics = simulation.metrics();
   }
-  const { data, transfers } = snapshotOf(simulation, { metrics });
-  data.generation = generation;
-  post({ type: 'snapshot', data }, transfers);
+  if (!awaitingDrawn) {
+    const { data, transfers } = snapshotOf(simulation, { metrics });
+    data.generation = generation;
+    awaitingDrawn = true;
+    post({ type: 'snapshot', data }, transfers);
+  }
   // Keep a steady cadence, and always yield: a step that overruns the frame
   // simply makes the next one late instead of starving the message queue.
   const elapsed = performance.now() - started;
@@ -80,6 +91,7 @@ function applyConfig(next, mode) {
   simulation.distanceField = distanceField;
   simulation.rebuild(config);
   generation += 1;
+  awaitingDrawn = false;
 }
 
 self.onmessage = (event) => {
@@ -122,10 +134,14 @@ self.onmessage = (event) => {
     case 'resetTiming':
       world.resetTiming(performance.now());
       break;
+    case 'drawn':
+      awaitingDrawn = false;
+      break;
     case 'running':
       // The page is hidden: stop stepping rather than burn a background CPU.
       if (message.value) {
         world.resetTiming(performance.now());
+        awaitingDrawn = false;
         start();
       } else {
         stop();

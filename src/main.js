@@ -521,6 +521,7 @@ async function bootstrap() {
     },
     reset: () => controller.reset(),
     metrics: () => sim.metrics(),
+    simStats: () => sim.stats(),
     goToTier,
     goHome: () => showRoute({ page: 'home' }, { push: true }),
   };
