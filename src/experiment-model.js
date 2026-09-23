@@ -294,13 +294,55 @@ export class RelationMatrix {
   }
 }
 
+/**
+ * How many cells the flat grid may allocate before the map is used instead.
+ * Four million cells is 16 MB of Int32 and only a configuration nobody runs
+ * reaches it — a tank ten times wider on every side while the perception
+ * radii shrink fivefold. The map has no bounds at all, so it is always there
+ * to fall back on.
+ */
+const MAX_GRID_CELLS = 4_000_000;
+
+/**
+ * Which fish are near which fish.
+ *
+ * Fish are filed into cells of the side of the widest radius any pair test
+ * uses, so every neighbour within that radius is in the fish's own cell or one
+ * of the 26 around it. That part has not changed.
+ *
+ * What the fish are filed into has. Cells used to be a Map keyed by the string
+ * `"3,-2,7"`: every one of the 27 lookups a fish makes built a string first,
+ * which at 680 fish and two passes is some thirty-seven thousand strings per
+ * step, all of them garbage immediately. Now the occupied cells are numbered
+ * and the fish indices sit in one flat array, sorted by cell, with a second
+ * array saying where each cell starts. Building it is a counting sort into
+ * arrays that are kept between steps, so a step allocates nothing.
+ *
+ * A fish's cell is still floor(x / cellSize), on the same lattice as before —
+ * the grid is only that lattice cropped to the box the fish occupy. So which
+ * fish share a cell, and the order neighbours are handed back in, are
+ * unchanged, and so is everything computed from them.
+ */
 export class SpatialHash3D {
   constructor(cellSize = 1) {
     this.cellSize = Math.max(EPSILON, cellSize);
+    // Only the fallback fills this now.
     this.cells = new Map();
     this.positions = null;
     this.alive = null;
     this.count = 0;
+    // The flat grid. `_grid` false means the last build used the map.
+    this._grid = false;
+    this._minX = 0;
+    this._minY = 0;
+    this._minZ = 0;
+    this._nx = 0;
+    this._ny = 0;
+    this._nz = 0;
+    this._cellCount = 0;
+    this._start = new Int32Array(0);
+    this._cursor = new Int32Array(0);
+    this._items = new Int32Array(0);
   }
 
   key(ix, iy, iz) {
@@ -317,10 +359,116 @@ export class SpatialHash3D {
   }
 
   build(positions, alive, count = alive.length) {
-    this.cells.clear();
     this.positions = positions;
     this.alive = alive;
     this.count = count;
+    const scale = 1 / this.cellSize;
+
+    // The box of cells the living fish occupy. A coordinate that is not finite
+    // has no cell, so that build goes to the map, which can key anything.
+    let minX = Infinity;
+    let minY = Infinity;
+    let minZ = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    let maxZ = -Infinity;
+    let live = 0;
+    for (let index = 0; index < count; index += 1) {
+      if (!alive[index]) continue;
+      const offset = index * 3;
+      const x = positions[offset];
+      const y = positions[offset + 1];
+      const z = positions[offset + 2];
+      if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
+        return this._buildMap(positions, alive, count);
+      }
+      const ix = Math.floor(x * scale);
+      const iy = Math.floor(y * scale);
+      const iz = Math.floor(z * scale);
+      if (ix < minX) minX = ix;
+      if (ix > maxX) maxX = ix;
+      if (iy < minY) minY = iy;
+      if (iy > maxY) maxY = iy;
+      if (iz < minZ) minZ = iz;
+      if (iz > maxZ) maxZ = iz;
+      live += 1;
+    }
+
+    this._grid = true;
+    this.cells.clear();
+    if (live === 0) {
+      this._cellCount = 0;
+      this._nx = 0;
+      this._ny = 0;
+      this._nz = 0;
+      return this;
+    }
+
+    const nx = maxX - minX + 1;
+    const ny = maxY - minY + 1;
+    const nz = maxZ - minZ + 1;
+    const cells = nx * ny * nz;
+    if (!Number.isFinite(cells) || cells > MAX_GRID_CELLS) {
+      return this._buildMap(positions, alive, count);
+    }
+
+    this._minX = minX;
+    this._minY = minY;
+    this._minZ = minZ;
+    this._nx = nx;
+    this._ny = ny;
+    this._nz = nz;
+    this._cellCount = cells;
+
+    if (this._start.length < cells + 1) {
+      this._start = new Int32Array(cells + 1);
+      this._cursor = new Int32Array(cells);
+    } else {
+      this._start.fill(0, 0, cells + 1);
+    }
+    if (this._items.length < live) this._items = new Int32Array(live);
+    const start = this._start;
+    const cursor = this._cursor;
+    const items = this._items;
+
+    // Counting sort: count each cell, turn the counts into starting offsets,
+    // then place the fish. Ascending fish index throughout, which is the order
+    // the map's buckets were filled in.
+    for (let index = 0; index < count; index += 1) {
+      if (!alive[index]) continue;
+      const offset = index * 3;
+      const cell =
+        ((Math.floor(positions[offset] * scale) - minX) * ny +
+          (Math.floor(positions[offset + 1] * scale) - minY)) *
+          nz +
+        (Math.floor(positions[offset + 2] * scale) - minZ);
+      start[cell + 1] += 1;
+    }
+    for (let cell = 0; cell < cells; cell += 1) {
+      start[cell + 1] += start[cell];
+      cursor[cell] = start[cell];
+    }
+    for (let index = 0; index < count; index += 1) {
+      if (!alive[index]) continue;
+      const offset = index * 3;
+      const cell =
+        ((Math.floor(positions[offset] * scale) - minX) * ny +
+          (Math.floor(positions[offset + 1] * scale) - minY)) *
+          nz +
+        (Math.floor(positions[offset + 2] * scale) - minZ);
+      items[cursor[cell]] = index;
+      cursor[cell] += 1;
+    }
+    return this;
+  }
+
+  /** The old map, kept for the cases the grid cannot take. */
+  _buildMap(positions, alive, count = alive.length) {
+    this.positions = positions;
+    this.alive = alive;
+    this.count = count;
+    this._grid = false;
+    this.cells.clear();
     for (let index = 0; index < count; index += 1) {
       if (!alive[index]) continue;
       const offset = index * 3;
@@ -342,6 +490,38 @@ export class SpatialHash3D {
 
   forEachCandidate(index, callback) {
     if (!this.alive[index]) return;
+    if (!this._grid) return this._mapCandidates(index, callback);
+    const offset = index * 3;
+    const scale = 1 / this.cellSize;
+    const cx = Math.floor(this.positions[offset] * scale) - this._minX;
+    const cy = Math.floor(this.positions[offset + 1] * scale) - this._minY;
+    const cz = Math.floor(this.positions[offset + 2] * scale) - this._minZ;
+    const nx = this._nx;
+    const ny = this._ny;
+    const nz = this._nz;
+    const start = this._start;
+    const items = this._items;
+    // Cells outside the grid hold no fish, so skipping them is the same as the
+    // map finding nothing there.
+    for (let x = cx - 1; x <= cx + 1; x += 1) {
+      if (x < 0 || x >= nx) continue;
+      for (let y = cy - 1; y <= cy + 1; y += 1) {
+        if (y < 0 || y >= ny) continue;
+        const row = (x * ny + y) * nz;
+        for (let z = cz - 1; z <= cz + 1; z += 1) {
+          if (z < 0 || z >= nz) continue;
+          const cell = row + z;
+          const end = start[cell + 1];
+          for (let i = start[cell]; i < end; i += 1) {
+            const other = items[i];
+            if (other !== index) callback(other);
+          }
+        }
+      }
+    }
+  }
+
+  _mapCandidates(index, callback) {
     const offset = index * 3;
     const [cx, cy, cz] = this.cellOf(
       this.positions[offset],
@@ -361,12 +541,54 @@ export class SpatialHash3D {
     }
   }
 
+  /**
+   * Every pair once, the lower index first.
+   *
+   * The cell walk is written out again rather than calling forEachCandidate,
+   * because this is the hottest loop in a step: going through it would build a
+   * closure per fish and add a call per candidate, and there are some three
+   * hundred thousand candidates in a step.
+   */
   forEachPair(callback) {
+    if (!this._grid) {
+      for (let index = 0; index < this.count; index += 1) {
+        if (!this.alive[index]) continue;
+        this._mapCandidates(index, (other) => {
+          if (other > index) callback(index, other);
+        });
+      }
+      return;
+    }
+    const positions = this.positions;
+    const alive = this.alive;
+    const scale = 1 / this.cellSize;
+    const nx = this._nx;
+    const ny = this._ny;
+    const nz = this._nz;
+    const start = this._start;
+    const items = this._items;
     for (let index = 0; index < this.count; index += 1) {
-      if (!this.alive[index]) continue;
-      this.forEachCandidate(index, (other) => {
-        if (other > index) callback(index, other);
-      });
+      if (!alive[index]) continue;
+      const offset = index * 3;
+      const cx = Math.floor(positions[offset] * scale) - this._minX;
+      const cy = Math.floor(positions[offset + 1] * scale) - this._minY;
+      const cz = Math.floor(positions[offset + 2] * scale) - this._minZ;
+      for (let x = cx - 1; x <= cx + 1; x += 1) {
+        if (x < 0 || x >= nx) continue;
+        for (let y = cy - 1; y <= cy + 1; y += 1) {
+          if (y < 0 || y >= ny) continue;
+          const row = (x * ny + y) * nz;
+          for (let z = cz - 1; z <= cz + 1; z += 1) {
+            if (z < 0 || z >= nz) continue;
+            const cell = row + z;
+            const end = start[cell + 1];
+            for (let i = start[cell]; i < end; i += 1) {
+              const other = items[i];
+              if (other > index) callback(index, other);
+            }
+          }
+        }
+      }
     }
   }
 }

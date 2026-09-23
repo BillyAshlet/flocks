@@ -9,6 +9,7 @@
     "preview": "vite preview --host",
     "test": "node --test",
     "fingerprint": "node tools/fingerprint.mjs",
+    "fingerprint:diff": "node tools/fingerprint.mjs --against",
     "protocol": "node tools/protocol-check.mjs"
   },
   "dependencies": {

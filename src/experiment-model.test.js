@@ -110,6 +110,85 @@ test('spatial hash finds adjacent-cell neighbors and emits each pair once', () =
   );
 });
 
+test('the grid and the map hand back exactly the same pairs', () => {
+  // The map is the fallback for inputs the grid cannot take, so the two have
+  // to agree. Random positions across several cells, including negative
+  // coordinates, which is where an off-by-one in the grid origin would show.
+  let seed = 20260923;
+  const random = () => {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    return seed / 0x100000000;
+  };
+  const fish = 240;
+  const positions = new Float32Array(fish * 3);
+  const alive = new Uint8Array(fish);
+  for (let index = 0; index < fish; index += 1) {
+    const offset = index * 3;
+    positions[offset] = random() * 6 - 3;
+    positions[offset + 1] = random() * 4 - 2;
+    positions[offset + 2] = random() * 5 - 2.5;
+    alive[index] = random() < 0.85 ? 1 : 0;
+  }
+
+  const collect = (hash) => {
+    const pairs = [];
+    hash.forEachPair((a, b) => pairs.push(`${a}-${b}`));
+    const candidates = [];
+    for (const index of [0, 7, 100, fish - 1]) {
+      const seen = [];
+      hash.forEachCandidate(index, (other) => seen.push(other));
+      candidates.push(seen.join(','));
+    }
+    return { pairs, candidates };
+  };
+
+  for (const cellSize of [0.3, 0.9, 2.5]) {
+    const grid = new SpatialHash3D(cellSize).build(positions, alive, fish);
+    const map = new SpatialHash3D(cellSize);
+    map._buildMap(positions, alive, fish);
+    const fromGrid = collect(grid);
+    const fromMap = collect(map);
+    assert.ok(grid._grid, `cell size ${cellSize} should use the grid`);
+    assert.ok(fromGrid.pairs.length > 0);
+    // Same pairs, in the same order: the order neighbours arrive in decides
+    // the order forces are summed, and float addition is not associative.
+    assert.deepEqual(fromGrid.pairs, fromMap.pairs, `pairs at cell size ${cellSize}`);
+    assert.deepEqual(
+      fromGrid.candidates,
+      fromMap.candidates,
+      `candidates at cell size ${cellSize}`
+    );
+  }
+});
+
+test('the grid steps aside for positions it cannot file', () => {
+  // A grid needs a box, and a position that is not a number has no cell to put
+  // it in, so that build falls back to the map rather than guessing a bound.
+  // The fish that do have positions still find each other; the one that does
+  // not is near nothing, which is what the map did before the grid existed.
+  const positions = new Float32Array([0.1, 0, 0, 0.2, 0, 0, Number.NaN, 0, 0]);
+  const alive = new Uint8Array([1, 1, 1]);
+  const hash = new SpatialHash3D(1).build(positions, alive, 3);
+  assert.equal(hash._grid, false, 'a position that is not finite has no cell');
+  const pairs = [];
+  hash.forEachPair((a, b) => pairs.push(`${a}-${b}`));
+  assert.deepEqual(pairs, ['0-1']);
+});
+
+test('an empty tank and a tank of one fish are both fine', () => {
+  const positions = new Float32Array([1.5, -2.5, 0.5]);
+  const empty = new SpatialHash3D(1).build(positions, new Uint8Array([0]), 1);
+  const pairs = [];
+  empty.forEachPair((a, b) => pairs.push(`${a}-${b}`));
+  empty.forEachCandidate(0, () => pairs.push('candidate'));
+  assert.deepEqual(pairs, []);
+
+  const alone = new SpatialHash3D(1).build(positions, new Uint8Array([1]), 1);
+  alone.forEachPair((a, b) => pairs.push(`${a}-${b}`));
+  alone.forEachCandidate(0, (other) => pairs.push(`${other}`));
+  assert.deepEqual(pairs, []);
+});
+
 test('main project derives predator and prey roles from live body size', () => {
   const config = createDefaultConfig();
   const [small, medium, large] = config.schools;
