@@ -32,7 +32,17 @@ const CAPTURE_FX_PARAMS = {
   biteGlowFalloff: 2.4,
 };
 
-const MAX_PARTICLES = 256;
+// How many particles the instance buffer holds. It is allocated once and
+// cannot grow, so it is also a hard ceiling on what can be drawn: asking WebGL
+// for more instances than the buffer holds does not draw the first few, it
+// rejects the whole draw call, and every particle disappears for that frame.
+// This was 256 while captureVfx.maxParticles defaulted to 600 (slider up to
+// 4000) and only the feeding path trimmed by the parameter instead of by this
+// constant, so a busy feeding burst made all the debris vanish exactly when it
+// mattered. It now matches the parameter's maximum. The buffer costs 76 bytes
+// per instance whether or not the particles exist: 4000 is about 300 KB, and a
+// larger buffer costs nothing per frame, since the work is per living particle.
+const MAX_PARTICLES = 4000;
 const EPSILON = 1e-8;
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
 const _matrix = new THREE.Matrix4();
@@ -363,9 +373,12 @@ export class CaptureVfx {
     return vec;
   }
 
-  /** Cap the particle count. */
+  /** Cap the particle count, never above what the instance buffer holds. */
   _trim() {
-    const cap = Math.max(32, Math.round(nonNegative(this.params?.maxParticles, 600)));
+    const cap = Math.min(
+      MAX_PARTICLES,
+      Math.max(32, Math.round(nonNegative(this.params?.maxParticles, 600)))
+    );
     if (this.particles.length > cap) {
       this.particles.splice(0, this.particles.length - cap);
     }
