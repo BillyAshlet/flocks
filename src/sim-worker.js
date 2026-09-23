@@ -36,6 +36,9 @@ let ticks = 0;
 let metrics = null;
 // Bumped when the engine is rebuilt: the page rebuilds its meshes to match.
 let generation = 0;
+// Which config the current state belongs to. Snapshots carry it so the page
+// never pairs arrays from one config with the schools of another.
+let configId = 0;
 // True while the page has a snapshot it has not drawn yet.
 let awaitingDrawn = false;
 
@@ -56,6 +59,7 @@ function tick() {
   if (!awaitingDrawn) {
     const { data, transfers } = snapshotOf(simulation, { metrics });
     data.generation = generation;
+    data.configId = configId;
     awaitingDrawn = true;
     post({ type: 'snapshot', data }, transfers);
   }
@@ -74,8 +78,9 @@ function stop() {
   timer = null;
 }
 
-function applyConfig(next, mode) {
+function applyConfig(next, mode, id) {
   config = next;
+  configId = id;
   if (mode === 'live' || mode === 'reset') {
     distanceField.config = config;
     simulation.setConfig(config, mode === 'live' ? 'live' : 'reset');
@@ -99,6 +104,7 @@ self.onmessage = (event) => {
   switch (message.type) {
     case 'init': {
       config = message.config;
+      configId = message.configId ?? 0;
       distanceField = new DistanceField3D(config);
       simulation = new ExperimentSimulation({ config, distanceField });
       world = new World();
@@ -109,7 +115,7 @@ self.onmessage = (event) => {
       break;
     }
     case 'config': {
-      applyConfig(message.config, message.mode);
+      applyConfig(message.config, message.mode, message.configId);
       world.resetTiming(performance.now());
       post({ type: 'ready' });
       break;

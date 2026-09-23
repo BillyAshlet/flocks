@@ -355,6 +355,9 @@ export class SchoolRenderer {
 
   _updateFish(view, dt) {
     if (!this.mesh) return;
+    // A step from before a rebuild can still be in hand; draw only what both
+    // the meshes and the step have.
+    const drawn = Math.min(view.count, this.mesh.count);
     const matrix = new THREE.Matrix4();
     const position = new THREE.Vector3();
     const quaternion = new THREE.Quaternion();
@@ -378,7 +381,7 @@ export class SchoolRenderer {
     const steps = dt / REFERENCE_STEP;
     const turnScale = 1 / steps;
     const smoothing = 1 - (1 - view.config.visual.bankingSmoothing) ** steps;
-    for (let index = 0; index < view.count; index += 1) {
+    for (let index = 0; index < drawn; index += 1) {
       let castsShadow = false;
       const offset = index * 3;
       position.set(

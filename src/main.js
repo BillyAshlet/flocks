@@ -192,11 +192,11 @@ async function bootstrap() {
       if (!result.valid) throw new Error(result.errors.join('\n'));
       current = deepClone(stage);
       if (mode !== 'live' && mode !== 'reset') syncTank(current);
-      const effect = sim.applyConfig(current, mode);
+      sim.applyConfig(current, mode);
       view = sim.view ?? view;
-      // A rebuild is picked up in the loop, when the first matching step
-      // arrives; until then the page keeps drawing the step it has.
-      if (effect !== 'rebuild') schoolRenderer.applyConfig(view);
+      // Both the rebuild and the new colors are picked up in the loop, when
+      // the first step built from this config arrives. Until then the page
+      // keeps drawing the step it has, with the config that step belongs to.
       if (mode === 'rebuildField') cameraController.exitView(true);
       if (result.warnings.length) {
         console.warn('[flocks config]', ...result.warnings);
@@ -539,6 +539,7 @@ async function bootstrap() {
   sim.setRunning(!document.hidden);
 
   let drawnGeneration = view.generation;
+  let drawnConfig = view.config;
   let lastFrame = performance.now();
   let lastPaperUpdate = 0;
   let smoothedFrameMs = 16.7;
@@ -557,8 +558,12 @@ async function bootstrap() {
     }) ?? view;
     if (view.generation !== drawnGeneration) {
       drawnGeneration = view.generation;
+      drawnConfig = view.config;
       schoolRenderer.rebuild(view);
       cameraController.onSimulationRebuilt(view);
+    } else if (view.config !== drawnConfig) {
+      drawnConfig = view.config;
+      schoolRenderer.applyConfig(view);
     }
     // Everyone reads the same step: the renderer, the camera and the visuals.
     cameraController.view = view;

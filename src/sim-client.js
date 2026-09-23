@@ -125,6 +125,12 @@ export class LocalSimClient {
 export class WorkerSimClient {
   constructor(config) {
     this.config = config;
+    // A snapshot is the state of one config. Until the worker answers with a
+    // step built from the new config, the page keeps drawing the old step
+    // with the old config; mixing the two crashes the renderer, because the
+    // school of a fish would be read from a list it does not belong to.
+    this.configId = 0;
+    this.configs = new Map([[0, config]]);
     this.view = null;
     this.lastMetrics = null;
     this.pacing = { timeScale: null, fixedDt: null };
@@ -151,7 +157,7 @@ export class WorkerSimClient {
         event.message ?? event
       );
     };
-    this.worker.postMessage({ type: 'init', config });
+    this.worker.postMessage({ type: 'init', config, configId: 0 });
   }
 
   _receive(message) {
@@ -160,7 +166,12 @@ export class WorkerSimClient {
     this.lastSnapshotMs = performance.now();
     this.snapshots += 1;
     if (message.data.metrics) this.lastMetrics = message.data.metrics;
-    this.view = viewFromSnapshot(message.data, this.config);
+    const id = message.data.configId ?? 0;
+    const config = this.configs.get(id) ?? this.config;
+    for (const key of this.configs.keys()) {
+      if (key < id) this.configs.delete(key);
+    }
+    this.view = viewFromSnapshot(message.data, config);
     this.view.generation = message.data.generation;
     this._resolveReady?.(this.view);
     this._resolveReady = null;
@@ -168,10 +179,14 @@ export class WorkerSimClient {
 
   applyConfig(config, mode = 'rebuildScene') {
     this.config = config;
-    this.worker.postMessage({ type: 'config', config, mode });
-    // The view keeps the arrays of the step already in hand; only the config
-    // it carries is replaced, so the page can redraw at once.
-    if (this.view) this.view.config = config;
+    this.configId += 1;
+    this.configs.set(this.configId, config);
+    this.worker.postMessage({
+      type: 'config',
+      config,
+      mode,
+      configId: this.configId,
+    });
     return mode === 'rebuildField' || mode === 'live' || mode === 'reset'
       ? 'config'
       : 'rebuild';
