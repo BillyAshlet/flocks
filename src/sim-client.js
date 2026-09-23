@@ -219,9 +219,33 @@ export class WorkerSimClient {
 /**
  * Workers are the default. `?worker=off` keeps the engine on the main thread,
  * which is the way to tell a worker problem from an engine one.
+ *
+ * The page cannot draw before the first step arrives, so a worker that never
+ * answers would hang the whole page. If none arrives within the timeout the
+ * engine runs on the main thread instead: slower under fast-forward, but a
+ * working page.
  */
-export function createSimClient(config, { search = '' } = {}) {
+export async function createSimClient(
+  config,
+  { search = '', timeoutMs = 4000 } = {}
+) {
   const wanted = new URLSearchParams(search).get('worker');
-  const useWorker = wanted !== 'off' && typeof Worker !== 'undefined';
-  return useWorker ? new WorkerSimClient(config) : new LocalSimClient(config);
+  if (wanted === 'off' || typeof Worker === 'undefined') {
+    return new LocalSimClient(config);
+  }
+  const client = new WorkerSimClient(config);
+  const timeout = new Promise((_, reject) => {
+    setTimeout(() => reject(new Error('no first step from the worker')), timeoutMs);
+  });
+  try {
+    await Promise.race([client.ready, timeout]);
+    return client;
+  } catch (error) {
+    console.error(
+      '[flocks] falling back to the main thread:',
+      error.message ?? error
+    );
+    client.dispose();
+    return new LocalSimClient(config);
+  }
 }

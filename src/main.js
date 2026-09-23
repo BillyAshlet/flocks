@@ -134,9 +134,11 @@ async function bootstrap() {
   );
   scene.children.at(-1).position.set(1.5, 2.2, 2.4);
 
-  const sim = createSimClient(current, { search: window.location.search });
-  // The first snapshot says how many fish there are; meshes wait for it.
-  let view = await sim.ready;
+  // The first step says how many fish there are, so the meshes wait for it.
+  const sim = await createSimClient(current, {
+    search: window.location.search,
+  });
+  let view = sim.view ?? (await sim.ready);
   // The engine only computes; this draws what it computed, once per frame.
   // `view` is that step seen from outside: the readers never touch the engine.
   const schoolRenderer = new SchoolRenderer(scene);
