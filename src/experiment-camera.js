@@ -37,6 +37,29 @@ export function cameraModeAfterEscape(mode) {
  * more and more asking. That also keeps pitch clear of straight up and down,
  * where lookAt has no answer.
  */
+/**
+ * The heading the camera frames from is filtered; the fish's own is not.
+ *
+ * A fish's heading is its velocity, and that moves with every tail beat and
+ * every nudge from a neighbour. Framing straight off it puts all of that in
+ * the picture. At rest it reads as the liveliness of a chase; the moment the
+ * view is swung round to look at the fish, it is just shake. This cuts what is
+ * fast and small and keeps what is a real turn — roughly a sixth of a second
+ * of memory, well under how long a fish takes to change its mind.
+ *
+ * The marker and ORBIT still use the true heading: they point at the fish, and
+ * pointing is not framing.
+ */
+const HEADING_SMOOTHING = 6;
+/**
+ * At rest the camera looks a little ahead of the fish, leaving room in front,
+ * the way a camera operator follows a runner. That lead is what the view turns
+ * around, though, so swinging the view round it puts the fish off to one side
+ * and the turn appears to pivot about a point in open water. The lead fades
+ * out as the view is swung, and the fish itself becomes the pivot.
+ */
+const LOOK_LEAD_FADE = 0.5;
+
 const LOOK_YAW_PER_PIXEL = 0.005;
 const LOOK_PITCH_PER_PIXEL = 0.004;
 const LOOK_YAW_LIMIT = Math.PI * 0.95;
@@ -115,6 +138,10 @@ export class ExperimentCameraController {
       releasedYaw: 0,
       releasedPitch: 0,
     };
+    // The filtered heading the chase camera frames from. Null until a fish is
+    // followed, and reset when the followed fish changes so the camera does
+    // not swing across the tank from the last one's heading.
+    this.smoothForward = null;
     this.raycaster = new THREE.Raycaster();
     this.pointer = new THREE.Vector2();
     this.previewCamera = new THREE.PerspectiveCamera(34, 1, 0.01, 10);
@@ -322,6 +349,9 @@ export class ExperimentCameraController {
     const fish = this.view.fish(index);
     if (!fish?.alive) return false;
     this.selected = index;
+    // A different fish has a different heading; starting from the last one's
+    // would swing the camera across the tank on the way to the new fish.
+    this.smoothForward = null;
     this.app.dataset.selectedFish = String(index);
     this.marker.visible = true;
     this.inspector.hidden = false;
@@ -544,9 +574,32 @@ export class ExperimentCameraController {
     look.pitch += (wantPitch - look.pitch) * alpha;
   }
 
+  /** Advance the filtered heading. Called once a frame, before the pose. */
+  _advanceHeading(fish, dt) {
+    const raw = new THREE.Vector3(...fish.velocity);
+    if (raw.lengthSq() < 1e-9) {
+      if (!this.smoothForward) this.smoothForward = FORWARD.clone();
+      return;
+    }
+    raw.normalize();
+    if (!this.smoothForward) {
+      this.smoothForward = raw;
+      return;
+    }
+    this.smoothForward.lerp(raw, dampAlpha(HEADING_SMOOTHING, dt));
+    if (this.smoothForward.lengthSq() < 1e-9) this.smoothForward.copy(raw);
+    else this.smoothForward.normalize();
+  }
+
   _closeupPose(fish) {
     const config = this.view.config.camera;
     const frame = this._fishFrame(fish);
+    // Frame from the filtered heading, not the fish's own.
+    if (this.smoothForward) {
+      frame.forward = this.smoothForward.clone();
+      const right = new THREE.Vector3().crossVectors(UP, frame.forward);
+      frame.right = right.lengthSq() < 1e-9 ? frame.right : right.normalize();
+    }
     const framingScale = Math.max(0.2, fish.school.size);
     // The camera swings around the fish rather than turning on the spot, so
     // the fish stays framed and it is the fish that is seen from elsewhere.
@@ -565,9 +618,13 @@ export class ExperimentCameraController {
       }
     }
     const cameraPosition = frame.position.clone().add(offset);
+    // The lead in front of the fish fades out as the view is swung, so what
+    // the camera turns around is the fish and not a point ahead of it.
+    const swung = Math.hypot(this.look.yaw, this.look.pitch);
+    const lead = Math.max(0, 1 - swung / LOOK_LEAD_FADE);
     const lookTarget = frame.position
       .clone()
-      .addScaledVector(frame.forward, config.lookAhead * 0.08);
+      .addScaledVector(frame.forward, config.lookAhead * 0.08 * lead);
     return { ...frame, cameraPosition, lookTarget };
   }
 
@@ -596,9 +653,12 @@ export class ExperimentCameraController {
 
   update(dt) {
     this._advanceLook(dt);
+    const before = this.selected;
     this._fallbackIfDead();
+    if (this.selected !== before) this.smoothForward = null;
     const fish = this.view.fish(this.selected);
     if (!fish?.alive) return;
+    this._advanceHeading(fish, dt);
     this._refreshLabels(fish);
     const config = this.view.config.camera;
     const frame = this._fishFrame(fish);
