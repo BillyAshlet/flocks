@@ -265,7 +265,7 @@ export function createTerminalPanel({ root, i18n, grid, terminal, bus, flock, ma
       const b = (PLAN.displayBin && PLAN.displayBin[ph]) || PLAN.bin || 1;
       const meters = (b * (grid.voxel || 0.6)).toFixed(1);
       const resEl = $('#tp-plan-res');
-      if (resEl) resEl.textContent = meters + 'm/格';
+      if (resEl) resEl.textContent = meters + 'm/cell';
     }
     drawPlan(flock && Number.isFinite(flock.time) ? flock.time : performance.now() / 1000);
 
