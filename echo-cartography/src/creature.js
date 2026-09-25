@@ -72,10 +72,6 @@ export class Creature {
     this.velocity = new Vec3();
     this.obstacles = obstacles;
     this.phase = seed * 2.7 + 0.3;
-    // when a human takes over, the whole autonomous-wander section is
-    // skipped — the velocity is written by the pilot, but obstacle
-    // avoidance still applies: driving should not go through walls either.
-    this.piloted = false;
     this._avoid = [0, 0, 0];
     this.reset(seed);
   }
@@ -96,66 +92,55 @@ export class Creature {
 
   step(dt) {
     const speed = CREATURE.speed;
-    // terrain avoidance applies in both autonomous and piloted mode —
-    // driving should not go through walls either. this step was missing
-    // before, and the creatures went straight through the rock.
+    // terrain avoidance is computed before the wander and folded into it
+    // below. this step was missing before, and the creatures went straight
+    // through the rock.
     const clearance = CREATURE.bodyRadius + CREATURE.avoidMargin;
     const urgency = boxAvoid(
       this.position.x, this.position.y, this.position.z,
       this.obstacles, clearance, this._avoid
     );
 
-    if (!this.piloted) {
-      this.phase += dt * CREATURE.turnRate;
-      const p = this.phase;
+    this.phase += dt * CREATURE.turnRate;
+    const p = this.phase;
 
-      // three sines with different periods summed — mutually prime
-      // frequencies do not repeat over a short cycle, so it looks like
-      // wandering rather than running a fixed route.
-      let dx = Math.cos(p * 1.0);
-      let dy = Math.sin(p * 0.37) * 0.35;
-      let dz = Math.sin(p * 0.73);
+    // three sines with different periods summed — mutually prime
+    // frequencies do not repeat over a short cycle, so it looks like
+    // wandering rather than running a fixed route.
+    let dx = Math.cos(p * 1.0);
+    let dy = Math.sin(p * 0.37) * 0.35;
+    let dz = Math.sin(p * 0.73);
 
-      // turn before hitting a wall: the closer to the wall, the stronger
-      // the opposing component
-      const hx = TANK.width / 2 - CREATURE.margin;
-      const hy = TANK.height / 2 - CREATURE.margin;
-      const hz = TANK.depth / 2 - CREATURE.margin;
-      const push = (v, half) => {
-        if (v > half) return -((v - half) / CREATURE.margin);
-        if (v < -half) return -((v + half) / CREATURE.margin);
-        return 0;
-      };
-      dx += push(this.position.x, hx) * 3;
-      dy += push(this.position.y, hy) * 3;
-      dz += push(this.position.z, hz) * 3;
+    // turn before hitting a wall: the closer to the wall, the stronger
+    // the opposing component
+    const hx = TANK.width / 2 - CREATURE.margin;
+    const hy = TANK.height / 2 - CREATURE.margin;
+    const hz = TANK.depth / 2 - CREATURE.margin;
+    const push = (v, half) => {
+      if (v > half) return -((v - half) / CREATURE.margin);
+      if (v < -half) return -((v + half) / CREATURE.margin);
+      return 0;
+    };
+    dx += push(this.position.x, hx) * 3;
+    dy += push(this.position.y, hy) * 3;
+    dz += push(this.position.z, hz) * 3;
 
-      // terrain avoidance carries the largest weight — it has to overpower
-      // the wander noise, otherwise it scrapes its way along the rock face
-      // and straight into it
-      const w = CREATURE.avoidWeight * urgency;
-      dx += this._avoid[0] * w;
-      dy += this._avoid[1] * w;
-      dz += this._avoid[2] * w;
+    // terrain avoidance carries the largest weight — it has to overpower
+    // the wander noise, otherwise it scrapes its way along the rock face
+    // and straight into it
+    const w = CREATURE.avoidWeight * urgency;
+    dx += this._avoid[0] * w;
+    dy += this._avoid[1] * w;
+    dz += this._avoid[2] * w;
 
-      const len = Math.hypot(dx, dy, dz) || 1;
-      // turn smoothly rather than snapping direction, otherwise the
-      // swarm's escape prediction (escapePredictionTime) points at a
-      // direction that will not exist by the next frame
-      const blend = Math.min(1, dt * 2.2);
-      this.velocity.x += ((dx / len) * speed - this.velocity.x) * blend;
-      this.velocity.y += ((dy / len) * speed - this.velocity.y) * blend;
-      this.velocity.z += ((dz / len) * speed - this.velocity.z) * blend;
-    } else if (urgency > 0) {
-      // piloted mode: do not take control away, just add a push-out
-      // velocity. overwriting velocity directly makes it feel like
-      // "bouncing off after hitting the wall", which is unpleasant; adding
-      // it instead reads as "sliding along the wall".
-      const w = speed * urgency;
-      this.velocity.x += this._avoid[0] * w * dt * 6;
-      this.velocity.y += this._avoid[1] * w * dt * 6;
-      this.velocity.z += this._avoid[2] * w * dt * 6;
-    }
+    const len = Math.hypot(dx, dy, dz) || 1;
+    // turn smoothly rather than snapping direction, otherwise the
+    // swarm's escape prediction (escapePredictionTime) points at a
+    // direction that will not exist by the next frame
+    const blend = Math.min(1, dt * 2.2);
+    this.velocity.x += ((dx / len) * speed - this.velocity.x) * blend;
+    this.velocity.y += ((dy / len) * speed - this.velocity.y) * blend;
+    this.velocity.z += ((dz / len) * speed - this.velocity.z) * blend;
 
     this.position.x += this.velocity.x * dt;
     this.position.y += this.velocity.y * dt;
