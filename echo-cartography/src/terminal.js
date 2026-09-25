@@ -3,9 +3,9 @@
 // phases: ROAM → PLAN → FRONTIER → RECALL
 //   ROAM     free roam; coarse plan-view coverage stalls or hits its
 //            target → PLAN
-//   PLAN     fill the gaps in the fine plan view (columns and pits are not
-//            distinguished); fine coverage stalls, hits its target, or
-//            times out → FRONTIER
+//   PLAN     fill the gaps in the fine plan view -- a gap is a gap, whether
+//            it is a column, a pit or a shore, and all of them get visited;
+//            fine coverage stalls, hits its target, or times out → FRONTIER
 //   FRONTIER coarse cells that are free ∩ unknown; assignable clusters
 //            exhausted → RECALL
 //

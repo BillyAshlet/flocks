@@ -112,8 +112,11 @@ function rayBoundsInside(ox, oy, oz, dx, dy, dz, maxT, bx, outNormal) {
 // exported so the terminal can reuse it: the event carries only the
 // heading and the half-angle, and this function recomputes the five ray
 // directions at each end. the directions are derivable, so they do not
-// have to be uploaded -- that is exactly why packing an event saves 3x the
-// bandwidth. both ends share the same function, so they cannot drift apart.
+// have to be uploaded -- that is what packing an event saves. measured, it
+// is 1.06x in bytes, not the 3x this comment used to claim (see eventBus.js:
+// only 1.22 of the five rays hit on average, and the 3x figure assumed all
+// five did); the real gain is that the misses then travel for free.
+// both ends share the same function, so they cannot drift apart.
 
 // pack an axis-aligned normal into 1 byte. an AABB or an inner wall has
 // only 6 possibilities; a sphere normal is approximated by its dominant axis.
@@ -535,7 +538,11 @@ export class RaySensor {
     // five times over. same story for the directions: the orientation of
     // the five rays is fully determined by the heading plus the fan
     // geometry, so it is derivable and does not need to be sent at all.
-    // packed, one emission drops from 5x32 = 160 bytes to 52 bytes.
+    // with all five rays hitting, packed, one emission drops from 5x32 =
+    // 160 bytes to 52 bytes. that best case is not what happens: measured,
+    // 1.22 rays hit per emission, so it is 39.1 bytes down to 36.9 -- the
+    // saving in bytes is 1.06x, and the point is the free-space evidence
+    // that comes with it (eventBus.js has the numbers).
     //
     // this is not a trick: a real sonar sends one packet of beams per ping
     // anyway, not one packet per beam.
