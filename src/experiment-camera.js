@@ -753,7 +753,13 @@ export class ExperimentCameraController {
       .addScaledVector(UP, config.closeupHeight * framingScale);
     if (this.look.yaw !== 0) offset.applyAxisAngle(UP, this.look.yaw);
     if (this.look.pitch !== 0) {
-      const pitchAxis = new THREE.Vector3().crossVectors(UP, offset);
+      // offset x UP, not UP x offset. The axis is taken from the offset, and
+      // this offset points behind the fish where ORBIT's points in front, so
+      // taking it the other way round turned pitch against ORBIT and against
+      // the tank view: dragging down looked up. Yaw was unharmed — turning
+      // about the vertical axis goes the same way round the fish wherever the
+      // camera starts.
+      const pitchAxis = new THREE.Vector3().crossVectors(offset, UP);
       if (pitchAxis.lengthSq() > 1e-9) {
         offset.applyAxisAngle(pitchAxis.normalize(), this.look.pitch);
       }
