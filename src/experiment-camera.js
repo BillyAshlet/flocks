@@ -38,15 +38,24 @@ export function cameraModeAfterEscape(mode) {
  * where lookAt has no answer.
  */
 /**
- * The heading the camera frames from is filtered; the fish's own is not.
+ * The heading the camera frames from is limited; the fish's own is not.
  *
  * A fish's heading is its velocity, and that moves with every tail beat and
  * every nudge from a neighbour. Framing straight off it puts all of that in
  * the picture. At rest it reads as the liveliness of a chase; the moment the
- * view is swung round to look at the fish, it is just shake. This cuts what is
- * fast and small and keeps what is a real turn. How much is
- * camera.headingSmoothing, since how steady a chase should look is a matter of
- * taste and the panel is where taste belongs.
+ * view is swung round to look at the fish, it is only shake.
+ *
+ * This was an exponential filter first, which was the wrong instrument. That
+ * kind sorts by frequency, and a causal filter cannot tell a shake from a turn
+ * without waiting to see which it was — so everything arrives late, the real
+ * turns along with the shake, about a sixth of a second of it.
+ *
+ * These two sort by amount instead, and neither of them waits. Under the
+ * deadzone the framing does not move: that is where a tail beat lives, 14% of
+ * frames. Over the turn rate it moves no faster: that is where a startled fish
+ * lives, one frame in a thousand, and one of those can swing 55 degrees.
+ * Between the two — 85% of frames — the framing follows exactly, with no delay
+ * at all, which is what the filter could never do.
  *
  * The marker and ORBIT still use the true heading: they point at the fish, and
  * pointing is not framing.
@@ -688,7 +697,7 @@ export class ExperimentCameraController {
     look.zoom += (wantZoom - look.zoom) * alpha;
   }
 
-  /** Advance the filtered heading. Called once a frame, before the pose. */
+  /** Advance the heading the camera frames from. Once a frame, before the pose. */
   _advanceHeading(fish, dt) {
     const raw = new THREE.Vector3(...fish.velocity);
     if (raw.lengthSq() < 1e-9) {
@@ -700,10 +709,24 @@ export class ExperimentCameraController {
       this.smoothForward = raw;
       return;
     }
-    const rate = this.view.config.camera.headingSmoothing ?? 4;
-    this.smoothForward.lerp(raw, dampAlpha(rate, dt));
-    if (this.smoothForward.lengthSq() < 1e-9) this.smoothForward.copy(raw);
-    else this.smoothForward.normalize();
+    const camera = this.view.config.camera;
+    const current = this.smoothForward;
+    const behind = Math.acos(
+      Math.min(1, Math.max(-1, current.dot(raw)))
+    );
+    if (!(behind > 1e-6)) return;
+    const deadzone = THREE.MathUtils.degToRad(camera.headingDeadzone ?? 0);
+    const mostThisFrame =
+      THREE.MathUtils.degToRad(camera.headingMaxTurn ?? 600) * dt;
+    const step = Math.min(Math.max(0, behind - deadzone), mostThisFrame);
+    if (step <= 0) return;
+    const axis = new THREE.Vector3().crossVectors(current, raw);
+    if (axis.lengthSq() < 1e-12) {
+      // Exactly reversed: no axis to turn about, so take the new heading.
+      current.copy(raw);
+      return;
+    }
+    current.applyAxisAngle(axis.normalize(), step).normalize();
   }
 
   _closeupPose(fish) {

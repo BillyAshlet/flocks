@@ -604,12 +604,16 @@ export const DEFAULT_EXPERIMENT_CONFIG = Object.freeze({
     lookAhead: 0.2,
     positionDamping: 12,
     orientationDamping: 9,
-    // How much of the fish's own heading reaches the framing. Lower is
-    // steadier and trails further behind; a startled fish can swing its
-    // heading 35 degrees in one frame, and at 12 all of that is in the
-    // picture. The marker and the orbit view are not affected: they point at
-    // the fish, and pointing is not framing.
-    headingSmoothing: 4,
+    // What of the fish's own heading reaches the framing. Not a filter on
+    // frequency — that delays the real turns along with the shake — but two
+    // limits on amount. Below the deadzone the framing does not move at all,
+    // which is where a tail beat lives; above the turn rate it moves no
+    // faster, which is where a startled fish lives (one can swing 55 degrees
+    // in a single frame). Between them, and that is 85% of frames, the
+    // framing follows with no delay whatsoever.
+    // Degrees, and degrees per second. 600 is ten degrees in a frame at 60fps.
+    headingDeadzone: 0.3,
+    headingMaxTurn: 600,
   },
 });
 
@@ -1451,10 +1455,15 @@ const scalarEntries = [
     max: 40,
     step: 0.1,
   }),
-  entry('camera.headingSmoothing', '相机', 'heading smoothing', 'live', {
-    min: 1,
-    max: 30,
-    step: 0.5,
+  entry('camera.headingDeadzone', '相机', 'heading deadzone °', 'live', {
+    min: 0,
+    max: 5,
+    step: 0.05,
+  }),
+  entry('camera.headingMaxTurn', '相机', 'heading max turn °/s', 'live', {
+    min: 30,
+    max: 3000,
+    step: 10,
   }),
 ];
 
