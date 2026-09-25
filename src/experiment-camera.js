@@ -44,13 +44,13 @@ export function cameraModeAfterEscape(mode) {
  * every nudge from a neighbour. Framing straight off it puts all of that in
  * the picture. At rest it reads as the liveliness of a chase; the moment the
  * view is swung round to look at the fish, it is just shake. This cuts what is
- * fast and small and keeps what is a real turn — roughly a sixth of a second
- * of memory, well under how long a fish takes to change its mind.
+ * fast and small and keeps what is a real turn. How much is
+ * camera.headingSmoothing, since how steady a chase should look is a matter of
+ * taste and the panel is where taste belongs.
  *
  * The marker and ORBIT still use the true heading: they point at the fish, and
  * pointing is not framing.
  */
-const HEADING_SMOOTHING = 6;
 /**
  * At rest the camera looks a little ahead of the fish, leaving room in front,
  * the way a camera operator follows a runner. That lead is what the view turns
@@ -59,6 +59,21 @@ const HEADING_SMOOTHING = 6;
  * out as the view is swung, and the fish itself becomes the pivot.
  */
 const LOOK_LEAD_FADE = 0.5;
+/**
+ * Leaning in, on the same terms as looking around: the wheel, or two fingers
+ * on a trackpad, pull the camera closer or push it back, and it returns after
+ * the same half-second hold.
+ *
+ * This moves the camera rather than changing the focal length, which is the
+ * opposite of ORBIT. ORBIT is parked in to compare two body sizes, so its
+ * proportions have to stay put; this always comes back, so there is no wrong
+ * proportion to be left stranded at, and stepping closer to a fish is what the
+ * gesture means here.
+ */
+const ZOOM_PER_DELTA = 0.0016;
+// exp(0.8) and exp(-0.8): between two and a half times out and a little under
+// half way in, which stays clear of the near plane at the smallest body size.
+const ZOOM_LIMIT = 0.8;
 
 const LOOK_YAW_PER_PIXEL = 0.005;
 const LOOK_PITCH_PER_PIXEL = 0.004;
@@ -135,8 +150,11 @@ export class ExperimentCameraController {
       rawPitch: 0,
       heldFor: 0,
       dragging: false,
+      zoom: 0,
+      rawZoom: 0,
       releasedYaw: 0,
       releasedPitch: 0,
+      releasedZoom: 0,
     };
     // The filtered heading the chase camera frames from. Null until a fish is
     // followed, and reset when the followed fish changes so the camera does
@@ -276,7 +294,10 @@ export class ExperimentCameraController {
       const wasMoved = this.dragStart?.moved;
       this.dragPointer = null;
       this.dragStart = null;
-      if (this.look.dragging) this._releaseLook();
+      if (this.look.dragging) {
+        this.look.dragging = false;
+        this._releaseLook();
+      }
       canvas.releasePointerCapture?.(event.pointerId);
       if (!wasMoved && this.mode === CAMERA_MODE.GLOBAL) {
         this._handleClick(event);
@@ -285,7 +306,16 @@ export class ExperimentCameraController {
     canvas.addEventListener(
       'wheel',
       (event) => {
-        if (!this.interactionEnabled || this.mode !== CAMERA_MODE.ORBIT) return;
+        if (!this.interactionEnabled) return;
+        if (this._looksAround()) {
+          // A trackpad's two fingers and a mouse wheel arrive the same way;
+          // a pinch arrives as one too, with ctrlKey set.
+          event.preventDefault();
+          this.look.rawZoom += event.deltaY * ZOOM_PER_DELTA;
+          this._releaseLook();
+          return;
+        }
+        if (this.mode !== CAMERA_MODE.ORBIT) return;
         event.preventDefault();
         this.orbit.fov = clampNumber(
           this._orbitFov() * Math.exp(event.deltaY * ORBIT_ZOOM_PER_DELTA),
@@ -412,6 +442,7 @@ export class ExperimentCameraController {
       };
     }
     this.mode = mode;
+    this.look.dragging = false;
     this._releaseLook();
     this.app.dataset.cameraMode = mode;
     this.inspector.hidden = true;
@@ -541,12 +572,17 @@ export class ExperimentCameraController {
     );
   }
 
-  /** Let go: hold where it was left, then start the swing back from there. */
+  /**
+   * Restart the hold from wherever the view is now. Called when a drag ends
+   * and on every scroll, so a gesture that keeps going keeps holding; it
+   * leaves `dragging` alone, since scrolling in the middle of a drag should
+   * not end the drag.
+   */
   _releaseLook() {
-    this.look.dragging = false;
     this.look.heldFor = 0;
     this.look.releasedYaw = this.look.rawYaw;
     this.look.releasedPitch = this.look.rawPitch;
+    this.look.releasedZoom = this.look.rawZoom;
   }
 
   _advanceLook(dt) {
@@ -561,6 +597,7 @@ export class ExperimentCameraController {
         const remaining = 0.5 * (1 + Math.cos(Math.PI * t));
         look.rawYaw = look.releasedYaw * remaining;
         look.rawPitch = look.releasedPitch * remaining;
+        look.rawZoom = look.releasedZoom * remaining;
       }
     }
     // Saturate, then smooth. The tanh is what makes the far side of the fish
@@ -569,9 +606,11 @@ export class ExperimentCameraController {
     const wantYaw = LOOK_YAW_LIMIT * Math.tanh(look.rawYaw / LOOK_YAW_LIMIT);
     const wantPitch =
       LOOK_PITCH_LIMIT * Math.tanh(look.rawPitch / LOOK_PITCH_LIMIT);
+    const wantZoom = ZOOM_LIMIT * Math.tanh(look.rawZoom / ZOOM_LIMIT);
     const alpha = dampAlpha(LOOK_SMOOTHING, dt);
     look.yaw += (wantYaw - look.yaw) * alpha;
     look.pitch += (wantPitch - look.pitch) * alpha;
+    look.zoom += (wantZoom - look.zoom) * alpha;
   }
 
   /** Advance the filtered heading. Called once a frame, before the pose. */
@@ -586,7 +625,8 @@ export class ExperimentCameraController {
       this.smoothForward = raw;
       return;
     }
-    this.smoothForward.lerp(raw, dampAlpha(HEADING_SMOOTHING, dt));
+    const rate = this.view.config.camera.headingSmoothing ?? 4;
+    this.smoothForward.lerp(raw, dampAlpha(rate, dt));
     if (this.smoothForward.lengthSq() < 1e-9) this.smoothForward.copy(raw);
     else this.smoothForward.normalize();
   }
@@ -600,7 +640,10 @@ export class ExperimentCameraController {
       const right = new THREE.Vector3().crossVectors(UP, frame.forward);
       frame.right = right.lengthSq() < 1e-9 ? frame.right : right.normalize();
     }
-    const framingScale = Math.max(0.2, fish.school.size);
+    // Zoom scales the whole framing offset, so the camera keeps its angle on
+    // the fish and only its distance changes.
+    const framingScale =
+      Math.max(0.2, fish.school.size) * Math.exp(this.look.zoom);
     // The camera swings around the fish rather than turning on the spot, so
     // the fish stays framed and it is the fish that is seen from elsewhere.
     const offset = new THREE.Vector3()

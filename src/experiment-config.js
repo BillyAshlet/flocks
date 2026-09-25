@@ -604,6 +604,12 @@ export const DEFAULT_EXPERIMENT_CONFIG = Object.freeze({
     lookAhead: 0.2,
     positionDamping: 12,
     orientationDamping: 9,
+    // How much of the fish's own heading reaches the framing. Lower is
+    // steadier and trails further behind; a startled fish can swing its
+    // heading 35 degrees in one frame, and at 12 all of that is in the
+    // picture. The marker and the orbit view are not affected: they point at
+    // the fish, and pointing is not framing.
+    headingSmoothing: 4,
   },
 });
 
@@ -1444,6 +1450,11 @@ const scalarEntries = [
     min: 0.1,
     max: 40,
     step: 0.1,
+  }),
+  entry('camera.headingSmoothing', '相机', 'heading smoothing', 'live', {
+    min: 1,
+    max: 30,
+    step: 0.5,
   }),
 ];
 
