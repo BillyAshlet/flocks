@@ -19,6 +19,36 @@ export function cameraModeAfterEscape(mode) {
   return mode === CAMERA_MODE.GLOBAL ? CAMERA_MODE.GLOBAL : CAMERA_MODE.GLOBAL;
 }
 
+/**
+ * Looking around from a chase camera, without leaving it.
+ *
+ * CLOSEUP and FOLLOW point where the fish points, which is the whole idea and
+ * also means there is no way to glance at a fish from the side without
+ * switching to ORBIT and losing the chase. Dragging now swings the camera
+ * around the fish and letting go brings it back, so a glance costs a gesture
+ * instead of a mode.
+ *
+ * ORBIT still earns its place: this returns, deliberately, and comparing two
+ * body sizes needs a view that stays where it was put.
+ *
+ * There is no angle the drag stops at. Instead the raw drag is pulled through
+ * a tanh, so the first pixels move the view most and each further pixel moves
+ * it less: the view can be swung all the way behind the fish, it just takes
+ * more and more asking. That also keeps pitch clear of straight up and down,
+ * where lookAt has no answer.
+ */
+const LOOK_YAW_PER_PIXEL = 0.005;
+const LOOK_PITCH_PER_PIXEL = 0.004;
+const LOOK_YAW_LIMIT = Math.PI * 0.95;
+const LOOK_PITCH_LIMIT = 1.25;
+// Let go and the view holds where it was left, then swings back. Returning at
+// once feels like the view is taken away the moment the fish is interesting.
+const LOOK_HOLD_SECONDS = 0.5;
+const LOOK_RETURN_SECONDS = 1;
+// The angles the camera is posed from follow the dragged ones through this, so
+// a shaky hand or a coarse mouse does not shake the picture.
+const LOOK_SMOOTHING = 14;
+
 const ORBIT_YAW_PER_PIXEL = 0.0065;
 const ORBIT_PITCH_PER_PIXEL = 0.0055;
 const ORBIT_PITCH_LIMIT = 1.45; // just under π/2, so lookAt does not degenerate straight above or below
@@ -71,6 +101,20 @@ export class ExperimentCameraController {
     // fish's heading. distance only sets the camera position on entering ORBIT and then
     // stays fixed; zoom goes through fov.
     this.orbit = { yaw: 0, pitch: 0.28, distance: 0.9, fov: null };
+    // Looking around from the chase camera. `rawYaw`/`rawPitch` are what the
+    // pointer has asked for and are unbounded; `yaw`/`pitch` are what the
+    // camera is posed from, smoothed and saturated. `returning` runs from 0 to
+    // 1 over LOOK_RETURN_SECONDS once the hold is over.
+    this.look = {
+      yaw: 0,
+      pitch: 0,
+      rawYaw: 0,
+      rawPitch: 0,
+      heldFor: 0,
+      dragging: false,
+      releasedYaw: 0,
+      releasedPitch: 0,
+    };
     this.raycaster = new THREE.Raycaster();
     this.pointer = new THREE.Vector2();
     this.previewCamera = new THREE.PerspectiveCamera(34, 1, 0.01, 10);
@@ -153,11 +197,7 @@ export class ExperimentCameraController {
   _bindEvents() {
     const canvas = this.renderer.domElement;
     canvas.addEventListener('pointerdown', (event) => {
-      if (
-        !this.interactionEnabled ||
-        event.button !== 0 ||
-        (this.mode !== CAMERA_MODE.GLOBAL && this.mode !== CAMERA_MODE.ORBIT)
-      ) {
+      if (!this.interactionEnabled || event.button !== 0 || !this._dragMode()) {
         return;
       }
       this.dragPointer = event.pointerId;
@@ -166,6 +206,7 @@ export class ExperimentCameraController {
         y: event.clientY,
         moved: false,
       };
+      if (this._looksAround()) this.look.dragging = true;
       canvas.setPointerCapture?.(event.pointerId);
     });
     canvas.addEventListener('pointermove', (event) => {
@@ -184,6 +225,16 @@ export class ExperimentCameraController {
         );
         return;
       }
+      if (this._looksAround()) {
+        const dx = event.clientX - this.dragStart.x;
+        const dy = event.clientY - this.dragStart.y;
+        this.dragStart.x = event.clientX;
+        this.dragStart.y = event.clientY;
+        this.dragStart.moved = true;
+        this.look.rawYaw -= dx * LOOK_YAW_PER_PIXEL;
+        this.look.rawPitch += dy * LOOK_PITCH_PER_PIXEL;
+        return;
+      }
       if (
         Math.hypot(
           event.clientX - this.dragStart.x,
@@ -198,6 +249,7 @@ export class ExperimentCameraController {
       const wasMoved = this.dragStart?.moved;
       this.dragPointer = null;
       this.dragStart = null;
+      if (this.look.dragging) this._releaseLook();
       canvas.releasePointerCapture?.(event.pointerId);
       if (!wasMoved && this.mode === CAMERA_MODE.GLOBAL) {
         this._handleClick(event);
@@ -330,6 +382,7 @@ export class ExperimentCameraController {
       };
     }
     this.mode = mode;
+    this._releaseLook();
     this.app.dataset.cameraMode = mode;
     this.inspector.hidden = true;
     this.marker.visible = true;
@@ -442,18 +495,76 @@ export class ExperimentCameraController {
     return { position, forward, right };
   }
 
+  /** Modes that answer a drag at all. */
+  _dragMode() {
+    return (
+      this.mode === CAMERA_MODE.GLOBAL ||
+      this.mode === CAMERA_MODE.ORBIT ||
+      this._looksAround()
+    );
+  }
+
+  /** The chase views, where a drag is a glance the camera returns from. */
+  _looksAround() {
+    return (
+      this.mode === CAMERA_MODE.CLOSEUP || this.mode === CAMERA_MODE.FOLLOW
+    );
+  }
+
+  /** Let go: hold where it was left, then start the swing back from there. */
+  _releaseLook() {
+    this.look.dragging = false;
+    this.look.heldFor = 0;
+    this.look.releasedYaw = this.look.rawYaw;
+    this.look.releasedPitch = this.look.rawPitch;
+  }
+
+  _advanceLook(dt) {
+    const look = this.look;
+    if (!look.dragging) {
+      look.heldFor += dt;
+      const returning = look.heldFor - LOOK_HOLD_SECONDS;
+      if (returning > 0) {
+        // Cosine, so the swing back leaves and arrives at rest instead of
+        // starting at full speed the instant the hold is over.
+        const t = Math.min(1, returning / LOOK_RETURN_SECONDS);
+        const remaining = 0.5 * (1 + Math.cos(Math.PI * t));
+        look.rawYaw = look.releasedYaw * remaining;
+        look.rawPitch = look.releasedPitch * remaining;
+      }
+    }
+    // Saturate, then smooth. The tanh is what makes the far side of the fish
+    // expensive to reach rather than impossible; the smoothing is what keeps a
+    // jittery pointer out of the picture.
+    const wantYaw = LOOK_YAW_LIMIT * Math.tanh(look.rawYaw / LOOK_YAW_LIMIT);
+    const wantPitch =
+      LOOK_PITCH_LIMIT * Math.tanh(look.rawPitch / LOOK_PITCH_LIMIT);
+    const alpha = dampAlpha(LOOK_SMOOTHING, dt);
+    look.yaw += (wantYaw - look.yaw) * alpha;
+    look.pitch += (wantPitch - look.pitch) * alpha;
+  }
+
   _closeupPose(fish) {
     const config = this.view.config.camera;
     const frame = this._fishFrame(fish);
     const framingScale = Math.max(0.2, fish.school.size);
-    const cameraPosition = frame.position
-      .clone()
+    // The camera swings around the fish rather than turning on the spot, so
+    // the fish stays framed and it is the fish that is seen from elsewhere.
+    const offset = new THREE.Vector3()
       .addScaledVector(
         frame.forward,
         -config.closeupDistance * framingScale
       )
       .addScaledVector(frame.right, config.closeupSide * framingScale)
       .addScaledVector(UP, config.closeupHeight * framingScale);
+    if (this.look.yaw !== 0) offset.applyAxisAngle(UP, this.look.yaw);
+    if (this.look.pitch !== 0) {
+      const pitchAxis = new THREE.Vector3().crossVectors(UP, offset);
+      if (pitchAxis.lengthSq() > 1e-9) {
+        offset.applyAxisAngle(pitchAxis.normalize(), this.look.pitch);
+      }
+    }
+    const cameraPosition = frame.position.clone().add(offset);
     const lookTarget = frame.position
       .clone()
       .addScaledVector(frame.forward, config.lookAhead * 0.08);
@@ -484,6 +595,7 @@ export class ExperimentCameraController {
   }
 
   update(dt) {
+    this._advanceLook(dt);
     this._fallbackIfDead();
     const fish = this.view.fish(this.selected);
     if (!fish?.alive) return;
