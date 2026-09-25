@@ -58,7 +58,21 @@ export function cameraModeAfterEscape(mode) {
  * and the turn appears to pivot about a point in open water. The lead fades
  * out as the view is swung, and the fish itself becomes the pivot.
  */
-const LOOK_LEAD_FADE = 0.5;
+const LOOK_LEAD_FADE = 0.12;
+/**
+ * While the view is being swung, the camera is posed with this much more of
+ * its damping.
+ *
+ * At rest the lag is the point: it is what makes a chase look handheld rather
+ * than bolted on. Under a drag it is the opposite. The look angle is filtered,
+ * then the camera's position is eased toward the pose, then its orientation —
+ * about a quarter of a second end to end, and the fish swims on through all of
+ * it, so the swing traced a spiral around where the fish used to be instead of
+ * a circle around the fish. Stiffening while the view is away and relaxing as
+ * it returns keeps both.
+ */
+const LOOK_STIFFNESS = 4;
+
 /**
  * Leaning in, on the same terms as looking around: the wheel, or two fingers
  * on a trackpad, pull the camera closer or push it back, and it returns after
@@ -160,6 +174,8 @@ export class ExperimentCameraController {
     // followed, and reset when the followed fish changes so the camera does
     // not swing across the tank from the last one's heading.
     this.smoothForward = null;
+    // The look drag in progress, whichever surface started it.
+    this.lookDrag = null;
     this.raycaster = new THREE.Raycaster();
     this.pointer = new THREE.Vector2();
     this.previewCamera = new THREE.PerspectiveCamera(34, 1, 0.01, 10);
@@ -211,6 +227,34 @@ export class ExperimentCameraController {
       </div>
     `;
     (document.getElementById('stage') ?? document.getElementById('app')).appendChild(inspector);
+    const viewport = inspector.querySelector('#fish-preview-viewport');
+    viewport.addEventListener('pointerdown', (event) => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      this.lookDrag = { x: event.clientX, y: event.clientY, moved: false };
+      this.look.dragging = true;
+      viewport.setPointerCapture?.(event.pointerId);
+    });
+    viewport.addEventListener('pointermove', (event) => {
+      if (this.lookDrag) this._lookDragMove(event);
+    });
+    const endInsetDrag = (event) => {
+      if (!this.lookDrag) return;
+      this.lookDrag = null;
+      this.look.dragging = false;
+      this._releaseLook();
+      viewport.releasePointerCapture?.(event.pointerId);
+    };
+    viewport.addEventListener('pointerup', endInsetDrag);
+    viewport.addEventListener('pointercancel', endInsetDrag);
+    viewport.addEventListener(
+      'wheel',
+      (event) => {
+        event.preventDefault();
+        this._lookZoom(event.deltaY);
+      },
+      { passive: false }
+    );
     inspector
       .querySelector('#fish-inspector-close')
       .addEventListener('click', () => this.clearSelection());
@@ -271,13 +315,8 @@ export class ExperimentCameraController {
         return;
       }
       if (this._looksAround()) {
-        const dx = event.clientX - this.dragStart.x;
-        const dy = event.clientY - this.dragStart.y;
-        this.dragStart.x = event.clientX;
-        this.dragStart.y = event.clientY;
-        this.dragStart.moved = true;
-        this.look.rawYaw -= dx * LOOK_YAW_PER_PIXEL;
-        this.look.rawPitch += dy * LOOK_PITCH_PER_PIXEL;
+        this.lookDrag = this.dragStart;
+        this._lookDragMove(event);
         return;
       }
       if (
@@ -296,6 +335,7 @@ export class ExperimentCameraController {
       this.dragStart = null;
       if (this.look.dragging) {
         this.look.dragging = false;
+        this.lookDrag = null;
         this._releaseLook();
       }
       canvas.releasePointerCapture?.(event.pointerId);
@@ -311,8 +351,7 @@ export class ExperimentCameraController {
           // A trackpad's two fingers and a mouse wheel arrive the same way;
           // a pinch arrives as one too, with ctrlKey set.
           event.preventDefault();
-          this.look.rawZoom += event.deltaY * ZOOM_PER_DELTA;
-          this._releaseLook();
+          this._lookZoom(event.deltaY);
           return;
         }
         if (this.mode !== CAMERA_MODE.ORBIT) return;
@@ -556,6 +595,30 @@ export class ExperimentCameraController {
     return { position, forward, right };
   }
 
+  /**
+   * The look gesture, shared by the main canvas and the little specimen view.
+   *
+   * The inset is the only sight of a fish while the tank is on screen, so it
+   * takes the gesture whatever the camera mode is; the canvas takes it only in
+   * the chase views, where the main camera is the one being swung.
+   */
+  _lookDragMove(event) {
+    const start = this.lookDrag;
+    if (!start) return;
+    const dx = event.clientX - start.x;
+    const dy = event.clientY - start.y;
+    start.x = event.clientX;
+    start.y = event.clientY;
+    start.moved = true;
+    this.look.rawYaw -= dx * LOOK_YAW_PER_PIXEL;
+    this.look.rawPitch += dy * LOOK_PITCH_PER_PIXEL;
+  }
+
+  _lookZoom(deltaY) {
+    this.look.rawZoom += deltaY * ZOOM_PER_DELTA;
+    this._releaseLook();
+  }
+
   /** Modes that answer a drag at all. */
   _dragMode() {
     return (
@@ -583,6 +646,18 @@ export class ExperimentCameraController {
     this.look.releasedYaw = this.look.rawYaw;
     this.look.releasedPitch = this.look.rawPitch;
     this.look.releasedZoom = this.look.rawZoom;
+  }
+
+  /**
+   * 1 at rest, LOOK_STIFFNESS while the view is swung away, and in between on
+   * the way back, so the camera loosens as the framing comes home.
+   */
+  _lookStiffness() {
+    const swung = Math.hypot(this.look.yaw, this.look.pitch);
+    const zoomed = Math.abs(this.look.zoom);
+    const away = Math.min(1, Math.max(swung / LOOK_YAW_LIMIT, zoomed / ZOOM_LIMIT) * 6);
+    if (this.look.dragging) return LOOK_STIFFNESS;
+    return 1 + (LOOK_STIFFNESS - 1) * away;
   }
 
   _advanceLook(dt) {
@@ -671,11 +746,11 @@ export class ExperimentCameraController {
     return { ...frame, cameraPosition, lookTarget };
   }
 
-  _applyPose(targetCamera, pose, dt, fov) {
+  _applyPose(targetCamera, pose, dt, fov, stiffness = 1) {
     const config = this.view.config.camera;
     targetCamera.position.lerp(
       pose.cameraPosition,
-      dampAlpha(config.positionDamping, dt)
+      dampAlpha(config.positionDamping * stiffness, dt)
     );
     const matrix = new THREE.Matrix4().lookAt(
       targetCamera.position,
@@ -687,7 +762,7 @@ export class ExperimentCameraController {
     );
     targetCamera.quaternion.slerp(
       targetQuaternion,
-      dampAlpha(config.orientationDamping, dt)
+      dampAlpha(config.orientationDamping * stiffness, dt)
     );
     targetCamera.fov = fov;
     targetCamera.near = config.globalNear;
@@ -709,11 +784,13 @@ export class ExperimentCameraController {
     this.marker.quaternion.setFromUnitVectors(FORWARD, frame.forward);
 
     const closeupPose = this._closeupPose(fish);
+    const stiffness = this._lookStiffness();
     this._applyPose(
       this.previewCamera,
       closeupPose,
       dt,
-      config.closeupFov
+      config.closeupFov,
+      stiffness
     );
 
     if (this.mode === CAMERA_MODE.GLOBAL) {
@@ -722,7 +799,13 @@ export class ExperimentCameraController {
     }
     this.marker.visible = true;
     if (this.mode === CAMERA_MODE.CLOSEUP) {
-      this._applyPose(this.camera, closeupPose, dt, config.closeupFov);
+      this._applyPose(
+        this.camera,
+        closeupPose,
+        dt,
+        config.closeupFov,
+        stiffness
+      );
       return;
     }
 
